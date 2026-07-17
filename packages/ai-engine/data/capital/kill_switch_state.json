@@ -1,0 +1,55 @@
+{
+  "state": "HALTED",
+  "api_errors": 0,
+  "desync_count": 0,
+  "consecutive_losses": 0,
+  "cooldown_seconds": 1800,
+  "halt_until": 1780289987.551105,
+  "events": [
+    {
+      "event_id": "KILL-1780288712",
+      "trigger": "manual",
+      "reason": "Testing trigger mechanism",
+      "state": "HALTED",
+      "positions_closed": 0,
+      "orders_cancelled": 0,
+      "timestamp": "2026-06-01T04:38:32.640304+00:00",
+      "resolved": false,
+      "resolved_at": "",
+      "metadata": {}
+    },
+    {
+      "event_id": "KILL-1780288774",
+      "trigger": "manual",
+      "reason": "Testing trigger mechanism",
+      "state": "HALTED",
+      "positions_closed": 0,
+      "orders_cancelled": 0,
+      "timestamp": "2026-06-01T04:39:34.865744+00:00",
+      "resolved": false,
+      "resolved_at": "",
+      "metadata": {}
+    },
+    {
+      "event_id": "KILL-1780288787",
+      "trigger": "manual",
+      "reason": "Testing trigger mechanism",
+      "state": "HALTED",
+      "positions_closed": 0,
+      "orders_cancelled": 0,
+      "timestamp": "2026-06-01T04:39:47.551112+00:00",
+      "resolved": false,
+      "resolved_at": "",
+      "metadata": {}
+    }
+  ],
+  "triggers": {
+    "drawdown_limit": 0.1,
+    "daily_loss_limit": 0.03,
+    "consecutive_losses": 5,
+    "api_error_threshold": 10,
+    "desync_threshold": 3,
+    "exposure_limit": 1.5
+  },
+  "updated": "2026-06-01T04:39:47.551216+00:00"
+}

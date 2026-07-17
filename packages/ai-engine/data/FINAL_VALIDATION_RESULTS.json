@@ -1,0 +1,569 @@
+{
+  "phase1": {
+    "engine_processes": 2,
+    "single_engine": false,
+    "ws_connected": true,
+    "running": true,
+    "bridge_dirs_exist": true,
+    "health_monitor_exists": true,
+    "pid_file_exists": false,
+    "db_forensics_exists": true,
+    "execution_analytics_exists": true,
+    "forward_test_validator_exists": true,
+    "total_errors": 1859,
+    "bridge_errors": 59,
+    "ws_errors": 84,
+    "telegram_errors": 1057
+  },
+  "phase2": {
+    "scanned": 250,
+    "ai_pass": 167,
+    "regime_pass": 167,
+    "session_pass": 1,
+    "checklist_reached": 0,
+    "checklist_passed": 0,
+    "generated": 0,
+    "emitted": 0,
+    "raw_counters": {
+      "symbols_processed": 250,
+      "scorer_rejected": 83,
+      "phase1_rejected": 0,
+      "regime_blocked": 0,
+      "sweep_blocked": 0,
+      "oi_blocked": 0,
+      "cvd_blocked": 0,
+      "filter": 166,
+      "signals_emitted": 0,
+      "generated": 0,
+      "cycle_start": 1781563016.7498581,
+      "cycle_end": 1781563017.1964211,
+      "session_blocked": 166,
+      "checklist_blocked": 0,
+      "checklist_passed": 0,
+      "inst_signal_emitted": 2,
+      "last_signal": {
+        "symbol": "BICOUSDT",
+        "side": "LONG",
+        "score": 68.7,
+        "entry": 0.01978,
+        "sl": 0.019647402330251744,
+        "tp": 0.020000996116247092,
+        "rr": 1.67,
+        "time": 1781563016.770463
+      },
+      "cycle_duration_sec": 0.45
+    },
+    "dashboard_mapping": {
+      "Scan": 250,
+      "AI": 167,
+      "Regime": 167,
+      "Session": 1,
+      "Check": 0,
+      "Pass": 0,
+      "Gen": 0,
+      "Emit": 0
+    },
+    "math_valid": true
+  },
+  "phase3": {
+    "all_trades": {
+      "label": "All",
+      "n": 1506,
+      "wr": 35.9,
+      "pf": 0.82,
+      "pnl": -6431.13,
+      "aw": 54.54,
+      "al": 37.24,
+      "exp": -4.27,
+      "dd": 13935.99
+    },
+    "last_500": {
+      "label": "Last 500",
+      "n": 500,
+      "wr": 35.8,
+      "pf": 0.71,
+      "pnl": -1418.72,
+      "aw": 19.8,
+      "al": 15.46,
+      "exp": -2.84,
+      "dd": 1646.68
+    },
+    "last_1000": {
+      "label": "Last 1000",
+      "n": 1000,
+      "wr": 34.4,
+      "pf": 0.66,
+      "pnl": -4263.02,
+      "aw": 24.31,
+      "al": 19.25,
+      "exp": -4.26,
+      "dd": 4634.07
+    },
+    "by_session": {
+      "asia": {
+        "label": "asia",
+        "n": 228,
+        "wr": 40.8,
+        "pf": 0.54,
+        "pnl": -1791.47,
+        "aw": 22.2,
+        "al": 28.57,
+        "exp": -7.86,
+        "dd": 2018.65
+      },
+      "london": {
+        "label": "london",
+        "n": 297,
+        "wr": 36.0,
+        "pf": 1.4,
+        "pnl": 2266.07,
+        "aw": 73.58,
+        "al": 29.51,
+        "exp": 7.63,
+        "dd": 2008.53
+      },
+      "new_york": {
+        "label": "new_york",
+        "n": 901,
+        "wr": 36.1,
+        "pf": 0.83,
+        "pnl": -3818.11,
+        "aw": 58.61,
+        "al": 39.7,
+        "exp": -4.24,
+        "dd": 8855.66
+      },
+      "off_hours": {
+        "label": "off_hours",
+        "n": 80,
+        "wr": 20.0,
+        "pf": 0.14,
+        "pnl": -3087.62,
+        "aw": 32.37,
+        "al": 56.34,
+        "exp": -38.6,
+        "dd": 3161.17
+      }
+    },
+    "by_regime": {
+      "ranging": {
+        "label": "ranging",
+        "n": 37,
+        "wr": 43.2,
+        "pf": 0.63,
+        "pnl": -2012.08,
+        "aw": 211.28,
+        "al": 256.78,
+        "exp": -54.38,
+        "dd": 2839.53
+      },
+      "quiet": {
+        "label": "quiet",
+        "n": 241,
+        "wr": 38.2,
+        "pf": 0.3,
+        "pnl": -6970.03,
+        "aw": 31.77,
+        "al": 66.4,
+        "exp": -28.92,
+        "dd": 7168.87
+      },
+      "reversal": {
+        "label": "reversal",
+        "n": 367,
+        "wr": 35.1,
+        "pf": 0.98,
+        "pnl": -167.75,
+        "aw": 76.08,
+        "al": 41.94,
+        "exp": -0.46,
+        "dd": 3542.73
+      },
+      "breakout": {
+        "label": "breakout",
+        "n": 138,
+        "wr": 38.4,
+        "pf": 4.82,
+        "pnl": 6128.19,
+        "aw": 145.88,
+        "al": 18.86,
+        "exp": 44.41,
+        "dd": 853.31
+      },
+      "trending_bull": {
+        "label": "trending_bull",
+        "n": 230,
+        "wr": 33.5,
+        "pf": 0.67,
+        "pnl": -1190.64,
+        "aw": 30.76,
+        "al": 23.26,
+        "exp": -5.18,
+        "dd": 1538.31
+      },
+      "range": {
+        "label": "range",
+        "n": 336,
+        "wr": 34.8,
+        "pf": 0.53,
+        "pnl": -1934.04,
+        "aw": 18.6,
+        "al": 18.77,
+        "exp": -5.76,
+        "dd": 1988.33
+      },
+      "trending_bear": {
+        "label": "trending_bear",
+        "n": 157,
+        "wr": 36.3,
+        "pf": 0.8,
+        "pnl": -284.78,
+        "aw": 19.49,
+        "al": 13.96,
+        "exp": -1.81,
+        "dd": 319.81
+      }
+    },
+    "by_confidence": {
+      "<50%": {
+        "label": "<50%",
+        "n": 336,
+        "wr": 37.8,
+        "pf": 0.55,
+        "pnl": -5880.88,
+        "aw": 57.75,
+        "al": 63.23,
+        "exp": -17.5,
+        "dd": 8299.5
+      },
+      "50-55%": {
+        "label": "50-55%",
+        "n": 307,
+        "wr": 36.5,
+        "pf": 0.84,
+        "pnl": -1674.09,
+        "aw": 75.69,
+        "al": 52.06,
+        "exp": -5.45,
+        "dd": 2449.96
+      },
+      "55-60%": {
+        "label": "55-60%",
+        "n": 549,
+        "wr": 33.3,
+        "pf": 1.19,
+        "pnl": 1729.88,
+        "aw": 59.79,
+        "al": 25.17,
+        "exp": 3.15,
+        "dd": 4490.75
+      },
+      "60-65%": {
+        "label": "60-65%",
+        "n": 170,
+        "wr": 37.1,
+        "pf": 0.6,
+        "pnl": -940.88,
+        "aw": 22.67,
+        "al": 22.14,
+        "exp": -5.53,
+        "dd": 1344.02
+      },
+      "65-70%": {
+        "label": "65-70%",
+        "n": 65,
+        "wr": 38.5,
+        "pf": 1.06,
+        "pnl": 49.73,
+        "aw": 35.12,
+        "al": 20.71,
+        "exp": 0.77,
+        "dd": 243.04
+      },
+      "70%+": {
+        "label": "70%+",
+        "n": 79,
+        "wr": 39.2,
+        "pf": 2.77,
+        "pnl": 285.11,
+        "aw": 14.38,
+        "al": 3.35,
+        "exp": 3.61,
+        "dd": 52.02
+      }
+    },
+    "by_direction": {
+      "LONG": {
+        "label": "LONG",
+        "n": 1290,
+        "wr": 35.7,
+        "pf": 0.83,
+        "pnl": -5756.7,
+        "aw": 61.51,
+        "al": 41.15,
+        "exp": -4.46,
+        "dd": 13456.25
+      },
+      "SHORT": {
+        "label": "SHORT",
+        "n": 216,
+        "wr": 37.0,
+        "pf": 0.63,
+        "pnl": -674.43,
+        "aw": 14.34,
+        "al": 13.4,
+        "exp": -3.12,
+        "dd": 679.02
+      }
+    }
+  },
+  "phase4": {
+    "exit_analysis": {
+      "unknown": {
+        "count": 1436,
+        "pnl": -6469.02
+      },
+      "time_exit_6h": {
+        "count": 6,
+        "pnl": 43.63
+      },
+      "take_profit_1": {
+        "count": 21,
+        "pnl": 54.57
+      },
+      "stop_loss": {
+        "count": 40,
+        "pnl": -61.37
+      },
+      "trailing_stop (peak=2.2R, current=1.0R)": {
+        "count": 1,
+        "pnl": 0.68
+      },
+      "trailing_stop (peak=2.0R, current=0.6R)": {
+        "count": 1,
+        "pnl": 0.38
+      },
+      "duplicate_cleanup": {
+        "count": 1,
+        "pnl": 0
+      }
+    },
+    "unknown_pct": 95.4
+  },
+  "phase5": {
+    "module_exists": true,
+    "wired_to_engine": false
+  },
+  "phase6": {
+    "duplicate_signals": 386,
+    "duplicate_positions": 0,
+    "orphan_positions": 0,
+    "missing_exit_reason": 1436,
+    "total_closed": 1506
+  },
+  "phase7": {
+    "baseline": {
+      "n": 1506,
+      "retention": 100.0,
+      "pf": 0.82,
+      "wr": 35.9,
+      "pnl": -6431.13
+    },
+    "-quiet": {
+      "n": 1265,
+      "retention": 84.0,
+      "pf": 1.02,
+      "wr": 35.5,
+      "pnl": 538.9
+    },
+    ">=20min": {
+      "n": 683,
+      "retention": 45.4,
+      "pf": 1.23,
+      "wr": 44.7,
+      "pnl": 4073.92
+    },
+    "combined": {
+      "n": 526,
+      "retention": 34.9,
+      "pf": 1.85,
+      "wr": 44.9,
+      "pnl": 8737.76
+    }
+  },
+  "phase8": {
+    "total_closed": 1506,
+    "pf": 0.82,
+    "expectancy": -4.27,
+    "max_dd": 13935.99,
+    "wr": 35.9,
+    "post_deploy_trades": 0,
+    "pf_gte_1_20": false,
+    "exp_gt_0": false,
+    "wr_gte_40": false,
+    "trades_gte_100": true,
+    "dd_lt_12": false
+  },
+  "phase9": {
+    "worst_symbols": [
+      {
+        "symbol": "AIAUSDT",
+        "pnl": -2424.88,
+        "n": 37,
+        "pf": 0.05
+      },
+      {
+        "symbol": "ENAUSDT",
+        "pnl": -1573.82,
+        "n": 20,
+        "pf": 0.13
+      },
+      {
+        "symbol": "LABUSDT",
+        "pnl": -1076.03,
+        "n": 42,
+        "pf": 0.7
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "pnl": -963.48,
+        "n": 16,
+        "pf": 0.02
+      },
+      {
+        "symbol": "PORTALUSDT",
+        "pnl": -922.48,
+        "n": 19,
+        "pf": 0.23
+      }
+    ],
+    "worst_sessions": [
+      {
+        "session": "new_york",
+        "pnl": -3818.11,
+        "n": 901,
+        "pf": 0.83
+      },
+      {
+        "session": "off_hours",
+        "pnl": -3087.62,
+        "n": 80,
+        "pf": 0.14
+      },
+      {
+        "session": "asia",
+        "pnl": -1791.47,
+        "n": 228,
+        "pf": 0.54
+      },
+      {
+        "session": "london",
+        "pnl": 2266.07,
+        "n": 297,
+        "pf": 1.4
+      }
+    ],
+    "worst_regimes": [
+      {
+        "regime": "quiet",
+        "pnl": -6970.03,
+        "n": 241,
+        "pf": 0.3
+      },
+      {
+        "regime": "ranging",
+        "pnl": -2012.08,
+        "n": 37,
+        "pf": 0.63
+      },
+      {
+        "regime": "range",
+        "pnl": -1934.04,
+        "n": 336,
+        "pf": 0.53
+      },
+      {
+        "regime": "trending_bull",
+        "pnl": -1190.64,
+        "n": 230,
+        "pf": 0.67
+      },
+      {
+        "regime": "trending_bear",
+        "pnl": -284.78,
+        "n": 157,
+        "pf": 0.8
+      },
+      {
+        "regime": "reversal",
+        "pnl": -167.75,
+        "n": 367,
+        "pf": 0.98
+      },
+      {
+        "regime": "breakout",
+        "pnl": 6128.19,
+        "n": 138,
+        "pf": 4.82
+      }
+    ],
+    "worst_durations": [
+      {
+        "duration": "0-15min",
+        "pnl": -9114.92,
+        "n": 733,
+        "pf": 0.4
+      },
+      {
+        "duration": "120+min",
+        "pnl": -4735.58,
+        "n": 203,
+        "pf": 0.47
+      },
+      {
+        "duration": "15-30min",
+        "pnl": -1670.11,
+        "n": 210,
+        "pf": 0.65
+      },
+      {
+        "duration": "60-120min",
+        "pnl": 3756.02,
+        "n": 153,
+        "pf": 2.02
+      },
+      {
+        "duration": "30-60min",
+        "pnl": 5333.46,
+        "n": 207,
+        "pf": 2.6
+      }
+    ]
+  },
+  "phase10": {
+    "single_engine": false,
+    "no_duplicate_signals": false,
+    "no_duplicate_positions": true,
+    "dashboard_counters_correct": true,
+    "exit_tracking_correct": false,
+    "execution_analytics_wired": false,
+    "database_clean": false,
+    "monitoring_active": true,
+    "websocket_stable": true,
+    "closed_trades_gte_100": true,
+    "pf_gte_1_20": false,
+    "expectancy_gt_0": false,
+    "dd_lt_12": false,
+    "all_pass": false,
+    "failed": [
+      "single_engine",
+      "no_duplicate_signals",
+      "exit_tracking_correct",
+      "execution_analytics_wired",
+      "database_clean",
+      "pf_gte_1_20",
+      "expectancy_gt_0",
+      "dd_lt_12"
+    ]
+  }
+}

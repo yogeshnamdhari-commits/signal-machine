@@ -1,0 +1,34 @@
+[
+  {
+    "signal_id": "TESTUSDT_LONG_1783449593",
+    "symbol": "TESTUSDT",
+    "side": "LONG",
+    "rejection_time": 1783449593.351635,
+    "rejection_stage": "validation",
+    "rejection_reason": "low EV",
+    "scores": {
+      "validation_score": 45
+    },
+    "outcome_tracked": false,
+    "outcome_r": 0.0,
+    "would_have_been_profitable": false,
+    "would_have_exceeded_3r": false,
+    "would_have_exceeded_5r": false
+  },
+  {
+    "signal_id": "TESTUSDT_SHORT_1783449593",
+    "symbol": "TESTUSDT",
+    "side": "SHORT",
+    "rejection_time": 1783449593.352082,
+    "rejection_stage": "eligibility",
+    "rejection_reason": "not eligible",
+    "scores": {
+      "execution_score": 85
+    },
+    "outcome_tracked": false,
+    "outcome_r": 0.0,
+    "would_have_been_profitable": false,
+    "would_have_exceeded_3r": false,
+    "would_have_exceeded_5r": false
+  }
+]

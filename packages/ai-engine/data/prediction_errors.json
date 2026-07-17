@@ -1,0 +1,15 @@
+[
+  {
+    "trade_id": "BTCUSDT_LONG_1783454153",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "predicted_r": 0.5,
+    "actual_r": 0.3,
+    "error_r": -0.2,
+    "predicted_mfe_r": 3.0,
+    "actual_mfe_r": 2.5,
+    "predicted_mae_r": 1.0,
+    "actual_mae_r": 0.8,
+    "tracked": true
+  }
+]

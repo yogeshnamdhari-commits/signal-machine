@@ -1,0 +1,41 @@
+[
+  {
+    "trade_id": "BTCUSDT_LONG_1783456897",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "admitted": true,
+    "admission_score": 85,
+    "actual_r": 0.5,
+    "tracked": true,
+    "tp": true,
+    "fp": false,
+    "tn": false,
+    "fn": false
+  },
+  {
+    "trade_id": "ETHUSDT_LONG_1783456897",
+    "symbol": "ETHUSDT",
+    "side": "LONG",
+    "admitted": true,
+    "admission_score": 80,
+    "actual_r": -0.3,
+    "tracked": true,
+    "tp": false,
+    "fp": true,
+    "tn": false,
+    "fn": false
+  },
+  {
+    "trade_id": "SOLUSDT_LONG_1783456897",
+    "symbol": "SOLUSDT",
+    "side": "LONG",
+    "admitted": false,
+    "admission_score": 70,
+    "actual_r": 0.8,
+    "tracked": true,
+    "tp": false,
+    "fp": false,
+    "tn": false,
+    "fn": true
+  }
+]

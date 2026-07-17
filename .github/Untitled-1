@@ -1,0 +1,16 @@
+packages/ai-engine/
+├── config/settings.py        # Frozen dataclass config with env vars
+├── core/engine.py            # Self-healing orchestrator (4 async loops)
+├── exchanges/binance_ws.py   # WebSocket + REST with auto-reconnect
+├── scanner/
+│   ├── orderflow.py          # Trade flow analytics + VWAP + imbalance
+│   ├── institutional.py      # Iceberg/spoof/sweep/absorption/stop hunt
+│   ├── cumulative_delta.py   # Net delta + divergence + imbalance zones
+│   ├── regime.py             # Trend/range/volatile/breakout/reversal
+│   ├── ai_scorer.py          # 7-factor weighted scoring engine
+│   └── ranking.py            # Composite score TOP-10 ranking
+├── execution/risk_engine.py  # Position sizing + SL/TP + drawdown
+├── database/models.py        # Async SQLite (9 tables)
+├── alerts/telegram.py        # Signal/ranking/PnL notifications
+├── dashboard/app.py          # Streamlit + Plotly charts
+└── main.py                   # CLI entry (engine/dashboard/both)

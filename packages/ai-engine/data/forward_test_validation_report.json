@@ -1,0 +1,99 @@
+{
+  "phase1": {
+    "regime": "PASS",
+    "session": "PASS",
+    "rr": "PASS",
+    "hold": "PASS",
+    "confidence": "INFO",
+    "overall": "PASS"
+  },
+  "phase2": {
+    "overall": "FAIL",
+    "forward_trades": 0,
+    "trusted": false
+  },
+  "phase3": {
+    "overall": "PASS"
+  },
+  "phase4": {
+    "overall": "IN_PROGRESS",
+    "count": 0
+  },
+  "phase5": {
+    "overall": "IN_PROGRESS",
+    "count": 0
+  },
+  "phase6": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase7": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase8": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase9": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase10": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase11": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase12": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase13": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase14": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase15": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase16": {
+    "overall": "NO_DATA",
+    "count": 0
+  },
+  "phase17": {
+    "overall": "D",
+    "scores": {
+      "Regime Quality": 3,
+      "Session Quality": 3,
+      "Entry Quality": 3,
+      "RR Quality": 3,
+      "Exit Quality": 4,
+      "Confidence Quality": 4,
+      "MSS Quality": 5,
+      "Sweep Quality": 5,
+      "FVG Quality": 5,
+      "Order Flow Quality": 5
+    },
+    "total": 40,
+    "pct": 40.0
+  },
+  "phase18": {
+    "overall": "NO_DEPLOY",
+    "checks": {
+      "Closed Trades >= 100": false,
+      "PF > 1.20": false,
+      "Expectancy > 0": false,
+      "Net PnL > 0": false,
+      "Data Completeness > 95%": false,
+      "Confidence Predictive": false,
+      "MSS/Sweep/FVG Validated": false
+    }
+  }
+}

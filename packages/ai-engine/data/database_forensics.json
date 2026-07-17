@@ -1,0 +1,47 @@
+{
+  "timestamp": 1781562360.389895,
+  "checks": {
+    "duplicate_signals": {
+      "count": 386,
+      "status": "FAIL"
+    },
+    "duplicate_positions": {
+      "count": 2,
+      "status": "FAIL"
+    },
+    "orphan_positions": {
+      "count": 0,
+      "status": "PASS"
+    },
+    "exit_reason_tracking": {
+      "with_exit_reason": 1,
+      "without_exit_reason": 1436,
+      "coverage_pct": 0.1,
+      "status": "FAIL"
+    },
+    "null_pnl": {
+      "count": 0,
+      "status": "PASS"
+    },
+    "missing_sl": {
+      "count": 0,
+      "status": "PASS"
+    },
+    "missing_tp": {
+      "count": 0,
+      "status": "PASS"
+    }
+  },
+  "repairs": [
+    "Duplicate: LONG AEROUSDT x2",
+    "Duplicate: LONG REZUSDT x2",
+    "Repaired: deleted 1 duplicate LONG AEROUSDT",
+    "Repaired: deleted 1 duplicate LONG REZUSDT"
+  ],
+  "overall": "FAIL",
+  "failed_checks": [
+    "duplicate_signals",
+    "duplicate_positions",
+    "exit_reason_tracking"
+  ]
+}

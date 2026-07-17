@@ -1,0 +1,28 @@
+{
+  "equity": 1000.0,
+  "peak_equity": 1000.0,
+  "daily_pnl": 0.0,
+  "weekly_pnl": 0.0,
+  "monthly_pnl": 0.0,
+  "position_count": 1,
+  "positions": {
+    "BTCUSDT": {
+      "symbol": "BTCUSDT",
+      "side": "LONG",
+      "quantity": 0.1,
+      "entry_price": 50000,
+      "current_price": 51000,
+      "stop_loss": 49000,
+      "take_profit": 52000,
+      "leverage": 2,
+      "sector": "CRYPTO",
+      "unrealized_pnl": 100.0,
+      "risk_amount": 100.0,
+      "margin_used": 2550.0,
+      "notional_value": 5100.0,
+      "weight": 5.1,
+      "contribution_to_risk": 0.0
+    }
+  },
+  "updated": "2026-06-01T04:39:47.550534+00:00"
+}

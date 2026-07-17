@@ -1,0 +1,58 @@
+{
+  "timestamp": 1781208780.288686,
+  "total_trades": 1436,
+  "factors": {
+    "MSS": {
+      "with_factor": {
+        "trades": 0,
+        "wr": 0,
+        "pf": 0,
+        "exp": 0,
+        "pnl": 0
+      },
+      "without_factor": {
+        "trades": 1436,
+        "wr": 35.79387186629526,
+        "pf": 0.8196532971507315,
+        "exp": -4.504888579387187,
+        "pnl": -6469.02
+      },
+      "data_available": false
+    },
+    "Sweep": {
+      "with_factor": {
+        "trades": 0,
+        "wr": 0,
+        "pf": 0,
+        "exp": 0,
+        "pnl": 0
+      },
+      "without_factor": {
+        "trades": 1436,
+        "wr": 35.79387186629526,
+        "pf": 0.8196532971507315,
+        "exp": -4.504888579387187,
+        "pnl": -6469.02
+      },
+      "data_available": false
+    },
+    "FVG": {
+      "with_factor": {
+        "trades": 0,
+        "wr": 0,
+        "pf": 0,
+        "exp": 0,
+        "pnl": 0
+      },
+      "without_factor": {
+        "trades": 1436,
+        "wr": 35.79387186629526,
+        "pf": 0.8196532971507315,
+        "exp": -4.504888579387187,
+        "pnl": -6469.02
+      },
+      "data_available": false
+    }
+  },
+  "validation_status": "CANNOT_VALIDATE"
+}

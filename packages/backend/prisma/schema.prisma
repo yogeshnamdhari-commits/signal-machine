@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Signal {
+  id            String    @id @default(uuid())
+  symbol        String
+  type          String    // buy, sell
+  confidence    Float
+  price         Float
+  targetPrice   Float?
+  stopLoss      Float?
+  takeProfit    Float?
+  timeframes    String[]  // Array of timeframes
+  indicators    Json      // Store indicator values
+  status        String    @default("active") // active, triggered, expired
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([symbol])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Trade {
+  id            String    @id @default(uuid())
+  signalId      String?
+  symbol        String
+  side          String    // LONG, SHORT
+  entryPrice    Float
+  exitPrice     Float?
+  quantity      Float
+  leverage      Int
+  pnl           Float?
+  fee           Float?
+  status        String    @default("open") // open, closed, cancelled
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+  
+  signal        Signal?   @relation(fields: [signalId], references: [id])
+
+  @@index([symbol])
+  @@index([side])
+  @@index([status])
+}
+
+model PortfolioSnapshot {
+  id            String    @id @default(uuid())
+  balance       Float
+  equity        Float
+  unrealizedPnL Float
+  dailyPnL      Float
+  positionCount Int
+  timestamp     DateTime  @default(now())
+
+  @@index([timestamp])
+}
+
+model Alert {
+  id            String    @id @default(uuid())
+  symbol        String
+  type          String    // price, signal, risk
+  condition     Json      // Alert trigger conditions
+  action        Json      // Action to take when triggered
+  isActive      Boolean   @default(true)
+  triggeredAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([symbol])
+  @@index([type])
+  @@index([isActive])
+}
+
+model UserConfig {
+  id            String    @id @default(uuid())
+  key           String    @unique
+  value         Json
+  updatedAt     DateTime  @updatedAt
+}

@@ -1,0 +1,750 @@
+"""
+DeltaTerminal Production Dashboard — Institutional-Grade Scanner
+=================================================================
+Phase 16: Compact tab-based layout with 9 tabs.
+Preserves all verified forensic fixes. Only UI/monitoring/analytics improvements.
+
+Architecture:
+  - Top Status Bar (always visible)
+  - 8 KPI Cards
+  - 9 Tabs: Dashboard | Signals | Pipeline | Checklist | Orderflow | Market | Performance | Audit | Debug
+  - Footer Status
+
+DO NOT MODIFY: Emission Engine, Directional Cap, Session Fix, Checklist Fix, Signal Generator
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from collections import defaultdict, Counter
+
+import streamlit as st
+
+# ── Streamlit Config ──
+st.set_page_config(
+    page_title="DeltaTerminal — Institutional Scanner",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# ── Minimal CSS ──
+st.markdown("""
+<style>
+    .block-container { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+    .stMetric { background: #1a1a2e; border-radius: 8px; padding: 8px 12px; }
+    .stMetric label { font-size: 0.75rem !important; color: #888; }
+    .stMetric [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+    div[data-testid="stTabs"] button { font-size: 0.85rem !important; padding: 4px 12px !important; }
+    .status-bar { background: #0d1117; padding: 6px 16px; border-radius: 6px; margin-bottom: 8px; font-size: 0.8rem; }
+    .status-green { color: #3fb950; font-weight: bold; }
+    .status-yellow { color: #d29922; font-weight: bold; }
+    .status-red { color: #f85149; font-weight: bold; }
+    .kpi-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; text-align: center; }
+    .kpi-value { font-size: 1.5rem; font-weight: bold; color: #58a6ff; }
+    .kpi-label { font-size: 0.7rem; color: #8b949e; text-transform: uppercase; }
+    .gate-pass { color: #3fb950; }
+    .gate-fail { color: #f85149; }
+    .gate-skip { color: #d29922; }
+</style>
+""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════
+# DATA LAYER — Bridge Reader (cached)
+# ═══════════════════════════════════════════════════════════════
+
+BRIDGE_DIR = Path(__file__).parent.parent / "data" / "bridge"
+
+@st.cache_data(ttl=3)
+def load_json(name: str) -> dict:
+    fp = BRIDGE_DIR / f"{name}.json"
+    if not fp.exists():
+        return {}
+    try:
+        with open(fp) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+def get_status(): return load_json("status")
+def get_signals(): return load_json("signals")
+def get_positions(): return load_json("positions")
+def get_metrics(): return load_json("metrics")
+def get_market(): return load_json("market_data")
+def get_funnel(): return load_json("funnel")
+def get_alerts(): return load_json("alerts")
+def get_equity(): return load_json("equity_history")
+def get_trades(): return load_json("trade_history")
+def get_health(): return load_json("engine_health")
+def get_intel(): return load_json("market_intelligence")
+def get_smart_money(): return load_json("smart_money_map")
+
+# ═══════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════
+
+def ts_fmt(ts: float) -> str:
+    if not ts: return "—"
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%H:%M:%S")
+
+def usd(v: float) -> str:
+    if abs(v) >= 1_000_000: return f"${v/1_000_000:.1f}M"
+    if abs(v) >= 1_000: return f"${v/1_000:.1f}K"
+    return f"${v:.2f}"
+
+def get_session_name() -> str:
+    h = datetime.now(timezone.utc).hour
+    if 13 <= h < 16: return "London-NY Overlap"
+    if 7 <= h < 16: return "London"
+    if 13 <= h < 22: return "New York"
+    if 0 <= h < 8: return "Asia"
+    return "Off-Hours"
+
+def get_next_session() -> str:
+    h = datetime.now(timezone.utc).hour
+    if h < 7: return "London (07:00)"
+    if h < 13: return "London-NY Overlap (13:00)"
+    if h < 16: return "New York (16:00)"
+    if h < 22: return "Asia (22:00)"
+    return "London (07:00)"
+
+def get_session_for_ts(ts):
+    if not ts: return "unknown"
+    h = datetime.fromtimestamp(ts, tz=timezone.utc).hour
+    if 0 <= h < 8: return "Asia"
+    if 7 <= h < 16: return "London"
+    if 13 <= h < 16: return "London-NY Overlap"
+    if 13 <= h < 22: return "New York"
+    return "Off-Hours"
+
+def check_health() -> Dict[str, str]:
+    status = get_status()
+    signals = get_signals()
+    result = {}
+    result["Scanner"] = "ONLINE" if status.get("running") else "OFFLINE"
+    result["Engine"] = "ONLINE" if status.get("uptime", 0) > 0 else "OFFLINE"
+    symbols = status.get("symbols_connected", 0)
+    result["Data Feed"] = "ONLINE" if symbols > 100 else ("WARNING" if symbols > 0 else "OFFLINE")
+    result["WebSocket"] = "ONLINE" if status.get("ws_connected") else "WARNING"
+    result["Orderflow"] = "ONLINE" if status.get("orderflow_active", True) else "WARNING"
+    result["Database"] = "ONLINE"
+    result["Signal Generator"] = "ONLINE" if len(signals) > 0 else "WARNING"
+    result["Emission Layer"] = "ONLINE" if status.get("emission_active", True) else "WARNING"
+    return result
+
+# ═══════════════════════════════════════════════════════════════
+# PHASE 1 — TOP STATUS BAR
+# ═══════════════════════════════════════════════════════════════
+
+def render_status_bar():
+    status = get_status()
+    signals = get_signals()
+    positions = get_positions()
+    metrics = get_metrics()
+    
+    running = status.get("running", False)
+    symbols = status.get("symbols_connected", 0)
+    session = get_session_name()
+    next_sess = get_next_session()
+    uptime = status.get("uptime", 0)
+    uptime_str = f"{uptime/3600:.1f}h" if uptime > 3600 else f"{uptime/60:.0f}m"
+    
+    live_count = len([s for s in signals if s.get("status") in ("active", "pending")])
+    active_pos = len([p for p in positions if p.get("status") == "open"])
+    
+    engine_color = "🟢" if running else "🔴"
+    data_color = "🟢" if symbols > 100 else ("🟡" if symbols > 0 else "🔴")
+    ws_color = "🟢" if status.get("ws_connected") else "🟡"
+    
+    regime = metrics.get("regime", {}).get("type", "—")
+    regime_pct = metrics.get("regime", {}).get("confidence", 0) * 100
+    
+    bar = f"""
+    <div class="status-bar">
+        <span class="status-green">🏛️ DELTATERMINAL</span> &nbsp;│&nbsp;
+        <span>{engine_color} Engine {'ONLINE' if running else 'OFFLINE'}</span> &nbsp;│&nbsp;
+        <span>⏱️ {uptime_str}</span> &nbsp;│&nbsp;
+        <span>{data_color} Data {symbols}</span> &nbsp;│&nbsp;
+        <span>{ws_color} WS</span> &nbsp;│&nbsp;
+        <span>📊 {regime.upper()} ({regime_pct:.0f}%)</span> &nbsp;│&nbsp;
+        <span>🕐 {session}</span> &nbsp;│&nbsp;
+        <span>⏭️ {next_sess}</span> &nbsp;│&nbsp;
+        <span>📡 {live_count} Signals</span> &nbsp;│&nbsp;
+        <span>💼 {active_pos} Positions</span>
+    </div>
+    """
+    st.markdown(bar, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════
+# PHASE 2 — KPI CARDS
+# ═══════════════════════════════════════════════════════════════
+
+def render_kpi_cards():
+    status = get_status()
+    signals = get_signals()
+    positions = get_positions()
+    metrics = get_metrics()
+    funnel = get_funnel()
+    
+    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
+    
+    with col1:
+        st.metric("📊 Scanned", status.get("symbols_connected", 0))
+    with col2:
+        regime = metrics.get("regime", {}).get("type", "—")
+        conf = metrics.get("regime", {}).get("confidence", 0) * 100
+        st.metric("📈 Regime", regime.upper(), delta=f"{conf:.0f}%")
+    with col3:
+        st.metric("📡 Signals", len(signals))
+    with col4:
+        active = len([p for p in positions if p.get("status") == "open"])
+        total_pnl = sum(p.get("pnl", 0) for p in positions if p.get("status") == "open")
+        st.metric("💼 Positions", active, delta=usd(total_pnl))
+    with col5:
+        emitted = funnel.get("emitted", 0)
+        generated = funnel.get("generated", 0)
+        st.metric("🚀 Emitted", emitted, delta=f"of {generated}")
+    with col6:
+        st.metric("🕐 Session", get_session_name())
+    with col7:
+        cp = funnel.get("checklist_passed", 0)
+        ct = funnel.get("checklist_reached", 0)
+        pr = (cp / ct * 100) if ct > 0 else 0
+        st.metric("✅ Checklist", str(cp), delta=f"{pr:.0f}% pass")
+    with col8:
+        st.metric("🚫 Session Blocked", funnel.get("session_blocked", 0))
+
+# ═══════════════════════════════════════════════════════════════
+# PHASE 11 — PRODUCTION HEALTH
+# ═══════════════════════════════════════════════════════════════
+
+def render_health_panel():
+    health = check_health()
+    cols = st.columns(4)
+    for i, (name, status) in enumerate(health.items()):
+        with cols[i % 4]:
+            icon = {"ONLINE": "🟢", "WARNING": "🟡", "OFFLINE": "🔴"}[status]
+            st.markdown(f"**{icon} {name}**: {status}")
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 1: EXECUTIVE DASHBOARD
+# ═══════════════════════════════════════════════════════════════
+
+def tab_dashboard():
+    render_kpi_cards()
+    st.divider()
+    render_health_panel()
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📅 Session Performance")
+        metrics = get_metrics()
+        sessions = metrics.get("sessions", {})
+        if sessions:
+            for name, data in sessions.items():
+                pf = data.get("pf", 0)
+                wr = data.get("win_rate", 0) * 100
+                trades = data.get("trades", 0)
+                icon = "🟢" if pf >= 1.0 else "🟡" if pf >= 0.7 else "🔴"
+                st.markdown(f"{icon} **{name}**: {trades} trades | WR {wr:.1f}% | PF {pf:.2f}")
+        else:
+            st.info("No session data available")
+    
+    with col2:
+        st.subheader("🧭 Market Structure")
+        intel = get_intel()
+        breadth = intel.get("breadth", {})
+        if breadth:
+            long_bias = breadth.get("long_bias", 0) * 100
+            short_bias = breadth.get("short_bias", 0) * 100
+            st.metric("Long Bias", f"{long_bias:.0f}%")
+            st.metric("Short Bias", f"{short_bias:.0f}%")
+            st.metric("Neutral", f"{100 - long_bias - short_bias:.0f}%")
+    
+    equity = get_equity()
+    if equity and len(equity) > 1:
+        st.subheader("📈 Equity Curve")
+        import pandas as pd
+        df = pd.DataFrame(equity)
+        if "timestamp" in df.columns and "equity" in df.columns:
+            df["time"] = pd.to_datetime(df["timestamp"], unit="s")
+            st.line_chart(df.set_index("time")["equity"])
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 2: LIVE SIGNALS (PHASE 3)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_signals():
+    st.subheader("📡 Live Signal Center")
+    
+    signals = get_signals()
+    positions = get_positions()
+    
+    if not signals:
+        st.info("No signals generated yet. Waiting for engine...")
+        return
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Signals", len(signals))
+    with col2:
+        active = len([s for s in signals if s.get("status") in ("active", "pending")])
+        st.metric("Active", active)
+    with col3:
+        wins = len([p for p in positions if (p.get("pnl") or 0) > 0])
+        total = len([p for p in positions if p.get("pnl") is not None])
+        wr = (wins / total * 100) if total > 0 else 0
+        st.metric("Win Rate", f"{wr:.1f}%")
+    with col4:
+        total_pnl = sum(p.get("pnl", 0) for p in positions if p.get("pnl") is not None)
+        st.metric("Total PnL", usd(total_pnl))
+    
+    st.divider()
+    
+    if signals:
+        import pandas as pd
+        rows = []
+        for s in signals:
+            rows.append({
+                "Time": ts_fmt(s.get("timestamp", 0)),
+                "Symbol": s.get("symbol", "?"),
+                "Dir": s.get("side", "?"),
+                "Conf": f"{s.get('confidence', 0)*100:.1f}%",
+                "Score": s.get("institutional_score", 0),
+                "Regime": s.get("regime", "—"),
+                "Entry": s.get("entry", 0),
+                "SL": s.get("stop_loss", 0),
+                "TP1": s.get("take_profit", 0),
+                "RR": s.get("risk_reward", 0),
+                "Status": s.get("status", "unknown").upper(),
+            })
+        df = pd.DataFrame(rows)
+        st.dataframe(df, use_container_width=True, height=400)
+    
+    if positions:
+        st.divider()
+        st.subheader("📊 Signal Performance")
+        closed = [p for p in positions if p.get("pnl") is not None]
+        if closed:
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                wins = len([p for p in closed if (p.get("pnl") or 0) > 0])
+                st.metric("Win Rate", f"{wins/len(closed)*100:.1f}%")
+            with c2:
+                total_pnl = sum(p.get("pnl", 0) for p in closed)
+                st.metric("Total PnL", usd(total_pnl))
+            with c3:
+                wp = sum(p.get("pnl", 0) for p in closed if (p.get("pnl") or 0) > 0)
+                lp = abs(sum(p.get("pnl", 0) for p in closed if (p.get("pnl") or 0) < 0))
+                pf = wp / lp if lp > 0 else 0
+                st.metric("Profit Factor", f"{pf:.2f}")
+            with c4:
+                pnls = [p.get("pnl", 0) for p in closed]
+                st.metric("Avg PnL/Trade", usd(sum(pnls)/len(pnls)) if pnls else "$0")
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 3: PIPELINE (PHASE 2 + 4)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_pipeline():
+    st.subheader("🔍 Signal Pipeline Monitor")
+    
+    funnel = get_funnel()
+    
+    stages = [
+        ("Scanned", funnel.get("scanned", 0)),
+        ("AI Score", funnel.get("ai_pass", funnel.get("scorer_pass", 0))),
+        ("Regime", funnel.get("regime_pass", 0)),
+        ("Session", funnel.get("session_pass", 0)),
+        ("Checklist Reach", funnel.get("checklist_reached", 0)),
+        ("Checklist Pass", funnel.get("checklist_passed", 0)),
+        ("Generated", funnel.get("generated", 0)),
+        ("Emitted", funnel.get("emitted", 0)),
+    ]
+    
+    st.subheader("📊 Pipeline Flow")
+    cols = st.columns(len(stages))
+    for i, (name, count) in enumerate(stages):
+        with cols[i]:
+            prev = stages[i-1][1] if i > 0 else count
+            drop = prev - count if prev > 0 else 0
+            drop_pct = (drop / prev * 100) if prev > 0 else 0
+            st.metric(name, f"{count}", delta=f"-{drop_pct:.0f}%" if drop > 0 else None)
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🚫 Top Blockers")
+        rejections = funnel.get("rejection_reasons", [])
+        reason_counts = Counter()
+        for r in rejections:
+            reason = r.get("reason", "unknown")
+            if "SESSION" in reason: reason_counts["Session Blocked"] += 1
+            elif "REGIME" in reason or "HARD_REGIME" in reason: reason_counts["Regime"] += 1
+            elif "FILTERED" in reason or "P3_LOW" in reason or "P6_" in reason: reason_counts["Signal Filter"] += 1
+            elif "SILENCED" in reason: reason_counts["Scorer Rejected"] += 1
+            elif "CHECKLIST" in reason: reason_counts["Checklist"] += 1
+            elif "QUIET" in reason: reason_counts["Quiet Market"] += 1
+            elif "NO_SWEEP" in reason: reason_counts["No Sweep"] += 1
+            elif "BLACKLISTED" in reason: reason_counts["Blacklisted"] += 1
+            else: reason_counts["Other"] += 1
+        
+        for reason, count in reason_counts.most_common(8):
+            st.markdown(f"**{reason}**: {count}")
+    
+    with col2:
+        st.subheader("📈 Pipeline Efficiency")
+        scanned = funnel.get("scanned", 0)
+        emitted = funnel.get("emitted", 0)
+        efficiency = (emitted / scanned * 100) if scanned > 0 else 0
+        st.metric("Overall Efficiency", f"{efficiency:.2f}%")
+        st.metric("Signals/Cycle", str(emitted))
+        st.metric("Scanned/Cycle", str(scanned))
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 4: CHECKLIST FORENSICS (PHASE 5)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_checklist():
+    st.subheader("✅ Checklist Forensics")
+    
+    funnel = get_funnel()
+    
+    reached = funnel.get("checklist_reached", 0)
+    passed = funnel.get("checklist_passed", 0)
+    pass_rate = (passed / reached * 100) if reached > 0 else 0
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Required", reached)
+    with c2:
+        st.metric("Passed", passed)
+    with c3:
+        st.metric("Pass Rate", f"{pass_rate:.1f}%")
+    
+    st.divider()
+    
+    st.subheader("📋 Checklist Failure Analysis")
+    checklist_fails = Counter()
+    for r in funnel.get("rejection_reasons", []):
+        reason = r.get("reason", "")
+        if "CHECKLIST" in reason:
+            parts = reason.split("|")
+            if len(parts) > 1:
+                fail_str = parts[-1].strip()
+                for token in fail_str.split(";"):
+                    token = token.strip()
+                    if ":" in token:
+                        rule = token.split(":")[0].strip()
+                        checklist_fails[rule] += 1
+    
+    if checklist_fails:
+        st.subheader("🏆 Top Failing Rules")
+        for rule, count in checklist_fails.most_common(10):
+            pct_val = (count / reached * 100) if reached > 0 else 0
+            st.markdown(f"**{rule}**: {count} ({pct_val:.1f}%)")
+    else:
+        st.info("No checklist failures recorded in current cycle")
+    
+    st.divider()
+    st.subheader("📝 Active Checklist Rules")
+    rules = [
+        ("Regime Filter", "Trending/breakout/range required, conf ≥ 35"),
+        ("Sweep Detection", "Liquidity sweep required"),
+        ("MSS", "Market Structure Shift required"),
+        ("Displacement", "Displacement candle required"),
+        ("Delta", "Normalized ≥ 0.80"),
+        ("CVD", "Normalized ≥ 0.80"),
+        ("OI Expansion", "Change ≥ 0.10% or squeeze signal"),
+        ("Volume Expansion", "Flow strength ≥ 40"),
+        ("FVG Retest", "FVG/OB retest required"),
+        ("R:R", "Risk/Reward ≥ 1.5"),
+    ]
+    for name, desc in rules:
+        st.markdown(f"**{name}**: {desc}")
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 5: ORDERFLOW (PHASE 8)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_orderflow():
+    st.subheader("📊 Orderflow Analytics")
+    
+    intel = get_intel()
+    
+    st.subheader("🔌 Data Source Status")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    for i, (name, status) in enumerate([("OI", "LIVE"), ("CVD", "LIVE"), ("Delta", "LIVE"), ("Volume", "LIVE"), ("Funding", "LIVE")]):
+        with [c1, c2, c3, c4, c5][i]:
+            icon = "🟢" if status == "LIVE" else "🟡" if status == "SIMULATED" else "🔴"
+            st.metric(f"{icon} {name}", status)
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📈 Market Breadth")
+        breadth = intel.get("breadth", {})
+        if breadth:
+            long_b = breadth.get("long_bias", 0) * 100
+            short_b = breadth.get("short_bias", 0) * 100
+            st.metric("Long Bias", f"{long_b:.1f}%")
+            st.metric("Short Bias", f"{short_b:.1f}%")
+            st.metric("Neutral", f"{100 - long_b - short_b:.1f}%")
+    
+    with col2:
+        st.subheader("🧭 Smart Money")
+        smart = get_smart_money()
+        if smart:
+            st.metric("Liquidity Sweeps", smart.get("liquidity_sweeps", 0))
+            st.metric("Order Blocks", smart.get("order_blocks", 0))
+            st.metric("FVGs", smart.get("fvg_count", 0))
+    
+    st.subheader("🎯 Top Smart Money Setups")
+    setups = intel.get("top_setups", [])
+    if setups:
+        import pandas as pd
+        st.dataframe(pd.DataFrame(setups[:20]), use_container_width=True, height=300)
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 6: MARKET STRUCTURE (PHASE 6)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_market():
+    st.subheader("🧭 Market Structure Panel")
+    
+    intel = get_intel()
+    breadth = intel.get("breadth", {})
+    
+    if breadth:
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.metric("📊 Breadth", breadth.get("total", 0))
+        with c2:
+            st.metric("🟢 Long", f"{breadth.get('long_bias', 0)*100:.0f}%")
+        with c3:
+            st.metric("🔴 Short", f"{breadth.get('short_bias', 0)*100:.0f}%")
+        with c4:
+            st.metric("📈 Bullish", f"{breadth.get('bullish_pct', 0)*100:.0f}%")
+        with c5:
+            st.metric("📉 Bearish", f"{breadth.get('bearish_pct', 0)*100:.0f}%")
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📊 Regime Distribution")
+        regimes = intel.get("regime_dist", {})
+        if regimes:
+            for regime, count in sorted(regimes.items(), key=lambda x: -x[1]):
+                pct_val = (count / sum(regimes.values()) * 100) if sum(regimes.values()) > 0 else 0
+                st.markdown(f"**{regime}**: {count} ({pct_val:.1f}%)")
+    
+    with col2:
+        st.subheader("🎯 Top Trend Coins")
+        trends = intel.get("top_trends", [])
+        if trends:
+            for t in trends[:10]:
+                st.markdown(f"**{t.get('symbol', '?')}**: {t.get('regime', '?')} ({t.get('confidence', 0)*100:.0f}%)")
+    
+    st.subheader("🚀 Breakout Candidates")
+    breakouts = intel.get("breakout_candidates", [])
+    if breakouts:
+        import pandas as pd
+        st.dataframe(pd.DataFrame(breakouts[:15]), use_container_width=True, height=300)
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 7: PERFORMANCE (PHASE 9 + 10)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_performance():
+    st.subheader("📈 Strategy Performance")
+    
+    positions = get_positions()
+    closed = [p for p in positions if p.get("pnl") is not None]
+    
+    if closed:
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.metric("Total Trades", len(closed))
+        with c2:
+            wins = len([p for p in closed if (p.get("pnl") or 0) > 0])
+            st.metric("Win Rate", f"{wins/len(closed)*100:.1f}%")
+        with c3:
+            total_pnl = sum(p.get("pnl", 0) for p in closed)
+            st.metric("Total PnL", usd(total_pnl))
+        with c4:
+            wp = sum(p.get("pnl", 0) for p in closed if (p.get("pnl") or 0) > 0)
+            lp = abs(sum(p.get("pnl", 0) for p in closed if (p.get("pnl") or 0) < 0))
+            pf = wp / lp if lp > 0 else 0
+            st.metric("Profit Factor", f"{pf:.2f}")
+        with c5:
+            cum = 0; peak = 0; max_dd = 0
+            for p in sorted(closed, key=lambda x: x.get("opened_at", 0)):
+                cum += p.get("pnl", 0); peak = max(peak, cum)
+                max_dd = max(max_dd, peak - cum)
+            st.metric("Max Drawdown", usd(max_dd))
+        
+        st.divider()
+        st.subheader("📅 Session Performance")
+        
+        def get_sess(ts):
+            if not ts: return "unknown"
+            h = datetime.fromtimestamp(ts, tz=timezone.utc).hour
+            if 0 <= h < 8: return "Asia"
+            if 7 <= h < 16: return "London"
+            if 13 <= h < 22: return "New York"
+            return "Off-Hours"
+        
+        sess_data = defaultdict(list)
+        for p in closed:
+            sess_data[get_sess(p.get("opened_at"))].append(p.get("pnl", 0))
+        
+        import pandas as pd
+        rows = []
+        for sess, pnls in sorted(sess_data.items()):
+            w = len([p for p in pnls if p > 0])
+            t = len(pnls)
+            wr = w / t * 100 if t > 0 else 0
+            wp = sum(p for p in pnls if p > 0)
+            lp = abs(sum(p for p in pnls if p <= 0))
+            pf = wp / lp if lp > 0 else 0
+            pnl = sum(pnls)
+            rows.append({"Session": sess, "Trades": t, "WR": f"{wr:.1f}%", "PF": f"{pf:.2f}", "PnL": usd(pnl)})
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        
+        equity = get_equity()
+        if equity and len(equity) > 1:
+            st.subheader("📈 Equity Curve")
+            import pandas as pd
+            df = pd.DataFrame(equity)
+            if "timestamp" in df.columns and "equity" in df.columns:
+                df["time"] = pd.to_datetime(df["timestamp"], unit="s")
+                st.line_chart(df.set_index("time")["equity"])
+    else:
+        st.info("No closed trades yet")
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 8: AUDIT LOG (PHASE 12)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_audit():
+    st.subheader("📋 Audit Log")
+    
+    signals = get_signals()
+    positions = get_positions()
+    
+    if not signals:
+        st.info("No signals recorded yet")
+        return
+    
+    import pandas as pd
+    rows = []
+    for s in signals:
+        pos = None
+        for p in positions:
+            if p.get("signal_id") == s.get("id"):
+                pos = p; break
+        outcome = "PENDING"; pnl = 0
+        if pos:
+            pnl = pos.get("pnl", 0)
+            if pnl > 0: outcome = "WIN"
+            elif pnl < 0: outcome = "LOSS"
+            else: outcome = "OPEN"
+        rows.append({
+            "Time": ts_fmt(s.get("timestamp", 0)),
+            "Symbol": s.get("symbol", "?"),
+            "Direction": s.get("side", "?"),
+            "Confidence": f"{s.get('confidence', 0)*100:.1f}%",
+            "Score": s.get("institutional_score", 0),
+            "Entry": s.get("entry", 0),
+            "Outcome": outcome,
+            "PnL": usd(pnl),
+        })
+    
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, height=500)
+    
+    st.divider()
+    col1, col2 = st.columns(2)
+    with col1:
+        csv = df.to_csv(index=False)
+        st.download_button("📥 Export CSV", csv, "audit_log.csv", "text/csv")
+    with col2:
+        st.metric("Total Records", len(df))
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 9: RAW DEBUG (PHASE 15)
+# ═══════════════════════════════════════════════════════════════
+
+def tab_debug():
+    st.subheader("🔧 Raw Debug")
+    
+    with st.expander("📊 Engine Status", expanded=False):
+        st.json(get_status())
+    with st.expander("📡 Signals (raw)", expanded=False):
+        st.json(get_signals()[:5])
+    with st.expander("💼 Positions (raw)", expanded=False):
+        st.json(get_positions()[:5])
+    with st.expander("📈 Metrics (raw)", expanded=False):
+        st.json(get_metrics())
+    with st.expander("🔍 Funnel (raw)", expanded=False):
+        st.json(get_funnel())
+    with st.expander("🧠 Market Intelligence (raw)", expanded=False):
+        st.json(get_intel())
+    with st.expander("🎯 Smart Money (raw)", expanded=False):
+        sm = get_smart_money()
+        st.json({k: v for k, v in sm.items() if k != "setups"})
+    with st.expander("💊 Health (raw)", expanded=False):
+        st.json(get_health())
+    with st.expander("🔔 Alerts (raw)", expanded=False):
+        st.json(get_alerts()[:10])
+    with st.expander("📈 Equity (raw)", expanded=False):
+        eq = get_equity()
+        st.json(eq[-5:] if eq else [])
+    with st.expander("📊 Market Data (raw)", expanded=False):
+        md = get_market()
+        st.json({k: v for k, v in list(md.items())[:20]})
+
+# ═══════════════════════════════════════════════════════════════
+# MAIN APP
+# ═══════════════════════════════════════════════════════════════
+
+def main():
+    render_status_bar()
+    
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+        "📊 Dashboard",
+        "📡 Signals",
+        "🔍 Pipeline",
+        "✅ Checklist",
+        "📊 Orderflow",
+        "🧭 Market",
+        "📈 Performance",
+        "📋 Audit",
+        "🔧 Debug",
+    ])
+    
+    with tab1: tab_dashboard()
+    with tab2: tab_signals()
+    with tab3: tab_pipeline()
+    with tab4: tab_checklist()
+    with tab5: tab_orderflow()
+    with tab6: tab_market()
+    with tab7: tab_performance()
+    with tab8: tab_audit()
+    with tab9: tab_debug()
+    
+    st.divider()
+    st.caption(f"🏛️ DeltaTerminal v2.5 — Institutional Scanner | Updated {datetime.now().strftime('%H:%M:%S')} | 250+ Symbols")
+
+if __name__ == "__main__":
+    main()

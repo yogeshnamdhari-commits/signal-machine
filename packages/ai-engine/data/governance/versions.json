@@ -1,0 +1,77 @@
+[
+  {
+    "version": "1.0",
+    "date": "2026-07-10 21:31",
+    "config_name": "Baseline",
+    "params": {
+      "name": "Baseline",
+      "rr_threshold": 1.5,
+      "session_filter": [
+        "new_york",
+        "london",
+        "unknown",
+        "asia"
+      ],
+      "min_confidence": 40
+    },
+    "reason": "Initial configuration",
+    "status": "Testing",
+    "performance": {
+      "trades": 375,
+      "win_rate": 36.3,
+      "profit_factor": 1.0,
+      "expectancy": -0.3462,
+      "net_pnl": 1.14
+    },
+    "deployment_level": 1,
+    "notes": ""
+  },
+  {
+    "version": "1.0",
+    "date": "2026-07-10 21:31",
+    "config_name": "RR_2.5_NY",
+    "params": {
+      "name": "RR_2.5_NY",
+      "rr_threshold": 2.5,
+      "session_filter": [
+        "new_york"
+      ],
+      "min_confidence": 40
+    },
+    "reason": "Initial configuration",
+    "status": "Testing",
+    "performance": {
+      "trades": 36,
+      "win_rate": 41.7,
+      "profit_factor": 2.02,
+      "expectancy": 2.6048,
+      "net_pnl": 121.86
+    },
+    "deployment_level": 1,
+    "notes": ""
+  },
+  {
+    "version": "1.0",
+    "date": "2026-07-10 21:31",
+    "config_name": "RR_3.0_NY",
+    "params": {
+      "name": "RR_3.0_NY",
+      "rr_threshold": 3.0,
+      "session_filter": [
+        "new_york"
+      ],
+      "min_confidence": 40
+    },
+    "reason": "Initial configuration",
+    "status": "Testing",
+    "performance": {
+      "trades": 21,
+      "win_rate": 47.6,
+      "profit_factor": 2.62,
+      "expectancy": 3.4899,
+      "net_pnl": 113.38
+    },
+    "deployment_level": 1,
+    "notes": ""
+  }
+]

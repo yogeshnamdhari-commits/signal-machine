@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-06-28T06:15:00",
+  "total_candidates": 4000,
+  "signals_generated": 2,
+  "uptime_hours": 0.2,
+  "stage_rejections": {
+    "fast_filter": 3459,
+    "ema_cache": 0,
+    "regime": 216,
+    "trend": 0,
+    "pullback": 116,
+    "candle": 172,
+    "volume": 35,
+    "confidence": 0,
+    "signal_engine": 0
+  },
+  "rejection_rates": {
+    "fast_filter": 86.5,
+    "regime": 5.4,
+    "pullback": 2.9,
+    "candle": 4.3,
+    "volume": 0.9,
+    "confidence": 0.0
+  },
+  "changes": [
+    "volume threshold: 1.0 -> 0.4",
+    "added volume expansion check",
+    "added prev_volume to cache"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "stats": {
+    "total_signals": 2,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": 0,
+    "total_pnl": 150.0,
+    "avg_pnl": 150.0,
+    "avg_confidence": 9250.0,
+    "profit_factor": 0,
+    "buy_signals": 2,
+    "sell_signals": 0
+  },
+  "timestamp": 1782409314.437827
+}

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.yogz.signalmachine</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/targetmobile/Documents/signal machine/.venv/bin/python</string>
+        <string>/Users/targetmobile/Documents/signal machine/service/supervisor.py</string>
+    </array>
+    <!-- Start immediately on boot/login -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- Daily scheduled restart at 23:55 UTC (fresh state before next trading day) -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- 23:55 UTC = nightly restart for fresh state -->
+        <dict>
+            <key>Hour</key>
+            <integer>23</integer>
+            <key>Minute</key>
+            <integer>55</integer>
+        </dict>
+        <!-- 06:50 UTC = pre-London session start -->
+        <dict>
+            <key>Hour</key>
+            <integer>6</integer>
+            <key>Minute</key>
+            <integer>50</integer>
+        </dict>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:/Users/targetmobile/Documents/signal machine/.venv/bin</string>
+        <key>HOME</key>
+        <string>/Users/targetmobile</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/targetmobile/Documents/signal machine/service/service_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/targetmobile/Documents/signal machine/service/service_stderr.log</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

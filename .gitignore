@@ -1,0 +1,131 @@
+node_modules
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+packages/ai-engine/data/logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/database/
+packages/ai-engine/data/database/
+
+# Backtest cache (large binary files)
+data/backtest_cache/
+backtest_cache/
+packages/ai-engine/data/backtest_cache/
+*.parquet
+
+# Backtest reports (generated HTML/JSON, not source)
+backtest_reports/
+packages/ai-engine/data/backtest_reports/
+
+# Data cache (1000s of runtime JSON files)
+packages/ai-engine/data/cache/
+packages/ai-engine/data/cache/**
+**/data/cache/
+
+# Reports & figures (generated, not source)
+packages/ai-engine/data/reports/
+packages/ai-engine/data/reports/**
+
+# Data exports (xlsx, csv outputs)
+packages/ai-engine/data/ema_v5_exports/
+data/ema_v5_exports/
+
+# Environment variables (SECRETS - never commit!)
+.env
+.env.*
+!.env.example
+
+# Engine state (runtime, changes constantly)
+packages/ai-engine/data/engine_state.json
+packages/ai-engine/data/engine_state.backup.json
+data/engine_state.json
+data/engine_state.backup.json
+
+# Runtime data files (change every scan cycle)
+packages/ai-engine/data/market_cache.json
+packages/ai-engine/data/regime_state.json
+packages/ai-engine/data/ema_v5_state.json
+packages/ai-engine/data/ema_v5_scan_count.json
+packages/ai-engine/data/ema_v5_history.json
+packages/ai-engine/data/ema_v5_stats.json
+packages/ai-engine/data/engine.lock
+packages/ai-engine/data/engine.pid
+packages/ai-engine/data/rejected_signals.json
+packages/ai-engine/data/opportunity_cost*.json
+packages/ai-engine/data/prediction_errors.json
+packages/ai-engine/data/calibration_errors.json
+packages/ai-engine/data/confidence_validation_report.json
+packages/ai-engine/data/exit_forensics_report.json
+packages/ai-engine/data/forward_test_*.json
+packages/ai-engine/data/institutional_validation_report.json
+packages/ai-engine/data/institutional_audit_report.md
+packages/ai-engine/data/production_*.md
+packages/ai-engine/data/database_forensics.json
+packages/ai-engine/data/validation_history.csv
+packages/ai-engine/data/bridge/
+
+# Logs
+packages/ai-engine/data/logs/
+
+# Dashboard backup
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# WAL/SHM (SQLite journal files)
+*.db-shm
+*.db-wal
+
+# Forensics output files (generated, not source)
+*_output.txt
+*_output2.txt
+
+# Debug logs
+debug-logs/
+data/backtest_reports/
+
+# Bridge data (engine-generated, not source)
+packages/ai-engine/data/bridge/
+data/bridge/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Service PIDs & logs
+service/*.pid
+service/*.log
+.dashboard.pid
+.launcher.pid
+launcher.pid
+api.pid
+
+# Lock files
+package-lock.json
+
+# Dashboard log
+dashboard.log

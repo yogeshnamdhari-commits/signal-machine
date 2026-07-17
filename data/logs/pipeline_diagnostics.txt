@@ -1,0 +1,59 @@
+
+═══════════════════════════════════════════════════
+  EMA_V5 Pipeline Diagnostics — 51400 candidates
+  Uptime: 1.5h | Signals: 28
+═══════════════════════════════════════════════════
+
+STAGE REJECTIONS:
+  fast_filter           17654 ( 34.3%)
+  ema_cache                 0 (  0.0%)
+  regime                14217 ( 27.7%)
+  trend                     0 (  0.0%)
+  pullback              10584 ( 20.6%)
+  candle                 7618 ( 14.8%)
+  volume                  991 (  1.9%)
+  confidence               21 (  0.0%)
+  signal_engine             0 (  0.0%)
+
+CONFIDENCE STAGE SCORES (candidates that reached confidence):
+  trend                  65.7
+  pullback              100.0
+  candle                 90.0
+  volume                 83.3
+  confidence             38.1
+
+CANDLE DIAGNOSTICS:
+  body_ratio: avg=0.528 max=1.000 (min=0.5)
+  wick_ratio: avg=1.19 max=42.00 (min=2.0)
+  samples: 7618
+
+CONFIDENCE DISTRIBUTION:
+     <60 │    21 █████████████████████
+   60-70 │     0 
+   70-75 │     0 
+   75-80 │     0 
+   80-85 │     0 
+   85-90 │     0 
+   90-95 │     0 
+  95-100 │     0 
+
+PIPELINE LATENCY:
+  confidence           avg=19.30ms  max=76.67ms  n=200
+
+TOP REJECTION REASONS:
+  fast_filter:insufficient_data             17654
+  regime:ema_chain_not_aligned              13573
+  pullback:no_ema_touch                     10584
+  candle:body=1.00 wick=0.0                   788
+  regime:no_trend                             644
+  candle:body=0.50 wick=0.0                   341
+  candle:body=0.33 wick=1.0                   213
+  candle:body=0.67 wick=0.0                   207
+  candle:body=0.50 wick=1.0                   131
+  candle:body=0.75 wick=0.3                   131
+
+REJECTION CHAIN (top bottlenecks):
+  → fast_filter: 17654 rejected (34.3%)
+  → regime: 14217 rejected (27.7%)
+  → pullback: 10584 rejected (20.6%)
+═══════════════════════════════════════════════════

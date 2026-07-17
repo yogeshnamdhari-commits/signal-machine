@@ -1,0 +1,73 @@
+{
+  "phase1": {
+    "exists": true,
+    "signals": 0,
+    "trades": 0,
+    "closed": 0,
+    "complete": 0
+  },
+  "phase2": {
+    "signals": 0,
+    "entered": 0,
+    "closed": 0
+  },
+  "phase3": {
+    "grade": "INCOMPLETE",
+    "metrics": {
+      "n": 0,
+      "wr": 0,
+      "pf": 0,
+      "exp": 0,
+      "pnl": 0,
+      "avg_win": 0,
+      "avg_loss": 0,
+      "max_win": 0,
+      "max_loss": 0
+    }
+  },
+  "phase4": {},
+  "phase5": {},
+  "phase6": {},
+  "phase7": {},
+  "phase8": {
+    "predictive": false
+  },
+  "phase9": {
+    "improves": null
+  },
+  "phase10": {
+    "improves": null
+  },
+  "phase11": {
+    "improves": null
+  },
+  "phase12": {
+    "edge": false
+  },
+  "phase13": {},
+  "phase14": {},
+  "phase15": {
+    "grade": "C",
+    "scores": {
+      "Regime Quality": 5,
+      "Session Quality": 5,
+      "Entry Quality": 5,
+      "RR Quality": 5,
+      "Exit Quality": 5,
+      "Confidence Quality": 5,
+      "MSS Quality": 5,
+      "Sweep Quality": 5,
+      "FVG Quality": 5,
+      "Order Flow Quality": 5
+    },
+    "checks": {
+      "Closed Trades >= 100": false,
+      "PF > 1.20": false,
+      "Expectancy > 0": false,
+      "Net PnL > 0": false,
+      "Data Completeness > 95%": false,
+      "Confidence Predictive": false,
+      "MSS/Sweep/FVG Validated": false
+    }
+  }
+}

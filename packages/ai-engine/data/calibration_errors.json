@@ -1,0 +1,18 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "predicted_prob_profit": 0.8,
+    "predicted_r": 0.5,
+    "prediction_time": 1783455165.539327,
+    "actual_outcome": 1,
+    "actual_r": 0.3
+  },
+  {
+    "symbol": "ETHUSDT",
+    "predicted_prob_profit": 0.6,
+    "predicted_r": 0.3,
+    "prediction_time": 1783455165.539973,
+    "actual_outcome": 0,
+    "actual_r": -0.2
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "signal_id": "BTCUSDT_LONG_1783461684",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "score": 85,
+    "reason": "low score",
+    "tracked": true,
+    "actual_r": 0.5,
+    "profitable": true,
+    "exceeded_3r": false
+  },
+  {
+    "signal_id": "ETHUSDT_LONG_1783461684",
+    "symbol": "ETHUSDT",
+    "side": "LONG",
+    "score": 80,
+    "reason": "medium score",
+    "tracked": true,
+    "actual_r": -0.3,
+    "profitable": false,
+    "exceeded_3r": false
+  }
+]
