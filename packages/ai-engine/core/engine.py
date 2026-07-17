@@ -4186,7 +4186,14 @@ class DeltaTerminalEngine:
                                 break
                 except Exception:
                     pass
+            # LAST RESORT: Direct Binance REST API for open position symbols
+            # This ensures position monitoring NEVER skips a symbol due to missing price
             if price is None or price <= 0:
+                price = await self._fetch_price_rest(sym)
+                if price and price > 0:
+                    logger.debug("🔄 REST fallback price for {}: {}", sym, price)
+            if price is None or price <= 0:
+                logger.warning("⚠️ RISK_LOOP: No price for {} — skipping position monitoring!", sym)
                 continue
             # Update trade lifecycle engines with current price (for MAE/MFE)
             sym = pos["symbol"]
@@ -4831,6 +4838,19 @@ class DeltaTerminalEngine:
         # Fallback: WS trade price (may be testnet)
         trades = self.symbol_data.get(sym, {}).get("trades", [])
         return trades[-1]["price"] if trades else None
+
+    async def _fetch_price_rest(self, sym: str) -> Optional[float]:
+        """Fetch current price directly from Binance REST API.
+        Used as last-resort fallback for open position monitoring when
+        _ticker_data and symbol_data don't have the symbol.
+        """
+        try:
+            data = await self.ws._get(f"/fapi/v1/ticker/price?symbol={sym}")
+            if data and "price" in data:
+                return float(data["price"])
+        except Exception as e:
+            logger.debug("REST price fetch failed for {}: {}", sym, e)
+        return None
 
     async def _expire_signals(self) -> None:
         now = time.time()
