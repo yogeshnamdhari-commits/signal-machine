@@ -128,7 +128,8 @@ class ProductionAnalytics:
                     oi_delta, funding_rate, outcome, strategy_version,
                     realized_r, planned_rr, entry_time
                 FROM forward_trades
-                WHERE exit_price IS NOT NULL OR pnl != 0
+                WHERE exit_price IS NOT NULL AND exit_price > 0
+                  AND exit_reason IS NOT NULL AND exit_reason != ''
                 ORDER BY exit_time DESC
             """).fetchall()
             for r in rows:
