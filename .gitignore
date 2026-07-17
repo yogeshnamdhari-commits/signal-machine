@@ -130,3 +130,4 @@ package-lock.json
 # Dashboard log
 dashboard.log
 *.env
+data/logs/
