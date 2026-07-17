@@ -3,21 +3,38 @@
 ## Question
 Is the confidence threshold (70% NY, 82% London SHORT) correctly calibrated?
 
-## Method
-For rejected candidates in 40-70% confidence range, track what happened to price after rejection.
+## Current Architecture (Verified from Code)
 
-## Rejected Candidates Tracker
+### Confidence Formula (scanner/ema_v5/confidence_engine.py)
+```
+confidence = inst_score × 0.50 + regime×0.10 + (-trend×0.10) + pullback×0.15 + (-candle×0.10) + (-volume×0.05)
+```
+Where `inst_score = trend_score` (institutional_score unavailable in EMA V5)
 
-| Symbol | Side | Confidence | Rejection Reason | Price After 1h | Price After 4h | Would TP Hit? | Would SL Hit? |
-|--------|------|------------|------------------|----------------|----------------|---------------|---------------|
-| — | (data collection pending) | | | | | | |
+### Thresholds (Verified from Code)
+- EMA V5 inner: `min_confidence = 40.0` (scanner/ema_v5/config.py)
+- Session filter NY: `NY_MIN_CONFIDENCE = 0.70` → 70% (scanner/session_quality_filter.py)
+- Session filter London SHORT: `LONDON_BEAR_MIN_CONFIDENCE = 97.0` → 97% (scanner/session_quality_filter.py)
 
-## Analysis (after 100+ samples)
-- % of rejected candidates that would have hit TP: TBD
-- % of rejected candidates that would have hit SL: TBD
-- Optimal threshold recommendation: TBD
+### Typical Candidate Score
+For trend=80, regime=BUY, pullback=detected, candle=80, volume=80:
+```
+= 80×0.50 + 100×0.10 + (-80×0.10) + 100×0.15 + (-80×0.10) + (-80×0.05)
+= 40 + 10 - 8 + 15 - 8 - 4 = 45%
+```
 
-## Current Thresholds
-- NY session: 70% minimum
-- London SHORT: 82% minimum
-- London LONG: 70% minimum (default)
+## Hypothesis (NOT YET PROVEN)
+Confidence model produces ~45% for typical candidates, but session filter requires 70%+.
+This MAY explain why most candidates are rejected at session filter gate.
+
+## Evidence Required
+For rejected candidates in 40-70% range, track price after rejection:
+- Would they have hit TP?
+- Would they have hit SL?
+- If most would have lost → threshold is correct
+- If many would have won → threshold too restrictive
+
+## Status
+- [ ] Collect rejected candidate outcome data
+- [ ] Verify with 100+ samples
+- [ ] Only then decide whether to adjust
