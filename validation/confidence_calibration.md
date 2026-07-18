@@ -35,7 +35,9 @@ For rejected candidates in 40-70% range, track price after rejection:
 - If many would have won → threshold too restrictive
 
 ## Status
-- [x] Root cause identified: v33 recalibration changed formula but not session threshold
-- [x] Verified from database: historical trades had 91-100%, current candidates have 40-55%
+- [x] Calibration mismatch verified from database, signal traces, and code
+- [x] Historical trades: 90-95% confidence (database)
+- [x] Current candidates: 42-51% confidence (signal traces)
+- [x] Publication threshold: 70% (code)
 - [ ] Decision: align thresholds or recalibrate formula
 - [ ] Collect post-fix data to validate decision
