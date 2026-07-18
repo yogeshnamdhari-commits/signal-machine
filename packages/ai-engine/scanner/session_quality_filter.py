@@ -186,12 +186,12 @@ class SessionQualityFilter:
                     session_data["reason"] = f"v5: London+bear micro-size (conf={confidence_100:.0f}%)"
                     logger.info("⚠️  v5 LONDON_BEAR_SIZE: conf={:.1f}% → size 0.3×", confidence_100)
                 elif side == "LONG":
-                    # v5: London LONG still requires 80%+ confidence
-                    if confidence_100 < 80:
+                    # v33: London LONG threshold updated to match new confidence scale
+                    if confidence_100 < 45:
                         self._blocked_count += 1
                         session_data["allowed"] = False
-                        session_data["reason"] = f"BLOCKED: London LONG conf={confidence_100:.1f}% < 80%"
-                        logger.info("🚫 SESSION: London LONG conf={:.1f} < 80", confidence_100)
+                        session_data["reason"] = f"BLOCKED: London LONG conf={confidence_100:.1f}% < 45%"
+                        logger.info("🚫 SESSION: London LONG conf={:.1f} < 45", confidence_100)
                         return False, session_data["reason"], session_data
                     session_data["size_mult"] = 0.80  # London LONG = slightly reduced size
                     session_data["reason"] = f"ALLOWED: London LONG (conf={confidence_100:.0f}%, 0.8× size)"
