@@ -1650,6 +1650,24 @@ class DeltaTerminalEngine:
                     )
                     _sig_trace.add_gate("scanner", passed=True, reason="EMA V5 signal generated")
 
+                    # ── SHADOW TRACKER: Record every candidate for threshold calibration ──
+                    try:
+                        from scanner.ema_v5.shadow_confidence_tracker import get_shadow_tracker
+                        _shadow = get_shadow_tracker()
+                        _shadow.record_candidate(
+                            symbol=sym,
+                            side=ema_sig.get("side", "LONG"),
+                            confidence=_ema_conf,
+                            regime=_ema_regime,
+                            entry_price=ema_sig.get("entry", 0),
+                            stop_loss=ema_sig.get("sl", 0),
+                            take_profit=ema_sig.get("take_profit_1", 0),
+                            session="",
+                            components=ema_sig.get("components", {}),
+                        )
+                    except Exception as _shadow_err:
+                        logger.debug("Shadow tracker error: {}", _shadow_err)
+
                     # Route through same session filter as institutional path
                     from scanner.session_quality_filter import SessionQualityFilter
                     _ema_sess = SessionQualityFilter()
@@ -4160,6 +4178,18 @@ class DeltaTerminalEngine:
         if now - self._last_bridge_sync >= 1:
             self._sync_bridge()
             self._last_bridge_sync = now
+
+        # ── Shadow tracker: update candidate outcomes every 60 seconds ──
+        if now - getattr(self, '_last_shadow_update', 0) >= 60:
+            self._last_shadow_update = now
+            try:
+                from scanner.ema_v5.shadow_confidence_tracker import get_shadow_tracker
+                _shadow = get_shadow_tracker()
+                # Build price map from ticker data
+                _price_map = {sym: data.get("price", 0) for sym, data in self._ticker_data.items() if data.get("price", 0) > 0}
+                _shadow.update_outcomes(_price_map)
+            except Exception:
+                pass
 
         positions = await db.get_open_positions()
         if not positions:
