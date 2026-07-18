@@ -39,5 +39,7 @@ For rejected candidates in 40-70% range, track price after rejection:
 - [x] Historical trades: 90-95% confidence (database)
 - [x] Current candidates: 42-51% confidence (signal traces)
 - [x] Publication threshold: 70% (code)
-- [ ] Decision: align thresholds or recalibrate formula
-- [ ] Collect post-fix data to validate decision
+- [x] Shadow tracker implemented: records all candidates and market outcomes
+- [ ] Collect 100+ candidates with market outcomes
+- [ ] Analyze optimal threshold from empirical data
+- [ ] Apply threshold change based on evidence
