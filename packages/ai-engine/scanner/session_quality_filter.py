@@ -55,10 +55,12 @@ class SessionQualityFilter:
     }
 
     # ── Quality Thresholds ──
-    NY_MIN_CONFIDENCE = 0.70       # New York minimum confidence threshold
+    # v33 NOTE: Confidence engine was recalibrated to produce 40-55% range
+    # (was 90-100% before v33). Thresholds updated to match new scale.
+    NY_MIN_CONFIDENCE = 0.40       # New York minimum confidence threshold (was 0.70)
     PF_THRESHOLD = 0.80            # Phase 11: minimum session PF to allow trading
     # v5: Evidence-based session rules from 40-trade live dataset
-    LONDON_BEAR_MIN_CONFIDENCE = 97.0  # London+bear needs near-certainty (17% WR, -$27.29)
+    LONDON_BEAR_MIN_CONFIDENCE = 50.0  # London+bear needs higher confidence (was 97.0)
     LONDON_BEAR_SIZE_MULT = 0.30       # London+bear = micro-size only
 
     def __init__(self) -> None:
@@ -138,9 +140,9 @@ class SessionQualityFilter:
         if session in self.ALLOWED_SESSIONS:
             # ══ LONDON LONG BLOCK ══
             # Evidence: 13 trades, 7.7% WR, -$27.79 — structural failure
-            # Phase 12: Allow London LONG if confidence >= 80 (override toxic filter)
+            # v33: Updated threshold to match new confidence scale (40-55%)
             if session == "london" and side == "LONG":
-                if confidence_100 >= 80:
+                if confidence_100 >= 45:
                     session_data["allowed"] = True
                     session_data["reason"] = f"ALLOWED: London LONG (high conf={confidence_100:.0f})"
                     return True, session_data["reason"], session_data
@@ -195,10 +197,11 @@ class SessionQualityFilter:
                     session_data["reason"] = f"ALLOWED: London LONG (conf={confidence_100:.0f}%, 0.8× size)"
                 else:
                     # London SHORT (trending_bear aligned) — standard gate
-                    if confidence_100 < 82:
+                    # v33: Updated threshold to match new confidence scale (40-55%)
+                    if confidence_100 < 42:
                         self._blocked_count += 1
                         session_data["allowed"] = False
-                        session_data["reason"] = f"BLOCKED: London SHORT conf={confidence_100:.1f}% < 82%"
+                        session_data["reason"] = f"BLOCKED: London SHORT conf={confidence_100:.1f}% < 42%"
                         return False, session_data["reason"], session_data
                     session_data["reason"] = f"ALLOWED: London SHORT (conf={confidence_100:.0f}%)"
 
