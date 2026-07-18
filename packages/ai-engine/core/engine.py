@@ -1664,6 +1664,15 @@ class DeltaTerminalEngine:
                             take_profit=ema_sig.get("take_profit_1", 0),
                             session="",
                             components=ema_sig.get("components", {}),
+                            pattern=ema_sig.get("entry_reason", ""),
+                            regime_detail=ema_sig.get("regime", ""),
+                            pullback_level=ema_sig.get("components", {}).get("pullback", ""),
+                            candle_score=ema_sig.get("candle_score", 0),
+                            trend_score=ema_sig.get("mss_score", 0),
+                            volume_score=ema_sig.get("volatility_score", 0),
+                            rr_1=ema_sig.get("rr_1", 0),
+                            rr_2=ema_sig.get("rr_2", 0),
+                            rr_3=ema_sig.get("rr_3", 0),
                         )
                     except Exception as _shadow_err:
                         logger.debug("Shadow tracker error: {}", _shadow_err)
