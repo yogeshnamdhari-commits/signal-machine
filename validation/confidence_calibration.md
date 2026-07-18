@@ -35,6 +35,6 @@ For rejected candidates in 40-70% range, track price after rejection:
 - If many would have won → threshold too restrictive
 
 ## Status
-- [ ] Collect rejected candidate outcome data
-- [ ] Verify with 100+ samples
-- [ ] Only then decide whether to adjust
+- [x] Root cause identified: calibration mismatch between two layers
+- [ ] Decision: align thresholds or recalibrate formula
+- [ ] Collect post-fix data to validate decision
