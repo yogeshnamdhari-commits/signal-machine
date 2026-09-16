@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Tuple
 
 from config.schema import config_fingerprint
+from validation.evidence_manifest import EvidenceManifest, verify_evidence_manifest
 from validation.statistical_validation import ResearchDecision
 
 
@@ -37,12 +38,15 @@ def generate_certification(
     research_validated: bool = False,
     live_eligible: bool = False,
     research_decision: ResearchDecision | None = None,
+    evidence_manifest: EvidenceManifest | None = None,
+    evidence_now_ts: float | None = None,
 ) -> CertificationArtifact:
-    """Create a certification artifact, failing closed on absent/rejected research evidence.
+    """Create a certification artifact, failing closed on absent/stale evidence.
 
     The legacy ``research_validated`` flag is retained for compatibility, but it
     cannot by itself authorize research or live certification. A current approved
-    ``ResearchDecision`` is required whenever research validation is requested.
+    ``ResearchDecision`` and a matching, unexpired ``EvidenceManifest`` are
+    required whenever research validation is requested.
     """
     failure_list = list(failures)
 
@@ -60,7 +64,29 @@ def generate_certification(
     else:
         research_approved = True
 
-    research_ready = research_validated and research_approved
+    manifest_approved = False
+    if research_validated:
+        if evidence_manifest is None:
+            failure_list.append("missing_evidence_manifest")
+        elif evidence_now_ts is None:
+            failure_list.append("missing_evidence_timestamp")
+        else:
+            manifest_decision = verify_evidence_manifest(
+                evidence_manifest,
+                expected_commit=commit_sha,
+                expected_config=config,
+                now_ts=evidence_now_ts,
+            )
+            if manifest_decision.approved:
+                manifest_approved = True
+            else:
+                failure_list.extend(
+                    reason
+                    for reason in manifest_decision.reasons
+                    if reason not in failure_list
+                )
+
+    research_ready = research_validated and research_approved and manifest_approved
     if live_eligible and not research_ready:
         failure_list.append("live_requires_research_validation")
 
