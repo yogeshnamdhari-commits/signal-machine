@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -45,38 +44,45 @@ def _setup_logging(level: str = "INFO") -> None:
     )
 
 
-# Source-level exchange and risk hardening is currently centralized here while
-# the underlying engine modules are migrated to the same contracts.
 apply_integrity_patches()
 apply_risk_integrity_patch()
 CONFIG_FINGERPRINT = validate_runtime_config(config)
 
 if FastAPI:
-    from core.engine import DeltaTerminalEngine
+    # API is intentionally read-only. It must never instantiate or start a second
+    # executable engine authority. Engine state is exposed through the canonical
+    # Python bridge written by the engine process itself.
+    from dashboard.data_bridge import reader as bridge_reader
 
-    api_engine = DeltaTerminalEngine()
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        logger.info("Initializing Engine via API lifespan...")
-        await api_engine.start()
-        yield
-        logger.info("Shutting down Engine via API lifespan...")
-        await api_engine.stop()
-
-    app = FastAPI(title="DeltaTerminal API", lifespan=lifespan)
+    app = FastAPI(title="DeltaTerminal API")
 
     @app.get("/health")
     async def health():
+        status = bridge_reader.read_status()
         return {
             "status": "ok",
             "config_fingerprint": CONFIG_FINGERPRINT,
-            "engine": api_engine.get_status(),
+            "engine": {
+                "running": status.running,
+                "halted": status.halted,
+                "ws_connected": status.ws_connected,
+                "symbols": status.symbols,
+                "signals": status.signals,
+                "last_update": status.last_update,
+            },
+            "authority": "python-engine",
+            "mode": "read-only-relay",
         }
 
     @app.get("/signals")
     async def get_signals():
-        return {"count": len(api_engine.signals), "signals": api_engine.signals}
+        signals = bridge_reader.read_signals()
+        return {
+            "count": len(signals),
+            "signals": signals,
+            "authority": "python-engine",
+            "config_fingerprint": CONFIG_FINGERPRINT,
+        }
 else:
     app = None
 
@@ -218,7 +224,7 @@ def _run_api() -> None:
     if not app:
         logger.error("FastAPI is not installed. Install the locked API dependencies before using --mode api.")
         return
-    logger.info("Starting REST API on http://{}:8000", config.dashboard.host)
+    logger.info("Starting read-only REST API on http://{}:8000", config.dashboard.host)
     uvicorn.run("main:app", host=config.dashboard.host, port=8000, reload=False)
 
 
@@ -233,9 +239,6 @@ def _run_live() -> int:
         return 2
 
     logger.info("LIVE CERTIFICATION VERIFIED: state={}, commit={}", artifact.get("state"), artifact.get("commit_sha"))
-    # The existing engine remains the execution implementation. This branch is
-    # reached only after certification; exchange-side execution is not started
-    # automatically here because no current research certification exists yet.
     return 0
 
 
