@@ -75,7 +75,6 @@ for row in market_data:
         "24h": fmt(row.get("change_24h"), "%"),
         "Volume 24h": fmt(row.get("volume_24h"), "$"),
         "OI": fmt(row.get("open_interest"), "$"),
-        "OI": fmt(row.get("open_interest"), "$"),
         "OI Bias": evidence(display["oi"]),
         "OI Δ%": fmt(row.get("oi_change_pct"), "%"),
         "Funding": fmt(row.get("funding"), "%"),
@@ -107,19 +106,22 @@ else:
 st.markdown("### What every field means")
 semantics = [
     ("Price", "BUY = positive 24h direction; SELL = negative; NEUTRAL = flat."),
+    ("OI", "Raw open interest level. Direction is supplied separately by OI Bias."),
     ("OI Bias", "BUY/SELL = engine OI positioning interpretation. Missing OI never becomes zero."),
-    ("Funding Bias", "BUY/SELL = engine positioning interpretation; funding magnitude remains a risk modifier."),
+    ("Funding", "Raw funding rate. It is a positioning/risk input, not a standalone signal."),
+    ("Fund Bias", "BUY/SELL = engine interpretation of the funding/positioning state."),
     ("B/S Ratio", "BUY > 1.02; SELL < 0.98; otherwise NEUTRAL."),
     ("Delta / CVD", "BUY = positive taker pressure; SELL = negative taker pressure; unavailable stays unavailable."),
     ("Flow / Ex Flow", "Directional classification only from actual underlying flow observations."),
     ("Vol Bias", "Directional volume classification produced by the engine."),
     ("Imbalance", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL."),
+    ("Liq Risk", "Risk state only; never a standalone BUY/SELL generator."),
+    ("Liq Zone ↓ / ↑", "Liquidity-location context only; never an independent trade vote."),
     ("Sweep", "BUY/SELL only when a qualifying sweep event is detected; otherwise NOT_APPLICABLE."),
     ("Sweep Price", "Event location only; it is not an independent trade vote."),
     ("FVG", "Calculated bullish/bearish structure only; FVG price is contextual."),
     ("Regime", "BUY = bullish regime; SELL = bearish regime; range/unknown = NEUTRAL."),
     ("Reg Conf", "Confidence in regime classification, not a standalone signal."),
-    ("Liq Risk", "Risk state only; never a standalone BUY/SELL generator."),
     ("Signal", "Canonical Python engine only: BUY / SELL / NO_SIGNAL. No implied signals are permitted."),
 ]
 st.dataframe(pd.DataFrame(semantics, columns=["Parameter", "Definition"]), width="stretch", hide_index=True)
