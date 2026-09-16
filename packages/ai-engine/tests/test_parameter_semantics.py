@@ -28,4 +28,6 @@ def test_canonical_signal_only_accepts_engine_side():
     assert signal_from_canonical({"side": "BUY", "source": "python"}) == "BUY"
     assert signal_from_canonical({"side": "SELL", "source": "python"}) == "SELL"
     assert signal_from_canonical({"side": "LONG", "source": "dashboard"}) == "NO_SIGNAL"
+    assert signal_from_canonical({"side": "LONG"}, bridge_trusted=True) == "BUY"
+    assert signal_from_canonical({"side": "LONG"}) == "NO_SIGNAL"
     assert signal_from_canonical({}) == "NO_SIGNAL"
