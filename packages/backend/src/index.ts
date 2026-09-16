@@ -16,11 +16,15 @@ import { riskManager } from './services/riskManager';
 import { marketScanner } from './services/marketScanner';
 import { tradeSimulator } from './services/tradeSimulator';
 
+const CANONICAL_SIGNAL_AUTHORITY = process.env.CANONICAL_SIGNAL_AUTHORITY ?? 'python';
+if (CANONICAL_SIGNAL_AUTHORITY !== 'python') {
+  throw new Error('Unsafe configuration: Python must be the canonical signal authority');
+}
+
 // Create Express app
 const app = express();
 const httpServer = createServer(app);
 
-// Create Socket.IO server
 const io = new SocketIOServer(httpServer, {
   cors: {
     origin: ['http://localhost:5173', 'http://localhost:3000'],
@@ -31,7 +35,6 @@ const io = new SocketIOServer(httpServer, {
   pingInterval: config.websocket.pingInterval,
 });
 
-// Middleware
 app.use(helmet());
 app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:3000'],
@@ -45,11 +48,8 @@ app.use(morgan('combined', {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
-
-// Routes
 app.use('/api', routes);
 
-// 404 handler for unknown API routes
 app.use('/api/*', (req: Request, res: Response) => {
   res.status(404).json({
     success: false,
@@ -60,55 +60,38 @@ app.use('/api/*', (req: Request, res: Response) => {
   });
 });
 
-// Error handling
 app.use(errorHandler);
 
-// WebSocket handling
 const connectedClients = new Map<string, any>();
 
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
   connectedClients.set(socket.id, socket);
-
-  // Send current signals immediately on connect
   socket.emit('signals', signalEngine.getActiveSignals());
-
-  // Send portfolio updates immediately on connect
   socket.emit('portfolio', riskManager.getPortfolio());
 
-  // Handle client subscriptions (per-symbol rooms)
   socket.on('subscribe', (symbols: string[]) => {
     logger.info(`Client ${socket.id} subscribed to: ${symbols}`);
-    symbols.forEach((symbol) => {
-      socket.join(`symbol:${symbol}`);
-    });
+    symbols.forEach((symbol) => socket.join(`symbol:${symbol}`));
   });
 
   socket.on('unsubscribe', (symbols: string[]) => {
-    symbols.forEach((symbol) => {
-      socket.leave(`symbol:${symbol}`);
-    });
+    symbols.forEach((symbol) => socket.leave(`symbol:${symbol}`));
   });
 
-// Send current scanner data immediately on connect
   socket.emit('sheet:data', marketScanner.getLastData());
 
-    // Handle disconnect
   socket.on('disconnect', () => {
     logger.info(`Client disconnected: ${socket.id}`);
     connectedClients.delete(socket.id);
   });
 });
 
-// WebSocket event handlers — broadcast to ALL connected clients
 let lastTickerBroadcast = 0;
-const TICKER_BROADCAST_INTERVAL = 1000; // 1 second rate limit for ticker broadcasts
+const TICKER_BROADCAST_INTERVAL = 1000;
 
 websocketService.on('ticker', (data: MarketData) => {
-  // Broadcast to per-symbol subscribers
   io.to(`symbol:${data.symbol}`).emit('ticker', data);
-  
-  // Broadcast globally to all clients (throttled)
   const now = Date.now();
   if (now - lastTickerBroadcast >= TICKER_BROADCAST_INTERVAL) {
     lastTickerBroadcast = now;
@@ -129,42 +112,31 @@ websocketService.on('trade', (data: any) => {
   io.to(`symbol:${data.symbol}`).emit('trade', data);
 });
 
-// Signal engine events
+// Backend only relays canonical Python signals; it never recalculates trading decisions.
 signalEngine.on('signal', (signal) => {
-  io.emit('signal', signal);
-  logger.info(`New signal: ${signal.type} ${signal.symbol}`);
+  io.emit('signal', { ...signal, authority: 'python' });
+  logger.info(`Relayed canonical signal: ${signal.type} ${signal.symbol}`);
 });
 
 signalEngine.on('signal_update', (signal) => {
-  io.emit('signal_update', signal);
+  io.emit('signal_update', { ...signal, authority: 'python' });
 });
 
-// Market scanner events — broadcast full market data to all clients
 marketScanner.on('scan', (data) => {
   io.emit('sheet:data', data);
 });
 
-// Start services
 async function startServices() {
   try {
-    // Connect WebSocket for real-time data
     websocketService.connect(['!ticker@arr']);
-    
-    // Start continuous market scanning
-    signalEngine.startContinuousScan(60000, {
-      minConfidence: 0.5,
-      maxSignals: 10,
-    });
 
-    // Start full market scanner (every 15 seconds)
+    // These services remain available for read-only UI compatibility. They are
+    // deliberately not started as independent trading/signal authorities.
+    logger.info('Canonical signal authority: Python');
+    logger.info('Node signal generation/scanning/trade simulation is disabled as an execution authority.');
+
     await marketScanner.discoverSymbols();
-    marketScanner.start(15000);
 
-    // Start trade simulator (listens for signals, monitors SL/TP)
-    tradeSimulator.start();
-    logger.info('📈 Trade Simulator active — paper trading all signals');
-
-    // Start server
     httpServer.listen(config.port, () => {
       logger.info(`🚀 DeltaTerminal Backend running on port ${config.port}`);
       logger.info(`📊 Environment: ${config.nodeEnv}`);
@@ -177,16 +149,12 @@ async function startServices() {
   }
 }
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully...');
   websocketService.disconnect();
   signalEngine.stopContinuousScan();
   marketScanner.stop();
-  httpServer.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
-  });
+  httpServer.close(() => process.exit(0));
 });
 
 process.on('SIGINT', () => {
@@ -194,12 +162,9 @@ process.on('SIGINT', () => {
   websocketService.disconnect();
   signalEngine.stopContinuousScan();
   marketScanner.stop();
-  httpServer.close(() => {
-    process.exit(0);
-  });
+  httpServer.close(() => process.exit(0));
 });
 
-// Start the application
 startServices();
 
 export { app, io };
