@@ -23,34 +23,47 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Repair only the confirmed dashboard f-string syntax defects
+      - name: Repair confirmed f-string syntax defects
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          windows = {
-              Path('packages/ai-engine/dashboard/pages/1_Live_Sheet.py'): (1250, 1295),
-              Path('packages/ai-engine/dashboard/pages/2_Smart_Money.py'): (225, 265),
-          }
+          # Live Sheet: remove escaped quotes in the exact region reported by CI.
+          live_path = Path('packages/ai-engine/dashboard/pages/1_Live_Sheet.py')
+          live_lines = live_path.read_text(encoding='utf-8').splitlines(keepends=True)
+          live_start, live_end = 1250, 1295
+          if len(live_lines) < live_start:
+              raise SystemExit(f'{live_path}: expected at least {live_start} lines, found {len(live_lines)}')
+          live_changed = False
+          for idx in range(live_start - 1, min(live_end, len(live_lines))):
+              new_line = live_lines[idx].replace(r'\"', '"')
+              if new_line != live_lines[idx]:
+                  live_lines[idx] = new_line
+                  live_changed = True
+          if not live_changed:
+              raise SystemExit(f'{live_path}: no escaped quotes found in repair window {live_start}-{live_end}')
+          live_path.write_text(''.join(live_lines), encoding='utf-8')
+          print(f'Repaired {live_path}')
 
-          for path, (start, end) in windows.items():
-              lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
-              if len(lines) < start:
-                  raise SystemExit(f'{path}: expected at least {start} lines, found {len(lines)}')
+          # Smart Money: nested f-strings containing backslash escapes are illegal
+          # in Python 3.11. Precompute the HTML fragment outside the outer f-string.
+          sm_path = Path('packages/ai-engine/dashboard/pages/2_Smart_Money.py')
+          sm_text = sm_path.read_text(encoding='utf-8')
+          old = r"""        {f'''<div style=\"display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;\">\n            {f\"<span style=\\\"color:#3b82f6;\\\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>\" if tp2 > 0 else \"\"}\n            {f\"<span style=\\\"color:#8b5cf6;\\\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>\" if tp3 > 0 else \"\"}\n        </div>''' if tp2 > 0 else ''}\n"""
+          new = """        {tp23_html}\n"""
+          if old not in sm_text:
+              raise SystemExit(f'{sm_path}: exact nested f-string block not found')
 
-              changed = False
-              for idx in range(start - 1, min(end, len(lines))):
-                  new_line = lines[idx].replace(r'\"', '"')
-                  if new_line != lines[idx]:
-                      lines[idx] = new_line
-                      changed = True
+          marker = "    # SL/TP distance bars\n"
+          if marker not in sm_text:
+              raise SystemExit(f'{sm_path}: insertion marker not found')
 
-              if not changed:
-                  raise SystemExit(f'{path}: no escaped quotes found in repair window {start}-{end}')
-
-              path.write_text(''.join(lines), encoding='utf-8')
-              print(f'Repaired escaped quotes near the confirmed syntax error in {path}')
+          helper = """    # Precompute optional TP2/TP3 HTML outside the outer card f-string.\n    tp23_html = \"\"\n    if tp2 > 0:\n        tp23_parts = [f'<span style=\"color:#3b82f6;\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>']\n        if tp3 > 0:\n            tp23_parts.append(f'<span style=\"color:#8b5cf6;\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>')\n        tp23_html = '<div style=\"display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;\">' + ''.join(tp23_parts) + '</div>'\n\n"""
+          sm_text = sm_text.replace(old, new, 1)
+          sm_text = sm_text.replace(marker, helper + marker, 1)
+          sm_path.write_text(sm_text, encoding='utf-8')
+          print(f'Repaired {sm_path}')
           PY
 
       - name: Compile every Python source file
