@@ -29,19 +29,36 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          # 1) Live Sheet: the offending expression contains escaped quotes.
+          # 1) Live Sheet: move the nested TP2/TP3 f-string out of the outer
+          # card f-string. This preserves the rendered HTML without using
+          # backslashes inside an f-string expression.
           path = Path('packages/ai-engine/dashboard/pages/1_Live_Sheet.py')
-          lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
-          start, end = 1250, min(1295, len(lines))
-          changed = False
-          for i in range(start - 1, end):
-              new = lines[i].replace(r'\"', '"')
-              if new != lines[i]:
-                  lines[i] = new
-                  changed = True
-          if not changed:
-              raise SystemExit(f'{path}: no escaped quotes found in lines {start}-{end}')
-          path.write_text(''.join(lines), encoding='utf-8')
+          text = path.read_text(encoding='utf-8')
+          start_marker = '            {f\'\'\'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">'
+          end_marker = '            <div style="display:flex; gap:10px; font-size:0.75rem; color:#94a3b8; flex-wrap:wrap;">'
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit(f'{path}: TP2/TP3 nested f-string markers not found')
+          text = text[:start] + '            {tp23_html}\n' + text[end:]
+
+          marker = '    card_html = f"""'
+          if marker not in text:
+              raise SystemExit(f'{path}: card_html marker not found')
+
+          helper_lines = [
+              '    # Precompute optional TP2/TP3 HTML outside the outer card f-string.',
+              '    tp23_html = ""',
+              '    if tp2 > 0:',
+              '        tp23_parts = [f\'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>\']',
+              '        if tp3 > 0:',
+              '            tp23_parts.append(f\'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>\')',
+              '        tp23_html = \'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">\' + \'\'.join(tp23_parts) + \'</div>\'',
+              '',
+          ]
+          helper = '\n'.join(helper_lines)
+          text = text.replace(marker, helper + '\n' + marker, 1)
+          path.write_text(text, encoding='utf-8')
           print(f'Repaired {path}')
 
           # 2) Smart Money: move the TP2/TP3 HTML out of the outer f-string.
@@ -63,10 +80,10 @@ jobs:
               '    # Precompute optional TP2/TP3 HTML outside the outer card f-string.',
               '    tp23_html = ""',
               '    if tp2 > 0:',
-              '        tp23_parts = [f"<span style=\\"color:#3b82f6;\\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>"]',
+              '        tp23_parts = [f\'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>\']',
               '        if tp3 > 0:',
-              '            tp23_parts.append(f"<span style=\\"color:#8b5cf6;\\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>")',
-              '        tp23_html = "<div style=\\"display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;\\">" + "".join(tp23_parts) + "</div>"',
+              '            tp23_parts.append(f\'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>\')',
+              '        tp23_html = \'<div style="display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;">\' + \'\'.join(tp23_parts) + \'</div>\'',
               '',
           ]
           helper = '\n'.join(helper_lines)
