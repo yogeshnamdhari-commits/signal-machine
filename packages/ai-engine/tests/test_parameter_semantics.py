@@ -30,12 +30,21 @@ def test_missing_delta_is_unavailable_not_zero_sell():
     assert result.state.value == "NEUTRAL"
 
 
-def test_canonical_signal_only_accepts_engine_side():
-    assert signal_from_canonical({"side": "LONG", "source": "python"}) == "BUY"
-    assert signal_from_canonical({"side": "SHORT", "source": "python"}) == "SELL"
-    assert signal_from_canonical({"side": "BUY", "source": "python"}) == "BUY"
-    assert signal_from_canonical({"side": "SELL", "source": "python"}) == "SELL"
-    assert signal_from_canonical({"side": "LONG", "source": "dashboard"}) == "NO_SIGNAL"
-    assert signal_from_canonical({"side": "LONG"}, bridge_trusted=True) == "BUY"
+def _canonical(side: str):
+    return {
+        "side": side,
+        "source": "python",
+        "authority": "python",
+        "canonical": True,
+    }
+
+
+def test_canonical_signal_requires_full_authority_contract():
+    assert signal_from_canonical(_canonical("LONG")) == "BUY"
+    assert signal_from_canonical(_canonical("SHORT")) == "SELL"
+    assert signal_from_canonical(_canonical("BUY")) == "BUY"
+    assert signal_from_canonical(_canonical("SELL")) == "SELL"
+    assert signal_from_canonical({"side": "LONG", "source": "python"}) == "NO_SIGNAL"
+    assert signal_from_canonical({"side": "LONG", "source": "dashboard", "authority": "dashboard", "canonical": True}) == "NO_SIGNAL"
     assert signal_from_canonical({"side": "LONG"}) == "NO_SIGNAL"
     assert signal_from_canonical({}) == "NO_SIGNAL"
