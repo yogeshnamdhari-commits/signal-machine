@@ -23,59 +23,56 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Repair confirmed f-string syntax defects
+      - name: Repair confirmed dashboard syntax errors
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          # Live Sheet: remove escaped quotes in the exact region reported by CI.
-          live_path = Path('packages/ai-engine/dashboard/pages/1_Live_Sheet.py')
-          live_lines = live_path.read_text(encoding='utf-8').splitlines(keepends=True)
-          live_start, live_end = 1250, 1295
-          if len(live_lines) < live_start:
-              raise SystemExit(f'{live_path}: expected at least {live_start} lines, found {len(live_lines)}')
-          live_changed = False
-          for idx in range(live_start - 1, min(live_end, len(live_lines))):
-              new_line = live_lines[idx].replace(r'\"', '"')
-              if new_line != live_lines[idx]:
-                  live_lines[idx] = new_line
-                  live_changed = True
-          if not live_changed:
-              raise SystemExit(f'{live_path}: no escaped quotes found in repair window {live_start}-{live_end}')
-          live_path.write_text(''.join(live_lines), encoding='utf-8')
-          print(f'Repaired {live_path}')
+          # 1) Live Sheet: the offending expression contains escaped quotes.
+          path = Path('packages/ai-engine/dashboard/pages/1_Live_Sheet.py')
+          lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+          start, end = 1250, min(1295, len(lines))
+          changed = False
+          for i in range(start - 1, end):
+              new = lines[i].replace(r'\"', '"')
+              if new != lines[i]:
+                  lines[i] = new
+                  changed = True
+          if not changed:
+              raise SystemExit(f'{path}: no escaped quotes found in lines {start}-{end}')
+          path.write_text(''.join(lines), encoding='utf-8')
+          print(f'Repaired {path}')
 
-          # Smart Money: remove the nested f-string fragment itself and replace it
-          # with a precomputed HTML fragment. This avoids backslashes inside the
-          # outer f-string expression, which Python 3.11 rejects.
-          sm_path = Path('packages/ai-engine/dashboard/pages/2_Smart_Money.py')
-          sm_text = sm_path.read_text(encoding='utf-8')
+          # 2) Smart Money: move the TP2/TP3 HTML out of the outer f-string.
+          path = Path('packages/ai-engine/dashboard/pages/2_Smart_Money.py')
+          text = path.read_text(encoding='utf-8')
+          start_marker = "        {f'''<div style="
+          end_marker = '        <!-- SL/TP distance bars -->'
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit(f'{path}: TP2/TP3 nested f-string markers not found')
+          text = text[:start] + '        {tp23_html}\n' + text[end:]
 
-          block_start = sm_text.find("        {f'''<div style=")
-          block_end = sm_text.find("        <!-- SL/TP distance bars -->", block_start)
-          if block_start < 0 or block_end < 0:
-              raise SystemExit(f'{sm_path}: nested TP2/TP3 f-string block markers not found')
-          if block_end <= block_start:
-              raise SystemExit(f'{sm_path}: invalid nested f-string block boundaries')
-          sm_text = sm_text[:block_start] + "        {tp23_html}\n" + sm_text[block_end:]
+          marker = '    card_html = f"""'
+          if marker not in text:
+              raise SystemExit(f'{path}: card_html marker not found')
 
-          card_marker = '    card_html = f"""'
-          if card_marker not in sm_text:
-              raise SystemExit(f'{sm_path}: card_html marker not found')
-
-          helper = '''    # Precompute optional TP2/TP3 HTML outside the outer card f-string.
-    tp23_html = ""
-    if tp2 > 0:
-        tp23_parts = [f'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>']
-        if tp3 > 0:
-            tp23_parts.append(f'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>')
-        tp23_html = '<div style="display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;">' + ''.join(tp23_parts) + '</div>'
-
-'''
-          sm_text = sm_text.replace(card_marker, helper + card_marker, 1)
-          sm_path.write_text(sm_text, encoding='utf-8')
-          print(f'Repaired {sm_path}')
+          helper_lines = [
+              '    # Precompute optional TP2/TP3 HTML outside the outer card f-string.',
+              '    tp23_html = ""',
+              '    if tp2 > 0:',
+              '        tp23_parts = [f"<span style=\\"color:#3b82f6;\\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>"]',
+              '        if tp3 > 0:',
+              '            tp23_parts.append(f"<span style=\\"color:#8b5cf6;\\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>")',
+              '        tp23_html = "<div style=\\"display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;\\">" + "".join(tp23_parts) + "</div>"',
+              '',
+          ]
+          helper = '\n'.join(helper_lines)
+          text = text.replace(marker, helper + '\n' + marker, 1)
+          path.write_text(text, encoding='utf-8')
+          print(f'Repaired {path}')
           PY
 
       - name: Compile every Python source file
@@ -103,20 +100,23 @@ jobs:
           print('Python compile check passed.')
           PY
 
-      - name: Verify patch cleanliness
+      - name: Verify diff
         run: git diff --check
 
-      - name: Commit repaired source and remove one-time repair workflow
+      - name: Commit repaired source
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          rm -f .github/workflows/repair-fstring-syntax.yml
-          git add packages/ai-engine/dashboard/pages/1_Live_Sheet.py packages/ai-engine/dashboard/pages/2_Smart_Money.py .github/workflows/repair-fstring-syntax.yml
+          git add packages/ai-engine/dashboard/pages/1_Live_Sheet.py packages/ai-engine/dashboard/pages/2_Smart_Money.py
           git commit -m 'Fix dashboard f-string syntax errors'
 
-      - name: Push repaired dev branch
+      - name: Push repaired dev
         run: git push origin HEAD:dev
 
-      - name: Promote repaired dev commit to main
-        run: git push origin HEAD:main
+      - name: Remove one-time repair workflow from dev
+        shell: bash
+        run: |
+          git rm .github/workflows/repair-fstring-syntax.yml
+          git commit -m 'Remove one-time dashboard repair workflow'
+          git push origin HEAD:dev
