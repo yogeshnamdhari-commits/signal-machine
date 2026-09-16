@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Tuple
 
 from config.schema import config_fingerprint
+from validation.statistical_validation import ResearchDecision
 
 
 class CertificationState(str, Enum):
@@ -27,16 +28,56 @@ class CertificationArtifact:
         return not self.failures
 
 
-def generate_certification(*, config, commit_sha: str, checks: Tuple[str, ...], failures: Tuple[str, ...], research_validated: bool = False, live_eligible: bool = False) -> CertificationArtifact:
-    if live_eligible and not research_validated:
-        failures = tuple(failures) + ("live_requires_research_validation",)
-    state = CertificationState.LIVE_ELIGIBLE if live_eligible and research_validated and not failures else (
-        CertificationState.RESEARCH_VALIDATED if research_validated and not failures else CertificationState.ENGINEERING_VALID
+def generate_certification(
+    *,
+    config,
+    commit_sha: str,
+    checks: Tuple[str, ...],
+    failures: Tuple[str, ...],
+    research_validated: bool = False,
+    live_eligible: bool = False,
+    research_decision: ResearchDecision | None = None,
+) -> CertificationArtifact:
+    """Create a certification artifact, failing closed on absent/rejected research evidence.
+
+    The legacy ``research_validated`` flag is retained for compatibility, but it
+    cannot by itself authorize research or live certification. A current approved
+    ``ResearchDecision`` is required whenever research validation is requested.
+    """
+    failure_list = list(failures)
+
+    research_approved = False
+    if research_decision is None:
+        if research_validated:
+            failure_list.append("missing_research_decision")
+    elif not research_decision.approved:
+        failure_list.append("research_validation_rejected")
+        failure_list.extend(
+            reason
+            for reason in research_decision.reasons
+            if reason not in failure_list
+        )
+    else:
+        research_approved = True
+
+    research_ready = research_validated and research_approved
+    if live_eligible and not research_ready:
+        failure_list.append("live_requires_research_validation")
+
+    failures_tuple = tuple(dict.fromkeys(failure_list))
+    state = (
+        CertificationState.LIVE_ELIGIBLE
+        if live_eligible and research_ready and not failures_tuple
+        else (
+            CertificationState.RESEARCH_VALIDATED
+            if research_ready and not failures_tuple
+            else CertificationState.ENGINEERING_VALID
+        )
     )
     return CertificationArtifact(
         state=state,
         commit_sha=commit_sha,
         configuration_fingerprint=config_fingerprint(config),
         checks=tuple(checks),
-        failures=tuple(failures),
+        failures=failures_tuple,
     )
