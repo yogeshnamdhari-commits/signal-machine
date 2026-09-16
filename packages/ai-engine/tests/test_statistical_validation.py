@@ -8,7 +8,8 @@ def _complete_evidence(**overrides):
         "validation_period": ("2025-05-02", "2025-06-01"),
         "test_period": ("2025-06-02", "2025-07-01"),
         "regime_counts": {"bull": 80, "bear": 70},
-        "cost_model": "fees+spread+slippage",
+        "cost_model": "fees+spread",
+        "slippage_model": "historical_orderbook_bps",
         "funding_source": "historical",
         "rejected_signals": 2000,
         "rejected_outcomes_complete": True,
@@ -34,6 +35,8 @@ def test_insufficient_evidence_is_rejected():
     assert not decision.approved
     assert "insufficient_completed_trades" in decision.reasons
     assert "missing_cost_model" in decision.reasons
+    assert "missing_slippage_model" in decision.reasons
+    assert "missing_bootstrap_seed" in decision.reasons
 
 
 def test_temporal_overlap_is_rejected():
@@ -55,3 +58,21 @@ def test_negative_expectancy_is_rejected():
     decision = evaluate_research_evidence(_complete_evidence(expectancy=-4.27))
     assert not decision.approved
     assert "expectancy_not_positive" in decision.reasons
+
+
+def test_negative_rejected_signal_count_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(rejected_signals=-1))
+    assert not decision.approved
+    assert "invalid_rejected_signal_count" in decision.reasons
+
+
+def test_missing_slippage_model_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(slippage_model=""))
+    assert not decision.approved
+    assert "missing_slippage_model" in decision.reasons
+
+
+def test_missing_bootstrap_seed_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(bootstrap_seed=None))
+    assert not decision.approved
+    assert "missing_bootstrap_seed" in decision.reasons
