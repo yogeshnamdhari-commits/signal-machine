@@ -63,3 +63,27 @@ def test_live_certification_rejects_not_yet_valid_artifact(tmp_path, monkeypatch
 
     with pytest.raises(LiveCertificationError, match="not yet valid"):
         verify_live_certification(path, now_ts=1500.0)
+
+
+def test_live_certification_rejects_zero_length_freshness_window(tmp_path, monkeypatch):
+    path = _write_artifact(tmp_path, issued_at=1500.0, expires_at=1500.0)
+    monkeypatch.setenv("GITHUB_SHA", "commit-a")
+
+    with pytest.raises(LiveCertificationError, match="freshness window is invalid"):
+        verify_live_certification(path, now_ts=1500.0)
+
+
+def test_live_certification_rejects_non_finite_freshness_metadata(tmp_path, monkeypatch):
+    path = _write_artifact(tmp_path, issued_at=float("nan"), expires_at=2000.0)
+    monkeypatch.setenv("GITHUB_SHA", "commit-a")
+
+    with pytest.raises(LiveCertificationError, match="freshness metadata is invalid"):
+        verify_live_certification(path, now_ts=1500.0)
+
+
+def test_live_certification_rejects_non_finite_verification_timestamp(tmp_path, monkeypatch):
+    path = _write_artifact(tmp_path)
+    monkeypatch.setenv("GITHUB_SHA", "commit-a")
+
+    with pytest.raises(LiveCertificationError, match="verification timestamp is invalid"):
+        verify_live_certification(path, now_ts=float("inf"))
