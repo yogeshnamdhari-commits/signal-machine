@@ -19,7 +19,8 @@ class EvidenceManifest:
     dataset_fingerprint: str
 
 
-a class ResearchEvidenceManifestDecision:
+@dataclass(frozen=True)
+class ResearchEvidenceManifestDecision:
     approved: bool
     reasons: Tuple[str, ...]
 
