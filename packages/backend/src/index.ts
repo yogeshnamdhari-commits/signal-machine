@@ -47,22 +47,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
 
-// Node is an integration/UI layer. Any endpoint capable of generating, mutating,
-// or simulating an executable trading decision is fail-closed here. Canonical
-// signal/risk decisions originate in Python and are consumed downstream.
 const canonicalReadOnlyGuard = (req: Request, res: Response, next: NextFunction) => {
-  const blocked = new Set([
-    'POST /api/signals/scan',
-    'PUT /api/signals/:id/status',
-    'POST /api/indicators/signal',
-    'PUT /api/risk/params',
-    'POST /api/risk/position/check',
-    'POST /api/risk/position/size',
-    'POST /api/scanner/scan',
-    'POST /api/simulator/reset',
-  ]);
-  const key = `${req.method} ${req.baseUrl}${req.path}`;
-  if (blocked.has(key)) {
+  const path = req.path;
+  const blocked =
+    (req.method === 'POST' && (path === '/signals/scan' || path === '/indicators/signal' || path === '/scanner/scan' || path === '/simulator/reset' || path === '/risk/position/check' || path === '/risk/position/size')) ||
+    (req.method === 'PUT' && (path === '/risk/params' || /^\/signals\/[^/]+\/status$/.test(path)));
+
+  if (blocked) {
     return res.status(409).json({
       success: false,
       error: {
