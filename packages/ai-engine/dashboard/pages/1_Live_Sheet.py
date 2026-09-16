@@ -1243,6 +1243,14 @@ def render_live_signals(signals: List[Dict]):
         accum_p_color = '#00ff88' if accum_prob > 0.5 else ('#f59e0b' if accum_prob > 0.3 else '#64748b')
         whale_p_color = '#00ff88' if whale_prob > 0.5 else ('#f59e0b' if whale_prob > 0.3 else '#64748b')
 
+        # Precompute optional TP2/TP3 HTML outside the outer card f-string.
+        tp23_html = ""
+        if tp2 > 0:
+            tp23_parts = [f'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>']
+            if tp3 > 0:
+                tp23_parts.append(f'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>')
+            tp23_html = '<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">' + ''.join(tp23_parts) + '</div>'
+
         st.markdown(f"""
         <div style="padding:8px 12px; margin:4px 0; background:{tier_bg}; border-radius:8px;
                     display:flex; flex-direction:column; gap:4px; font-size:0.85rem;
@@ -1262,10 +1270,7 @@ def render_live_signals(signals: List[Dict]):
                 <span style="color:#ff4444;">SL: <strong>${sl:,.4f}</strong> <span style="font-size:0.72rem;">({sl_dist:.2f}%)</span>{f' <span style="font-size:0.6rem;color:#666;">{sl_source}</span>' if sl_source else ''}</span>
                 <span style="color:#00ff88;">TP: <strong>${tp:,.4f}</strong> <span style="font-size:0.72rem;">({tp_dist:.2f}%)</span>{f' <span style="font-size:0.6rem;color:#666;">{tp1_source}</span>' if tp1_source else ''}</span>
             </div>
-            {f'''<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">
-                {f"<span style=\"color:#3b82f6;\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>" if tp2 > 0 else ""}
-                {f"<span style=\"color:#8b5cf6;\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>" if tp3 > 0 else ""}
-            </div>''' if tp2 > 0 else ''}
+            {tp23_html}
             <div style="display:flex; gap:10px; font-size:0.75rem; color:#94a3b8; flex-wrap:wrap;">
                 <span>Conf: <strong style="color:#fff;">{conf:.0%}</strong></span>
                 <span>R:R: <strong style="color:{'#00ff88' if rr >= 2 else '#f59e0b' if rr >= 1.5 else '#ff4444'};">{rr:.1f}x</strong></span>

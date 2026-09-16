@@ -176,6 +176,14 @@ def _render_sm_signal_card(sig: Dict, sm_data: Dict, rank: int) -> None:
     # R:R color
     rr_color = '#00ff88' if rr >= 2.0 else '#f59e0b' if rr >= 1.5 else '#ff4444'
 
+    # Precompute optional TP2/TP3 HTML outside the outer card f-string.
+    tp23_html = ""
+    if tp2 > 0:
+        tp23_parts = [f'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>']
+        if tp3 > 0:
+            tp23_parts.append(f'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>')
+        tp23_html = '<div style="display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;">' + ''.join(tp23_parts) + '</div>'
+
     card_html = f"""<!DOCTYPE html><html><head><style>
     * {{ margin:0; padding:0; box-sizing:border-box; }}
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -218,10 +226,7 @@ def _render_sm_signal_card(sig: Dict, sm_data: Dict, rank: int) -> None:
                 <span style="font-size:0.68rem;color:#666;margin-left:2px;">(+{tp_dist:.2f}%)</span>
             </div>
         </div>
-        {f'''<div style="display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;">
-            {f"<span style=\"color:#3b82f6;\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>" if tp2 > 0 else ""}
-            {f"<span style=\"color:#8b5cf6;\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>" if tp3 > 0 else ""}
-        </div>''' if tp2 > 0 else ''}
+        {tp23_html}
         <!-- SL/TP distance bars -->
         <div style="display:flex;gap:6px;margin:3px 0;align-items:center;">
             <span style="font-size:0.65rem;color:#555;width:16px;">SL</span>
