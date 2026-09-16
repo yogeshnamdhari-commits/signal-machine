@@ -23,6 +23,8 @@ class CertificationArtifact:
     configuration_fingerprint: str
     checks: Tuple[str, ...]
     failures: Tuple[str, ...]
+    issued_at: float = 0.0
+    expires_at: float = 0.0
 
     @property
     def valid(self) -> bool:
@@ -47,6 +49,10 @@ def generate_certification(
     cannot by itself authorize research or live certification. A current approved
     ``ResearchDecision`` and a matching, unexpired ``EvidenceManifest`` are
     required whenever research validation is requested.
+
+    For research-validated or live-eligible certificates, freshness metadata is
+    copied from the approved evidence manifest so the runtime live gate can reject
+    stale certification artifacts independently.
     """
     failure_list = list(failures)
 
@@ -100,10 +106,16 @@ def generate_certification(
             else CertificationState.ENGINEERING_VALID
         )
     )
+
+    issued_at = evidence_manifest.issued_at if research_ready and evidence_manifest else 0.0
+    expires_at = evidence_manifest.expires_at if research_ready and evidence_manifest else 0.0
+
     return CertificationArtifact(
         state=state,
         commit_sha=commit_sha,
         configuration_fingerprint=config_fingerprint(config),
         checks=tuple(checks),
         failures=failures_tuple,
+        issued_at=issued_at,
+        expires_at=expires_at,
     )
