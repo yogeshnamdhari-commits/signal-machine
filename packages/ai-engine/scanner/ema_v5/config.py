@@ -28,11 +28,36 @@ class TrendConfig:
 
 
 @dataclass
+class TrendMaturityConfig:
+    """Trend maturity scoring parameters."""
+    max_ema200_distance_atr: float = 3.0   # score=0 when price > 3× ATR from EMA200
+    max_consecutive_candles: int = 15       # score=0 when > 15 consecutive without pullback
+    # Component weights (must sum to 1.0)
+    distance_weight: float = 0.40           # EMA200 distance (most important)
+    slope_weight: float = 0.35              # slope degradation
+    consecutive_weight: float = 0.25        # consecutive candles
+
+
+@dataclass
 class PullbackConfig:
     """Pullback detection parameters."""
+    # Legacy rigid parameters (kept for backward compatibility)
     touch_tolerance_pct: float = 0.3  # price within 0.3% of EMA = "touch"
     max_pullback_pct: float = 2.0     # max pullback before invalidating
     require_bounce: bool = True       # price must bounce after touch
+    
+    # Adaptive ATR-based parameters (new V5 logic)
+    atr_normalize_enabled: bool = True  # Use ATR-normalized distance
+    ema_distance_atr_threshold: float = 0.5  # EMA distance / ATR <= 0.5 = "near EMA"
+    max_pullback_atr: float = 2.0  # Max pullback depth in ATR units
+    require_structure_intact: bool = True  # Require trend structure to remain intact
+    
+    # Structure protection parameters
+    structure_lookback: int = 5  # Bars to check for structure break
+    structure_break_pct: float = 1.0  # % move against trend = structure break
+    
+    # Legacy mode fallback (if ATR data unavailable)
+    use_legacy_mode: bool = False  # Fall back to rigid percentage mode
 
 
 @dataclass
@@ -67,6 +92,7 @@ class ConfidenceConfig:
     candle_weight: float = 0.10        # v33: reduced from 0.20 (negatively correlated)
     volume_weight: float = 0.05        # v33: reduced from 0.15 (strongly negative)
     regime_weight: float = 0.10        # v33: reduced from 0.15 (binary, causes inflation)
+    maturity_weight: float = 0.10      # NEW: trend maturity (high impact expected)
     # v33: Session penalty (not in formula yet — needs session parameter)
     session_penalty_ny: float = 0.05   # 5% confidence reduction for NY session
 
@@ -131,6 +157,7 @@ class EMAv5Config:
     """Master configuration for EMA_V5 strategy."""
     ema: EMAConfig = field(default_factory=EMAConfig)
     trend: TrendConfig = field(default_factory=TrendConfig)
+    trend_maturity: TrendMaturityConfig = field(default_factory=TrendMaturityConfig)
     pullback: PullbackConfig = field(default_factory=PullbackConfig)
     candle: CandleConfig = field(default_factory=CandleConfig)
     volume: VolumeConfig = field(default_factory=VolumeConfig)

@@ -89,14 +89,8 @@ class LifecycleLogger:
         current_state: str,
         regime: str,
     ) -> None:
-        """Record when scanner starts evaluating a symbol."""
-        self._count += 1
-        ts = time.strftime("%H:%M:%S")
-        line = (
-            f"{ts} | {symbol:<14} | SCAN_ENTRY: state={current_state:<22} | "
-            f"regime={regime}"
-        )
-        self._write(line)
+        """Record when scanner starts evaluating a symbol (disabled in production)."""
+        pass
 
     def _write(self, line: str) -> None:
         """Write to lifecycle log."""

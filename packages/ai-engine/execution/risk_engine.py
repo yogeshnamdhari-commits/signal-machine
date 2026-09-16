@@ -198,10 +198,12 @@ class RiskEngine:
 
         # Confidence — use institutional_score as primary (0-100 scale),
         # fall back to raw confidence (0-1 scale)
+        # EMA V5 signals use v33 calibration (40-55% range) — exempt from legacy threshold
+        _is_ema_v5 = signal.get("strategy_version") == "ema_v5" or signal.get("entry_reason", "").startswith("ema_v5")
         inst_score = signal.get("institutional_score", 0)
         conf = signal.get("confidence", 0)
         effective_score = inst_score if inst_score > 0 else conf * 100
-        if effective_score < 70:  # Phase 12: lowered from 90 — signals passing 13/13 checklist have proven quality
+        if not _is_ema_v5 and effective_score < 70:  # Phase 12: lowered from 90 — signals passing 13/13 checklist have proven quality
             return {"allowed": False, "reason": f"low quality score: {effective_score:.1f}/100 < 90"}
 
         # ── Confidence-scaled position sizing ──
@@ -375,6 +377,7 @@ class RiskEngine:
             if opened_at > 0:
                 hold_hours = (time.time() - opened_at) / 3600
                 hold_minutes = hold_hours * 60
+                tp_idx = position.get("current_tp_index", 1)  # Initialize before any use
 
                 # 1. Hard maximum: 24 hours — no exceptions
                 if hold_hours >= 24:
@@ -383,18 +386,15 @@ class RiskEngine:
                 # 2. Dynamic no-progress exit: 45-90 minutes
                 # Only exit if: PnL ≈ 0 AND momentum decreasing
                 if 45 <= hold_minutes <= 180:
-                    tp_idx = position.get("current_tp_index", 1)
                     if tp_idx == 1:  # Still on TP1 = no progress
                         # Skip if MFE > 5% (trade showed strength)
                         if prev_mfe >= 5.0:
                             pass  # Let it ride
                         elif unrealized_r <= 0.3:
                             # Check momentum decreasing (CVD + OI declining)
-                            cvd_val = signal.get("cvd", 0) if signal else 0
-                            oi_val = signal.get("oi_change", signal.get("oi_delta", 0)) if signal else 0
-                            momentum_fading = cvd_val < -0.1 or oi_val < -0.1
-                            if momentum_fading:
-                                return True, "no_progress_stagnant"
+                            # Note: 'signal' not available here — skip momentum check
+                            # This exit is already gated by MFE and time windows
+                            pass  # Previously used signal.get("cvd") which was undefined
 
                 # 3. Legacy: 6-hour no-progress (backup for edge cases)
                 if tp_idx == 1 and hold_hours >= 6:
@@ -418,14 +418,24 @@ class RiskEngine:
             tp2 = position.get("take_profit_2", 0)
             tp3 = position.get("take_profit_3", 0)
             tp_idx = position.get("current_tp_index", 1)
-            tp1_hit = position.get("_tp1_hit", False)
-            tp2_hit = position.get("_tp2_hit", False)
+            # FIX (partial-exit re-fire): the transient _tp1_hit/_tp2_hit flags are
+            # lost when this method is called with a fresh DB dict each scan cycle.
+            # Derive the true state from the PERSISTED current_tp_index so TP1/TP2
+            # can only ever fire once per level.
+            tp1_hit = position.get("_tp1_hit", False) or tp_idx >= 2
+            tp2_hit = position.get("_tp2_hit", False) or tp_idx >= 3
 
             # TP1 hit → partial close, advance to TP2
             if tp1 > 0 and not tp1_hit:
                 if (side == "LONG" and price >= tp1) or (side == "SHORT" and price <= tp1):
                     position["_tp1_hit"] = True
                     position["current_tp_index"] = 2
+                    # Mirror onto the engine's live position so same-cycle calls
+                    # and restart-free state agree with the DB write.
+                    if sym in self._positions:
+                        self._positions[sym]["_tp1_hit"] = True
+                        self._positions[sym]["current_tp_index"] = 2
+                    self._partials_taken.add(sym)
                     return True, "take_profit_1"
 
             # TP2 hit → partial close, advance to TP3
@@ -433,6 +443,10 @@ class RiskEngine:
                 if (side == "LONG" and price >= tp2) or (side == "SHORT" and price <= tp2):
                     position["_tp2_hit"] = True
                     position["current_tp_index"] = 3
+                    if sym in self._positions:
+                        self._positions[sym]["_tp2_hit"] = True
+                        self._positions[sym]["current_tp_index"] = 3
+                    self._partials_taken.add(sym)
                     return True, "take_profit_2"
 
             # TP3 hit → full close
@@ -465,8 +479,13 @@ class RiskEngine:
         self._breached_breakeven.discard(sym)
         self._partials_taken.discard(sym)
 
-    def calculate_pnl(self, position: Dict, exit_price: float) -> float:
-        """Calculate PnL with taker fees + estimated funding cost."""
+    def calculate_pnl_details(self, position: Dict, exit_price: float) -> Dict[str, float]:
+        """Calculate PnL decomposition (gross, fees, funding, realized).
+
+        Returns a dict with every component used to classify realized PnL so the
+        engine can distinguish a genuine loss from breakeven/fee-rounded noise:
+            gross_pnl, fees, funding, realized_pnl_raw, realized_pnl_rounded
+        """
         entry = position.get("entry_price", 0)
         qty = position.get("quantity", 0)
         lev = position.get("leverage", 1)
@@ -475,10 +494,26 @@ class RiskEngine:
         # For partial exits, use partial quantity if provided
         exit_qty = position.get("_exit_qty", qty)
 
-        pnl = (exit_price - entry) * exit_qty if side == "LONG" else (entry - exit_price) * exit_qty
+        gross_pnl = (exit_price - entry) * exit_qty if side == "LONG" else (entry - exit_price) * exit_qty
         # Taker fees (entry + exit) — fees are on position value, not leveraged
         fees = entry * exit_qty * 0.0004 + exit_price * exit_qty * 0.0004
         # Estimated funding cost: avg 0.01% per 8h, proportional to hold time
         hold_hours = (time.time() - opened_at) / 3600 if opened_at else 0
         funding_cost = entry * exit_qty * 0.0001 * (hold_hours / 8)  # 0.01% per 8h
-        return round(pnl - fees - funding_cost, 2)
+        realized_pnl_raw = gross_pnl - fees - funding_cost
+        realized_pnl_rounded = round(realized_pnl_raw, 2)
+        return {
+            "gross_pnl": gross_pnl,
+            "fees": fees,
+            "funding": funding_cost,
+            "realized_pnl_raw": realized_pnl_raw,
+            "realized_pnl_rounded": realized_pnl_rounded,
+        }
+
+    def calculate_pnl(self, position: Dict, exit_price: float) -> float:
+        """Calculate PnL with taker fees + estimated funding cost.
+
+        Returns the 2dp-rounded realized PnL (AUDIT B fix: breakdown visible via
+        calculate_pnl_details so rounding can never silently flip a win to a loss).
+        """
+        return self.calculate_pnl_details(position, exit_price)["realized_pnl_rounded"]

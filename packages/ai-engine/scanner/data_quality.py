@@ -648,6 +648,26 @@ class DataQualityValidator:
             "issues": state.issues[-5:],
         }
 
+    def get_symbol_freshness(self, symbol: str) -> Dict[str, bool]:
+        """Per-field data freshness for the App Profit Filter staleness gate.
+
+        True = the field has data fresh enough to score, False = stale or
+        never seen. A field with no recorded update yet (last update time == 0)
+        is NOT fresh: absent data is a data-quality condition, never a signal.
+        Uses the same thresholds as the live dashboard staleness warnings, so
+        the App filter can never score a value the dashboard already flagged
+        stale.
+        """
+        state = self._get_state(symbol)
+        now = time.time()
+        return {
+            "oi": state.last_oi_time > 0 and (now - state.last_oi_time) <= _OI_STALE_SEC,
+            "funding": state.last_funding_time > 0 and (now - state.last_funding_time) <= _FUNDING_STALE_SEC,
+            "kline": state.last_kline_time > 0 and (now - state.last_kline_time) <= _KLINE_STALE_SEC,
+            "orderbook": state.last_orderbook_time > 0 and (now - state.last_orderbook_time) <= _ORDERBOOK_STALE_SEC,
+            "market_data": state.last_trade_time > 0 and (now - state.last_trade_time) <= _TRADE_STALE_SEC,
+        }
+
     def get_dashboard_data(self) -> Dict:
         """
         Returns aggregated data quality info for the dashboard widget.

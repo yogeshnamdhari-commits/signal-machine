@@ -20,11 +20,13 @@ class SignalEngine:
         self._last_signal: Dict[str, Dict] = {}  # symbol → last signal
         self._cooldowns: Dict[str, float] = {}   # symbol → cooldown expiry
         self._global_cooldown: float = 0
+        self.last_rejection_reason: Optional[str] = None  # Most recent rejection gate (for lifecycle DB)
         # ── Diagnostic counters for final publication gate ──
         self.gate_rejections: Dict[str, int] = {
             "duplicate": 0,
             "cooldown": 0,
             "invalid_entry_atr": 0,
+            "low_momentum": 0,
             "rr_too_low": 0,
             "passed": 0,
         }
@@ -49,6 +51,7 @@ class SignalEngine:
         volume_eval: Dict,
         confidence_eval: Dict,
         ema_data: Dict,
+        maturity_eval: Optional[Dict] = None,
     ) -> Optional[Dict]:
         """Generate a signal if all conditions pass.
 
@@ -57,9 +60,13 @@ class SignalEngine:
         cfg = ema_v5_config.signal
         _conf = confidence_eval.get("confidence", 0)
 
+        # ── Clear previous rejection reason (prevent leakage between candidates) ──
+        self.last_rejection_reason = None
+
         # ── Duplicate protection ──
         if not self._check_duplicate(symbol, regime):
             self.gate_rejections["duplicate"] += 1
+            self.last_rejection_reason = "duplicate"
             logger.info(
                 "🔴 SIGNAL_GATE_1: {} BLOCKED duplicate protection "
                 "(same_sym_sec={}) regime={} conf={:.1f}",
@@ -70,6 +77,7 @@ class SignalEngine:
         # ── Cooldown check ──
         if not self._check_cooldown(symbol):
             self.gate_rejections["cooldown"] += 1
+            self.last_rejection_reason = "cooldown"
             _remaining = max(0, self._cooldowns.get(symbol, 0) - time.time())
             logger.info(
                 "🔴 SIGNAL_GATE_2: {} BLOCKED cooldown "
@@ -85,10 +93,33 @@ class SignalEngine:
 
         if entry <= 0 or atr_val <= 0:
             self.gate_rejections["invalid_entry_atr"] += 1
+            self.last_rejection_reason = "invalid_entry_atr"
             logger.info(
                 "🔴 SIGNAL_GATE_3: {} BLOCKED entry/ATR invalid "
                 "(entry={:.6f} atr={:.6f}) conf={:.1f}",
                 symbol, entry, atr_val, _conf,
+            )
+            return None
+
+        # ── GATE 3b: Momentum confirmation ──
+        # Reject entries where EMA slopes are flat (ranging market)
+        # This prevents entries during low-momentum conditions
+        _min_slope = 0.005  # Minimum slope magnitude (0.5% per bar)
+        ema144_slope = ema_data.get("ema144_slope", 0)
+        ema200_slope = ema_data.get("ema200_slope", 0)
+        
+        if side == "LONG":
+            _slope_ok = ema144_slope > _min_slope or ema200_slope > _min_slope
+        else:
+            _slope_ok = ema144_slope < -_min_slope or ema200_slope < -_min_slope
+        
+        if not _slope_ok:
+            self.gate_rejections["low_momentum"] = self.gate_rejections.get("low_momentum", 0) + 1
+            self.last_rejection_reason = "low_momentum"
+            logger.info(
+                "🔴 SIGNAL_GATE_3b: {} BLOCKED low momentum "
+                "(ema144_slope={:.4f} ema200_slope={:.4f} min={:.4f}) conf={:.1f}",
+                symbol, ema144_slope, ema200_slope, _min_slope, _conf,
             )
             return None
 
@@ -118,6 +149,7 @@ class SignalEngine:
         _rr_epsilon = 0.005  # Tolerance: allow rr within 0.5% of minimum
         if rr < (cfg.min_rr - _rr_epsilon):
             self.gate_rejections["rr_too_low"] += 1
+            self.last_rejection_reason = "rr_too_low"
             logger.info(
                 "🔴 SIGNAL_GATE_4: {} BLOCKED R:R "
                 "(rr={:.4f} < min_rr={:.4f} - ε={:.4f}) entry={:.6f} SL={:.6f} TP1={:.6f} conf={:.1f}",
@@ -147,6 +179,9 @@ class SignalEngine:
             except Exception as e:
                 logger.debug("RR_AUDIT: Failed to record rejection: {}", e)
             return None
+
+        # ── All gates passed — clear rejection reason ──
+        self.last_rejection_reason = None
 
         # ── Build signal ──
         signal = {
@@ -180,6 +215,28 @@ class SignalEngine:
                 "ema50": ema_data.get("ema50", 0),
                 "ema144": ema_data.get("ema144", 0),
                 "ema200": ema_data.get("ema200", 0),
+                "ema20_slope": ema_data.get("ema20_slope", 0),
+                "ema50_slope": ema_data.get("ema50_slope", 0),
+                "ema144_slope": ema_data.get("ema144_slope", 0),
+                "ema200_slope": ema_data.get("ema200_slope", 0),
+                "atr_14": ema_data.get("atr_14", 0),
+                "vol_sma20": ema_data.get("vol_sma20", 0),
+                "last_close": ema_data.get("last_close", 0),
+                "ema_chain_pattern": ema_data.get("ema_chain_pattern", ""),
+                "ema_cross_price": ema_data.get("ema_cross_price", 0),
+                "ema_cross_time": ema_data.get("ema_cross_time", 0),
+                "bars_since_chain": ema_data.get("bars_since_chain", 0),
+                "ema_distance_atr": ema_data.get("ema_distance_atr", 0),
+                "ema20_x_50": ema_data.get("ema20_x_50", 0),
+                "ema50_x_144": ema_data.get("ema50_x_144", 0),
+                "ema144_x_200": ema_data.get("ema144_x_200", 0),
+            },
+            "htf_data": {
+                "htf_chain_pattern": ema_data.get("htf_chain_pattern", ""),
+                "htf_cross_price": ema_data.get("htf_cross_price", 0),
+                "htf_cross_time": ema_data.get("htf_cross_time", 0),
+                "htf_bars_since": ema_data.get("htf_bars_since", 0),
+                "htf_regime": ema_data.get("htf_regime", "NO_TREND"),
             },
             "components": {
                 "regime": regime_eval.get("reason", ""),
@@ -189,11 +246,17 @@ class SignalEngine:
                 "volume": volume_eval.get("reason", ""),
                 "confidence": confidence_eval.get("breakdown", {}),
             },
+            # Display enrichment fields (real-time, from pipeline)
+            "volatility_direction": side,
+            "atr_expanding": ema_data.get("atr_expanding", True),
+            "volume_normalized": ema_data.get("volume_normalized", 0),
             # Pattern metadata for research platform
             "mss_score": trend_eval.get("trend_score", 0),
             "fvg_score": candle_eval.get("candle_score", 0),
             "volatility_score": volume_eval.get("volume_score", 0),
             "institutional_score": trend_eval.get("institutional_score", 0),
+            "maturity_score": maturity_eval.get("maturity_score", 50) if maturity_eval else 50,
+            "maturity_class": maturity_eval.get("classification", "UNKNOWN") if maturity_eval else "UNKNOWN",
             "entry_reason": f"ema_v5_{regime}_{pullback_eval.get('touch_level', 'ema20')}",
             "strategy_version": "ema_v5",
             "timestamp": time.time(),
@@ -241,6 +304,10 @@ class SignalEngine:
         return True
 
     def clear_cooldown(self, symbol: str) -> None:
-        """Clear cooldown for a symbol (called on trade close)."""
+        """Clear execution/trade cooldown for a symbol (called on trade close).
+
+        Only the trade cooldown is cleared. The last-signal record is preserved
+        so same-symbol duplicate protection remains active for the configured
+        same_symbol_sec window even after a position closes.
+        """
         self._cooldowns.pop(symbol, None)
-        self._last_signal.pop(symbol, None)

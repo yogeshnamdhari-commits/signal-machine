@@ -97,6 +97,14 @@ class ForwardTestDB:
                 pnl REAL DEFAULT 0,
                 fees REAL DEFAULT 0,
                 net_pnl REAL DEFAULT 0,
+                -- AUDIT B: PnL decomposition & loss classification
+                gross_pnl REAL DEFAULT 0,
+                funding REAL DEFAULT 0,
+                realized_pnl_raw REAL DEFAULT 0,
+                realized_pnl_rounded REAL DEFAULT 0,
+                loss_classification TEXT DEFAULT '',
+                consecutive_losses_before INTEGER DEFAULT 0,
+                consecutive_losses_after INTEGER DEFAULT 0,
                 -- Risk
                 stop_loss REAL DEFAULT 0,
                 take_profit REAL DEFAULT 0,
@@ -135,7 +143,23 @@ class ForwardTestDB:
         db.execute("CREATE INDEX IF NOT EXISTS idx_ft_session ON forward_trades(session)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_ft_outcome ON forward_trades(outcome)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_ft_symbol ON forward_trades(symbol)")
-        
+
+        # AUDIT B migration: ensure PnL-decomposition / loss-classification columns exist
+        _ft_audit_cols = [
+            "gross_pnl REAL DEFAULT 0",
+            "funding REAL DEFAULT 0",
+            "realized_pnl_raw REAL DEFAULT 0",
+            "realized_pnl_rounded REAL DEFAULT 0",
+            "loss_classification TEXT DEFAULT ''",
+            "consecutive_losses_before INTEGER DEFAULT 0",
+            "consecutive_losses_after INTEGER DEFAULT 0",
+        ]
+        for _col in _ft_audit_cols:
+            try:
+                db.execute(f"ALTER TABLE forward_trades ADD COLUMN {_col}")
+            except Exception:
+                pass
+
         db.commit()
         db.close()
         logger.info("ForwardTestDB initialized at {}", self.db_path)

@@ -97,6 +97,46 @@ class SignalRepository:
                 )
             """)
 
+            # App Profit Filter — admission decisions (ALL vs APP-ADMITTED)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS app_profit_filter_decisions (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp        REAL,
+                    symbol           TEXT,
+                    side             TEXT,
+                    signal_id        TEXT,
+                    strategy_version TEXT DEFAULT '',
+                    quality_score    REAL,
+                    grade            TEXT,
+                    decision         TEXT,
+                    reason           TEXT,
+                    regime_class     TEXT DEFAULT '',
+                    signal_confidence REAL DEFAULT 0,
+                    breakdown        TEXT,
+                    live_sheet       TEXT
+                )
+            """)
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_apf_ts ON app_profit_filter_decisions(timestamp)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_apf_sym ON app_profit_filter_decisions(symbol)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_apf_sig ON app_profit_filter_decisions(signal_id)")
+            # App Profit Filter v2 migrations (safe for existing DBs):
+            # scoring_version + data-freshness columns, plus the backfilled
+            # P&L/R outcome columns (linked from positions_archive by signal_id).
+            for col, default in [
+                ("scoring_version", "'v1'"),
+                ("data_fresh", "''"),
+                ("data_age_sec", "0"),
+                ("stale", "0"),
+                ("outcome_pnl", "NULL"),
+                ("outcome_r", "NULL"),
+                ("outcome_status", "''"),
+                ("exit_reason", "''"),
+            ]:
+                try:
+                    await db.execute(f"ALTER TABLE app_profit_filter_decisions ADD COLUMN {col} DEFAULT {default}")
+                except Exception:
+                    pass  # Column already exists
+
             # Symbols table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS symbols (
@@ -164,8 +204,29 @@ class SignalRepository:
                 ("quiet_market_blocked", "INTEGER DEFAULT 0"),
                 ("outcome", "TEXT DEFAULT ''"),
                 ("realized_r", "REAL DEFAULT 0"),
+                # FORWARD-TEST COHORT v2 (baseline 2026-08-12): entry-time data-health
+                # recording required per cohort spec (live-price timestamp, price-age,
+                # and a persistent stale-price flag for protective-exit skips).
+                ("live_price_ts", "REAL DEFAULT 0"),
+                ("price_age_at_entry", "REAL DEFAULT 0"),
+                ("stale_price_skips", "INTEGER DEFAULT 0"),
             ]
             for col, typedef in _pos_migrations:
+                try:
+                    await db.execute(f"ALTER TABLE positions ADD COLUMN {col} DEFAULT 0")
+                except Exception:
+                    pass
+            # AUDIT B: PnL decomposition & loss classification columns
+            _audit_migrations = [
+                ("gross_pnl", "REAL DEFAULT 0"),
+                ("funding", "REAL DEFAULT 0"),
+                ("realized_pnl_raw", "REAL DEFAULT 0"),
+                ("realized_pnl_rounded", "REAL DEFAULT 0"),
+                ("loss_classification", "TEXT DEFAULT ''"),
+                ("consecutive_losses_before", "INTEGER DEFAULT 0"),
+                ("consecutive_losses_after", "INTEGER DEFAULT 0"),
+            ]
+            for col, typedef in _audit_migrations:
                 try:
                     await db.execute(f"ALTER TABLE positions ADD COLUMN {col} DEFAULT 0")
                 except Exception:
@@ -215,10 +276,16 @@ class SignalRepository:
                     at_open_session TEXT DEFAULT '',
                     volatility_score REAL DEFAULT 0,
                     quiet_market_blocked INTEGER DEFAULT 0,
-                    highest_pnl REAL DEFAULT 0
+                    highest_pnl REAL DEFAULT 0,
+                    gross_pnl REAL DEFAULT 0,
+                    funding REAL DEFAULT 0,
+                    realized_pnl_raw REAL DEFAULT 0,
+                    realized_pnl_rounded REAL DEFAULT 0,
+                    loss_classification TEXT DEFAULT '',
+                    consecutive_losses_before INTEGER DEFAULT 0,
+                    consecutive_losses_after INTEGER DEFAULT 0
                 )
             """)
-            # Migration: add any missing columns to archive
             _archive_migrations = [
                 ("confidence", 0), ("regime", "'unknown'"), ("institutional_score", 0),
                 ("risk_reward", 0), ("hold_minutes", 0), ("session", "'unknown'"),
@@ -229,6 +296,9 @@ class SignalRepository:
                 ("volatility_score", 0), ("quiet_market_blocked", 0), ("highest_pnl", 0),
                 ("strategy_version", "'current'"), ("exit_reason", "''"),
                 ("current_tp_index", 1), ("take_profit_2", 0), ("take_profit_3", 0),
+                ("gross_pnl", 0), ("funding", 0), ("realized_pnl_raw", 0),
+                ("realized_pnl_rounded", 0), ("loss_classification", "''"),
+                ("consecutive_losses_before", 0), ("consecutive_losses_after", 0),
             ]
             for col, default in _archive_migrations:
                 try:
@@ -318,6 +388,188 @@ class SignalRepository:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+    async def log_profit_filter_decision(self, record: Dict[str, Any]) -> None:
+        """Persist one App Profit Filter admission decision (best-effort)."""
+        try:
+            async with self._connect() as db:
+                await db.execute(
+                    """
+                    INSERT INTO app_profit_filter_decisions (
+                        timestamp, symbol, side, signal_id, strategy_version,
+                        quality_score, grade, decision, reason, regime_class,
+                        signal_confidence, breakdown, live_sheet,
+                        scoring_version, data_fresh, data_age_sec, stale
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.get("timestamp", time.time()),
+                        record.get("symbol", ""),
+                        record.get("side", ""),
+                        record.get("signal_id", "") or "",
+                        record.get("strategy_version", "") or "",
+                        record.get("quality_score", 0) or 0,
+                        record.get("grade", ""),
+                        record.get("decision", ""),
+                        record.get("reason", ""),
+                        record.get("regime_class", "") or "",
+                        record.get("signal_confidence", 0) or 0,
+                        record.get("breakdown", "") or "",
+                        record.get("live_sheet", "") or "",
+                        record.get("scoring_version", "") or "",
+                        record.get("data_fresh", "") or "",
+                        record.get("data_age_sec", 0) or 0,
+                        int(record.get("stale", 0) or 0),
+                    ),
+                )
+                await db.commit()
+        except Exception as e:
+            logger.warning("ProfitFilter: decision log failed ({}): {}", record.get("symbol"), e)
+
+    async def get_profit_filter_decisions(
+        self, limit: int = 500, since_ts: float = 0.0
+    ) -> List[Dict[str, Any]]:
+        """Recent App Profit Filter decisions (newest first)."""
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM app_profit_filter_decisions WHERE timestamp >= ? "
+                "ORDER BY timestamp DESC LIMIT ?",
+                (since_ts, limit),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def profit_filter_stats(self, since_ts: float = 0.0) -> Dict[str, Any]:
+        """ALL vs APP-ADMITTED vs REJECTED vs WATCH aggregate for the dashboard.
+
+        ALL            = decisions logged for this window (candidates that reached the filter)
+        ACCEPTED       = decisions that were ACCEPT-grade (would pass in blocking mode)
+        REJECTED       = REJECT / BAND:LOW_SCORE / HARD_CONFLICT decisions
+        WATCH          = B-grade selective decisions
+        NO_APP_DECISION= data-quality rejections (stale/unverified/missing data) —
+                         NOT a trading rejection.
+        """
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT decision, grade, reason, COUNT(*) AS n FROM "
+                "app_profit_filter_decisions WHERE timestamp >= ? "
+                "GROUP BY decision, grade, reason",
+                (since_ts,),
+            )
+            rows = await cursor.fetchall()
+        stats = {
+            "candidates": 0, "admitted": 0, "watch": 0, "rejected": 0,
+            "no_decision": 0, "by_decision": {}, "by_reason": {}, "by_grade": {},
+        }
+        for r in rows:
+            n = r["n"]
+            d = r["decision"]
+            stats["by_decision"][d] = stats["by_decision"].get(d, 0) + n
+            stats["by_grade"][r["grade"] or "?"] = stats["by_grade"].get(r["grade"] or "?", 0) + n
+            key = f"{d}:{r['reason']}"
+            stats["by_reason"][key] = stats["by_reason"].get(key, 0) + n
+            if d == "ACCEPT":
+                stats["admitted"] += n
+            elif d == "WATCH":
+                stats["watch"] += n
+            elif d in ("NO_APP_DECISION", "DATA_STALE"):
+                stats["no_decision"] += n
+            else:
+                stats["rejected"] += n
+            stats["candidates"] += n
+        return stats
+
+    async def backfill_profit_filter_outcomes(self, since_ts: float = 0.0) -> int:
+        """Backfill the eventual P&L/R outcome onto every decision whose signal_id
+        now has a closed (or open) positions_archive row. App-layer ONLY: writes
+        to app_profit_filter_decisions, never touches positions / EMA V5.
+
+        Returns the number of rows updated.
+        """
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT id, signal_id FROM app_profit_filter_decisions "
+                "WHERE timestamp >= ? AND (outcome_status = '' OR outcome_pnl IS NULL)",
+                (since_ts,),
+            )
+            rows = await cursor.fetchall()
+            updated = 0
+            for r in rows:
+                sid = r["signal_id"]
+                if not sid:
+                    continue
+                pcur = await db.execute(
+                    "SELECT pnl, realized_r, outcome, exit_reason, status "
+                    "FROM positions_archive WHERE signal_id = ? ORDER BY closed_at DESC LIMIT 1",
+                    (sid,),
+                )
+                pos = await pcur.fetchone()
+                if not pos:
+                    continue
+                status = "closed" if pos["status"] in ("closed", "archive",
+                                                       "close") else "open"
+                await db.execute(
+                    "UPDATE app_profit_filter_decisions SET "
+                    "outcome_pnl = ?, outcome_r = ?, outcome_status = ?, exit_reason = ? "
+                    "WHERE id = ?",
+                    (pos["pnl"], pos["realized_r"], status, pos["exit_reason"] or "", r["id"]),
+                )
+                updated += 1
+            await db.commit()
+            return updated
+
+    async def profit_filter_cohort_stats(self, since_ts: float = 0.0) -> Dict[str, Any]:
+        """LIVE APP PERFORMANCE: ALL vs ACCEPTED vs REJECTED vs WATCH vs
+        NO_APP_DECISION using the backfilled outcome columns.
+
+        Every cohort reports trades, wins/losses, win rate, avg R, net USD P/L.
+        """
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT decision, outcome_status, outcome_pnl, outcome_r "
+                "FROM app_profit_filter_decisions WHERE timestamp >= ? "
+                "AND outcome_status IN ('open', 'closed')",
+                (since_ts,),
+            )
+            rows = await cursor.fetchall()
+        cohorts = {
+            "ALL": [], "ACCEPTED": [], "REJECTED": [], "WATCH": [],
+            "NO_APP_DECISION": [],
+        }
+        for r in rows:
+            grp = {"ACCEPT": "ACCEPTED", "EXECUTE": "ACCEPTED",
+                   "REJECT": "REJECTED", "WATCH": "WATCH",
+                   "NO_APP_DECISION": "NO_APP_DECISION",
+                   "DATA_STALE": "NO_APP_DECISION",
+                   "REJECT_HARD_CONFLICT": "REJECTED"}.get(r["decision"])
+            if grp:
+                cohorts["ALL"].append(r)
+                cohorts[grp].append(r)
+
+        def _perf(items: List) -> Dict[str, Any]:
+            pnls = [i["outcome_pnl"] or 0 for i in items]
+            rs = [i["outcome_r"] or 0 for i in items]
+            wins = sum(1 for i in items if str(i["outcome_status"]) == "closed"
+                       and (i["outcome_pnl"] or 0) > 0)
+            lossy = sum(1 for i in items if str(i["outcome_status"]) == "closed"
+                        and (i["outcome_pnl"] or 0) <= 0)
+            closed = sum(1 for i in items if str(i["outcome_status"]) == "closed")
+            return {
+                "n": len(items),
+                "closed": closed,
+                "open": len(items) - closed,
+                "wins": wins,
+                "losses": lossy,
+                "win_rate": (100.0 * wins / closed) if closed else 0.0,
+                "avg_r": (sum(rs) / len(rs)) if rs else 0.0,
+                "net_pnl": sum(pnls),
+            }
+
+        return {k: _perf(v) for k, v in cohorts.items()}
+
     async def open_position(
         self,
         signal_id: str,
@@ -345,20 +597,37 @@ class SignalRepository:
         # FIX: Add MSS and FVG scores
         mss_score: float = 0.0,
         fvg_score: float = 0.0,
+        # NEW: Trend maturity scores
+        maturity_score: float = 50.0,
+        maturity_class: str = "UNKNOWN",
+        # FORWARD-TEST COHORT v2: entry-time data-health recording
+        live_price_ts: float = 0.0,
+        price_age_at_entry: float = 0.0,
     ) -> Optional[int]:
         # ═══════════════════════════════════════════════════════════════
         # FINAL SAFETY NET: Block zero-confidence trades at DB level
         # June 16 proof: 4 trades with conf=0, regime=unknown, inst=0
         # slipped through upstream gates. This is the last line of defense.
         # ═══════════════════════════════════════════════════════════════
-        # EMA V5 signals use confidence (0-100 scale), not institutional_score
+        # EMA V5 signals use confidence (0-1 scale, v33 range 0.40-0.55)
+        # production_v2 signals use confidence (0-1 scale, range 0.85-1.00)
         _is_ema_v5 = strategy_version == "ema_v5"
-        if confidence < 0.85 or regime in ("unknown", "") or (institutional_score == 0 and not _is_ema_v5):
-            logger.warning(
-                "🚫 DB_GATE: BLOCKED {} {} — conf={:.1%} regime={} inst_score={}",
-                symbol, side, confidence, regime, institutional_score,
-            )
-            return None
+        if _is_ema_v5:
+            # EMA V5 has its own confidence scale — only block if regime missing
+            if regime in ("unknown", ""):
+                logger.warning(
+                    "🚫 DB_GATE: BLOCKED {} {} — EMA V5 with missing regime={}",
+                    symbol, side, regime,
+                )
+                return None
+        else:
+            # Production_v2 and others: require high confidence + institutional score
+            if confidence < 0.85 or regime in ("unknown", "") or institutional_score == 0:
+                logger.warning(
+                    "🚫 DB_GATE: BLOCKED {} {} — conf={:.1%} regime={} inst_score={}",
+                    symbol, side, confidence, regime, institutional_score,
+                )
+                return None
         # ═══════════════════════════════════════════════════════════════
         # SAFETY NET: Reject trades with missing SL/TP
         # June 16 proof: BCHUSDT, SYNUSDT, METUSDT opened with SL=0, TP=0
@@ -389,13 +658,14 @@ class SignalRepository:
                 "(signal_id, symbol, side, entry_price, quantity, leverage, stop_loss, take_profit, fees, status, opened_at, take_profit_2, take_profit_3, "
                 "confidence, regime, institutional_score, risk_reward, session, strategy_version, hold_minutes, exit_reason, "
                 "planned_rr, volatility_score, at_open_regime, at_open_session, mss_score, fvg_score, "
-                "alpha_score, alpha_tier, entry_reason, mfe_pct, mae_pct, highest_pnl, quiet_market_blocked) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, ?, 0.0, 'C', '', 0, 0, 0, ?)",
+                "alpha_score, alpha_tier, entry_reason, mfe_pct, mae_pct, highest_pnl, quiet_market_blocked, maturity_score, maturity_class, "
+                "live_price_ts, price_age_at_entry) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, ?, 0.0, 'C', '', 0, 0, 0, ?, ?, ?, ?, ?)",
                 (signal_id, symbol, side.upper(), entry_price, quantity, leverage,
                  stop_loss, take_profit, fees, now, take_profit_2, take_profit_3,
                  confidence, regime, institutional_score, risk_reward, session, strategy_version,
                  planned_rr, volatility_score, regime, session, mss_score, fvg_score,
-                 0),
+                 0, maturity_score, maturity_class, live_price_ts, price_age_at_entry),
             )
             await db.commit()
             return cursor.lastrowid
@@ -404,6 +674,10 @@ class SignalRepository:
         self, position_id: int, pnl: float, partial: bool = False, remaining_qty: float = 0,
         hold_minutes: float = 0, mae_pct: float = 0, mfe_pct: float = 0,
         exit_reason: str = "", realized_r: float = 0,
+        gross_pnl: float = 0, funding: float = 0,
+        realized_pnl_raw: float = 0, realized_pnl_rounded: float = 0,
+        loss_classification: str = "", consecutive_losses_before: int = 0,
+        consecutive_losses_after: int = 0,
     ) -> None:
         """Close a position and record PnL.
 
@@ -428,7 +702,7 @@ class SignalRepository:
 
                 # Full close — store lifecycle data
                 # Calculate total accumulated PnL (existing + incremental)
-                total_pnl = (r.get("pnl", 0) or 0) + pnl
+                total_pnl = ((row["pnl"] if row else 0) or 0) + pnl
                 await db.execute(
                     """UPDATE positions SET status='closed', pnl=?, closed_at=?,
                        hold_minutes=?, mae_pct=?, mfe_pct=?, exit_reason=?,
@@ -450,8 +724,11 @@ class SignalRepository:
                             risk_reward, hold_minutes, session, mfe_pct, mae_pct,
                             alpha_score, alpha_tier, mss_score, fvg_score, entry_reason,
                             outcome, realized_r, planned_rr, at_open_regime, at_open_session,
-                            volatility_score, quiet_market_blocked, highest_pnl)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            volatility_score, quiet_market_blocked, highest_pnl,
+                            maturity_score, maturity_class,
+                            gross_pnl, funding, realized_pnl_raw, realized_pnl_rounded,
+                            loss_classification, consecutive_losses_before, consecutive_losses_after)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             r.get("id", position_id),  # Preserve original ID
                             r.get("signal_id", ""), r.get("symbol", ""), r.get("side", ""),
@@ -475,6 +752,10 @@ class SignalRepository:
                             r.get("at_open_regime", ""), r.get("at_open_session", ""),
                             r.get("volatility_score", 0), r.get("quiet_market_blocked", 0),
                             round(r.get("highest_pnl", 0) or 0, 4),
+                            r.get("maturity_score", 50), r.get("maturity_class", "UNKNOWN"),
+                            round(gross_pnl, 6), round(funding, 6),
+                            round(realized_pnl_raw, 6), round(realized_pnl_rounded, 6),
+                            loss_classification, consecutive_losses_before, consecutive_losses_after,
                         ),
                     )
                     # Delete from live positions table (trade is now in archive)
@@ -506,6 +787,38 @@ class SignalRepository:
             await db.execute(
                 "UPDATE positions SET stop_loss=? WHERE id=?",
                 (round(new_stop_loss, 8), position_id),
+            )
+            await db.commit()
+
+    async def update_position_tp_index(self, position_id: int, tp_index: int) -> None:
+        """Persist the active take-profit level for a live position.
+
+        Called by the engine after a partial exit (TP1/TP2) so that the
+        progressive TP state survives subsequent scans AND engine restarts.
+        Root cause of the partial-exit re-fire bug: check_exit_conditions()
+        receives a fresh DB dict every cycle; without persisting
+        current_tp_index, TP1 re-fires repeatedly, whittling quantity to dust.
+        """
+        async with self._connect() as db:
+            await db.execute(
+                "UPDATE positions SET current_tp_index=? WHERE id=?",
+                (int(tp_index), position_id),
+            )
+            await db.commit()
+
+    async def bump_stale_price_flag(self, position_id: int) -> None:
+        """Increment the stale-price counter for a live position.
+
+        FORWARD-TEST COHORT v2 (baseline 2026-08-12): the risk loop flags any
+        position whose protective-exit evaluation was SKIPPED because the
+        cached ticker price was stale (>max_price_age_sec) and no fresh REST
+        price could be fetched. Any position with stale_price_skips > 0 must
+        be audited before its PnL is trusted (BLUAI-class protection).
+        """
+        async with self._connect() as db:
+            await db.execute(
+                "UPDATE positions SET stale_price_skips = stale_price_skips + 1 WHERE id=?",
+                (int(position_id),),
             )
             await db.commit()
 
@@ -541,12 +854,12 @@ class SignalRepository:
             zombies = await cur.fetchall()
             if zombies:
                 await db.executemany(
-                    "UPDATE signals SET status = 'expired' WHERE id = ?",
+                    "UPDATE signals SET status = 'expired', outcome = 'expired_no_data' WHERE id = ? AND outcome = 'pending'",
                     [(z[0],) for z in zombies],
                 )
                 await db.commit()
                 logger.info(
-                    "Expired {} zombie signals (age > {}h, no position)",
+                    "Expired {} zombie signals (age > {}h, no position) → outcome=expired_no_data",
                     len(zombies), max_age_hours,
                 )
             return len(zombies)

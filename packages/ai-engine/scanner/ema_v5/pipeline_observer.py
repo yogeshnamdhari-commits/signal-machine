@@ -277,7 +277,16 @@ REJECTION CHAIN (top bottlenecks):
 {self._bottleneck_analysis()}
 ═══════════════════════════════════════════════════"""
 
-        return {
+        # ── PIPELINE INTEGRITY: Add integrity score if available ──
+        try:
+            from .pipeline_integrity import get_pipeline_integrity
+            _integrity = get_pipeline_integrity()
+            _integrity_summary = _integrity.format_dashboard()
+            text += f"\n\n{_integrity_summary}"
+        except Exception:
+            pass
+
+        result = {
             "text": text,
             "total_candidates": self._total_candidates,
             "signals_generated": self._signals_generated,
@@ -292,6 +301,15 @@ REJECTION CHAIN (top bottlenecks):
             "top_rejection_reasons": dict(top_reasons),
             "funnel": dict(self._funnel),
         }
+
+        # Add pipeline integrity to return dict
+        try:
+            from .pipeline_integrity import get_pipeline_integrity
+            result["pipeline_integrity"] = get_pipeline_integrity().get_health_summary()
+        except Exception:
+            pass
+
+        return result
 
     def _average_scores(self) -> Dict[str, float]:
         """Compute average component scores from candidates that reached confidence stage."""
@@ -368,3 +386,86 @@ REJECTION CHAIN (top bottlenecks):
     def get_confidence_histogram(self) -> Dict[str, int]:
         """Get confidence score distribution for dashboard."""
         return dict(self._confidence_bins)
+
+    def get_filter_attribution(self) -> List[Dict]:
+        """Generate a Filter Attribution Report showing how many candidates each gate eliminates.
+
+        Returns a list of dicts, one per stage, showing:
+            - stage: pipeline stage name
+            - reached: candidates that reached this stage
+            - rejected: candidates eliminated at this stage
+            - passed: candidates that passed (reached - rejected)
+            - reject_rate: percentage eliminated at this stage
+            - cumulative_pass_rate: percentage of original that survive to this stage
+
+        This report quantifies which filters contribute most to selectivity
+        without changing any trading decisions.
+        """
+        total = max(self._total_candidates, 1)
+        signals = self._signals_generated
+
+        # Build the funnel: each stage receives (total - sum_of_previous_rejections)
+        report = []
+        cumulative_rejected = 0
+        for stage in self.STAGES:
+            rejected = self._stage_rejections.get(stage, 0)
+            reached = total - cumulative_rejected
+            passed = reached - rejected
+            reject_rate = (rejected / max(reached, 1)) * 100
+            cumulative_pass_rate = (passed / max(total, 1)) * 100
+
+            report.append({
+                "stage": stage,
+                "reached": reached,
+                "rejected": rejected,
+                "passed": passed,
+                "reject_rate_pct": round(reject_rate, 1),
+                "cumulative_pass_rate_pct": round(cumulative_pass_rate, 1),
+            })
+            cumulative_rejected += rejected
+
+        # Add signal generation stage
+        reached_signals = total - cumulative_rejected
+        signal_rejected = reached_signals - signals
+        report.append({
+            "stage": "signal_generated",
+            "reached": reached_signals,
+            "rejected": signal_rejected,
+            "passed": signals,
+            "reject_rate_pct": round((signal_rejected / max(reached_signals, 1)) * 100, 1),
+            "cumulative_pass_rate_pct": round((signals / max(total, 1)) * 100, 2),
+        })
+
+        return report
+
+    def format_filter_attribution(self) -> str:
+        """Format the Filter Attribution Report as a human-readable table."""
+        attribution = self.get_filter_attribution()
+        total = max(self._total_candidates, 1)
+
+        lines = [
+            "═══════════════════════════════════════════════════════════════",
+            "  FILTER ATTRIBUTION REPORT",
+            f"  {self._total_candidates} candidates | {self._signals_generated} signals",
+            "═══════════════════════════════════════════════════════════════",
+            f"  {'Stage':<20s} {'Reached':>8s} {'Rejected':>8s} {'Pass%':>6s} {'Cum%':>6s}",
+            "  ─────────────────── ──────── ──────── ────── ──────",
+        ]
+
+        for row in attribution:
+            stage = row["stage"]
+            reached = row["reached"]
+            rejected = row["rejected"]
+            pass_pct = f"{100 - row['reject_rate_pct']:.1f}%"
+            cum_pct = f"{row['cumulative_pass_rate_pct']:.1f}%"
+            lines.append(f"  {stage:<20s} {reached:>8d} {rejected:>8d} {pass_pct:>6s} {cum_pct:>6s}")
+
+        lines.append("═══════════════════════════════════════════════════════════════")
+
+        # Identify biggest filter
+        if attribution:
+            biggest = max(attribution[:-1], key=lambda x: x["rejected"])  # Exclude signal_generated
+            if biggest["rejected"] > 0:
+                lines.append(f"  Biggest filter: {biggest['stage']} ({biggest['rejected']} rejected, {biggest['reject_rate_pct']}%)")
+
+        return "\n".join(lines)

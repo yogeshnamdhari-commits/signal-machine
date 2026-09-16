@@ -86,6 +86,29 @@ class EMACache:
         vol_sma = sma(volumes, ema_v5_config.volume.sma_period)
         atr_val = atr(highs, lows, closes, 14)
 
+        # ── Buy/Sell Volume Decomposition ──
+        # Estimate using candle body position within range
+        _buy_vol = 0.0
+        _sell_vol = 0.0
+        for _k in klines:
+            _o, _h, _l, _c, _v = _k.get("open", 0), _k.get("high", 0), _k.get("low", 0), _k.get("close", 0), _k.get("volume", 0)
+            _range = _h - _l
+            if _range > 0 and _v > 0:
+                _body_pct = abs(_c - _o) / _range
+                if _c >= _o:  # Bullish candle
+                    _buy_vol += _v * (0.5 + 0.5 * _body_pct)
+                    _sell_vol += _v * (0.5 - 0.5 * _body_pct)
+                else:  # Bearish candle
+                    _sell_vol += _v * (0.5 + 0.5 * _body_pct)
+                    _buy_vol += _v * (0.5 - 0.5 * _body_pct)
+            else:
+                _buy_vol += _v * 0.5
+                _sell_vol += _v * 0.5
+
+        # ── EMA Distance (ATR) ──
+        _ema_stack = (ema144[-1] + ema200[-1]) / 2 if ema144 and ema200 else 0
+        _ema_dist_atr = (closes[-1] - _ema_stack) / atr_val if atr_val > 0 and _ema_stack > 0 else 0
+
         if not ema20 or not ema50 or not ema144 or not ema200:
             return None
 
@@ -100,6 +123,9 @@ class EMACache:
             self._diag_ema_sampled = True
 
         # Only keep last values (don't store full arrays)
+        # ATR direction (expanding vs contracting)
+        _atr_prev = self._cache.get(symbol, {}).get("atr_14", 0) if symbol in self._cache else 0
+
         result = {
             "ema20": ema20[-1],
             "ema50": ema50[-1],
@@ -115,12 +141,16 @@ class EMACache:
             "ema200_slope": slope(ema200, cfg.slope_lookback),
             "vol_sma20": vol_sma,
             "atr_14": atr_val,
+            "atr_prev": _atr_prev,
             "last_close": closes[-1],
             "last_high": highs[-1],
             "last_low": lows[-1],
             "last_volume": volumes[-1],
             "prev_volume": volumes[-2] if len(volumes) > 1 else 0,
             "candle_count": len(klines),
+            "buy_volume": _buy_vol,
+            "sell_volume": _sell_vol,
+            "ema_distance_atr": round(_ema_dist_atr, 3),
         }
 
         self._cache[symbol] = result

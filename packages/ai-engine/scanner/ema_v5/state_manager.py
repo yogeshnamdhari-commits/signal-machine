@@ -75,6 +75,8 @@ class StateManager:
             "last_update": time.time(),
             "previous": self.get_state(symbol),
         }
+        if ema_v5_config.state.persist_state:
+            self._save()
 
     def get_all_states(self) -> Dict[str, Dict]:
         """Get all symbol states (read-only snapshot for bridge export)."""

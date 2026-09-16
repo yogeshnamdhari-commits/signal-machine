@@ -158,7 +158,22 @@ async def _run_engine() -> None:
 
     if not await _acquire_engine_lock():
         return
-    
+
+    # FORWARD-TEST COHORT: announce the frozen baseline on startup so the
+    # fresh-cohort boundary is visible in the engine log. The manifest records
+    # the exact strategy/config hash + infrastructure version (Phase 1).
+    try:
+        import json as _json
+        _manifest_path = Path(__file__).parent / "data" / "cohort_baseline_v1.json"
+        _bl = _json.loads(_manifest_path.read_text())
+        logger.info(
+            "🧪 FORWARD-TEST COHORT START: {} — strategy FROZEN (config hash {}), infra v{}",
+            _bl["cohort"]["id"], _bl["hashes"]["strategy_config_hash"],
+            _bl["infrastructure_version"]["id"],
+        )
+    except Exception:
+        pass
+
     engine = DeltaTerminalEngine()
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()

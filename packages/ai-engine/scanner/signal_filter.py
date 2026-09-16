@@ -215,8 +215,8 @@ class SignalFilter:
             price_change = signal.get("change_24h", 0)
             if side == "LONG" and oi_trend < -0.1 and price_change > 0.5:
                 return False, f"P2_OI_DIVERGENCE_LONG: price↑ OI↓ (oi_trend={oi_trend:.2f})"
-            if side == "SHORT" and oi_trend < -0.1 and price_change < -0.5:
-                return False, f"P2_OI_DIVERGENCE_SHORT: price↓ OI↓ (oi_trend={oi_trend:.2f})"
+            if side == "SHORT" and oi_trend > 0.1 and price_change < -0.5:
+                return False, f"P2_OI_DIVERGENCE_SHORT: price↓ OI↑ (oi_trend={oi_trend:.2f})"
             # Require OI expansion for conviction signals
             if abs(oi_trend) < 0.05 and inst_score < 60:
                 # Weak OI + low conviction = suspect

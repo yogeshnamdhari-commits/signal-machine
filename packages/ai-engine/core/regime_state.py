@@ -192,8 +192,19 @@ class RegimeStateManager:
         now = time.time()
         halt_until = now + duration_hours * 3600
 
-        # Don't override a longer existing halt with a shorter one
+        # AUDIT B fix: prevent duplicate/retriggered halt evaluation.
+        # If a halt with the same resume condition is ALREADY active, do not
+        # re-trigger, re-log, or increment total_halts_today for the same streak.
         existing_halt_until = self._state.get("halt_until", 0)
+        existing_resume = self._state.get("resume_condition")
+        if existing_halt_until > now and existing_resume == resume_condition:
+            logger.debug(
+                "🛡️ HALT_ALREADY_ACTIVE: {} ({:.0f}s remaining) — not re-triggering for {}",
+                existing_resume, existing_halt_until - now, reason,
+            )
+            return
+
+        # Don't override a longer existing halt with a shorter one
         if existing_halt_until > halt_until:
             logger.info(
                 "⏸️  HALT_NOT_EXTENDED: existing halt ({:.0f}s) longer than requested ({:.0f}s)",
@@ -298,6 +309,46 @@ class RegimeStateManager:
         if self._state.get("consecutive_losses", 0) > 0:
             self._state["consecutive_losses"] = 0
             self._save()
+
+    def rebaseline_legacy_streak(self, force: bool = False) -> Dict:
+        """AUDIT B: one-time re-baseline of the live loss streak.
+
+        The pre-fix PnL rounding bug polluted consecutive_losses (profitable
+        TP1/trailing trades rounding to $0.00 were counted as losses, inflating
+        the streak to 40). Archive that legacy value into an audit-only field
+        and reset the live streak to 0 so the corrected accounting rebuilds it
+        purely from authoritative position-close events.
+
+        Runs only once (flag persisted in state) unless force=True.
+        """
+        if self._state.get("streak_rebaselined") and not force:
+            # Defensive backfill: if a pre-edit run already rebaselined but never
+            # recorded the timestamp, stamp it now so downstream consumers (e.g.
+            # the rolling-PF trade seed) can exclude bug-era trades.
+            if not self._state.get("rebaseline_at"):
+                self._state["rebaseline_at"] = time.time()
+                self._save()
+            return self._state.copy()
+
+        legacy = self._state.get("consecutive_losses", 0)
+        self._state["legacy_consecutive_losses"] = legacy
+        self._state["consecutive_losses"] = 0
+        self._state["streak_rebaselined"] = True
+        self._state["rebaseline_at"] = time.time()
+        # Clear any halt that was triggered purely by the legacy count
+        self._state["halt_until"] = 0
+        self._state["halt_reason"] = None
+        self._state["resume_condition"] = None
+        self._state["halted_in_regime"] = None
+        self._state["total_halts_today"] = 0
+        self._state["last_halt_date"] = ""
+        self._save()
+        logger.warning(
+            "🔧 AUDIT_B_REBASELINE: archived legacy streak {} -> live streak 0 "
+            "(corrected accounting; historical value preserved for audit)",
+            legacy,
+        )
+        return self._state.copy()
 
     @property
     def consecutive_losses(self) -> int:

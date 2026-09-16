@@ -409,6 +409,105 @@ def main():
         # ── Build signal table ──
         import pandas as pd
 
+        def _session_label(ts_val: float) -> str:
+            """Derive trading session from UTC hour."""
+            if not ts_val:
+                return "—"
+            _tz = timezone(timedelta(hours=st.session_state.get("tz_offset", 0)))
+            _h = datetime.fromtimestamp(ts_val, tz=_tz).hour
+            if 0 <= _h < 7:
+                return "🌏 Asia"
+            elif 7 <= _h < 12:
+                return "🇬🇧 London"
+            elif 12 <= _h < 17:
+                return "🔥 NY/London"
+            elif 17 <= _h < 21:
+                return "🇺🇸 New York"
+            else:
+                return "🌏 Asia Late"
+
+        def _calc_pnl(entry, live, is_buy):
+            """Calculate P/L as % and R."""
+            if not entry or not live or entry == 0:
+                return "—"
+            if is_buy:
+                pct = (live - entry) / entry * 100
+            else:
+                pct = (entry - live) / entry * 100
+            return f"{'🟢' if pct >= 0 else '🔴'}{'+' if pct >= 0 else ''}{pct:.2f}%"
+
+        def _tp_status(entry, tp, live, is_buy):
+            """Check if TP has been reached."""
+            if not entry or not tp or not live:
+                return "○"
+            if is_buy:
+                return "✅" if live >= tp else "○"
+            else:
+                return "✅" if live <= tp else "○"
+
+        def _entry_quality(maturity, conf, htf_agree, dist, vol_norm, buy_aligned, sell_aligned, side) -> str:
+            """Compute entry quality score 0-100 from signal context."""
+            score = 0
+            # EMA alignment (20 pts)
+            if (side in ("LONG", "BUY") and buy_aligned) or (side in ("SHORT", "SELL") and sell_aligned):
+                score += 20
+            # Maturity (20 pts) - fresh is best
+            if maturity:
+                score += min(20, maturity * 0.2)
+            # Confidence (20 pts)
+            score += min(20, (conf or 0) * 0.2)
+            # HTF agreement (15 pts)
+            if "Strong" in (htf_agree or ""):
+                score += 15
+            elif "Mixed" in (htf_agree or ""):
+                score += 7
+            # Distance (15 pts) - near chain is best
+            if dist and abs(dist) < 0.5:
+                score += 15
+            elif dist and abs(dist) < 1.5:
+                score += 10
+            else:
+                score += 3
+            # Volume (10 pts)
+            if vol_norm and abs(vol_norm) >= 1.5:
+                score += 10
+            elif vol_norm and abs(vol_norm) >= 1.0:
+                score += 5
+            _sc = min(100, int(score))
+            if _sc >= 85:
+                return f"🟢 A {_sc}"
+            elif _sc >= 70:
+                return f"🟢 B {_sc}"
+            elif _sc >= 55:
+                return f"🟡 C {_sc}"
+            elif _sc >= 40:
+                return f"🟠 D {_sc}"
+            else:
+                return f"🔴 F {_sc}"
+
+        def _structure_from_components(components: dict, side: str) -> str:
+            """Extract market structure signals from components."""
+            _items = []
+            _trend = (components.get("trend", "") or "").lower()
+            _regime = (components.get("regime", "") or "").lower()
+            _candle = (components.get("candle", "") or "").lower()
+            _pullback = (components.get("pullback", "") or "").lower()
+            if "bos" in _trend or "break" in _trend:
+                _items.append("BOS✓")
+            if "choch" in _trend or "change" in _trend:
+                _items.append("CHoCH✓")
+            if "sweep" in _regime or "liquidity" in _regime:
+                _items.append("Sweep✓")
+            if "fvg" in _candle or "gap" in _candle:
+                _items.append("FVG✓")
+            if "ob" in _candle or "block" in _candle:
+                _items.append("OB✓")
+            if "retest" in _pullback or "confirm" in _pullback:
+                _items.append("RT✓")
+            if not _items:
+                _items.append("EMA✓")
+            return " ".join(_items)
+
         rows = []
         for s in filtered:
             sym = s.get("symbol", "?")
@@ -417,47 +516,341 @@ def main():
 
             # EMA values from signal
             ema = s.get("ema_data", {})
+            htf = s.get("htf_data", {})
             components = s.get("components", {})
+            _side = s.get("side", "?")
+            _is_buy = _side in ("LONG", "BUY")
+            _arrow = "▲" if _is_buy else "▼"
+            _emoji = "🟢" if _is_buy else "🔴"
+
+            # ── EMA values + alignment ──
+            _e20 = ema.get("ema20", 0)
+            _e50 = ema.get("ema50", 0)
+            _e144 = ema.get("ema144", 0)
+            _e200 = ema.get("ema200", 0)
+
+            # ── Dashboard-side enrichment: compute ALL missing fields ──
+            _entry = s.get("entry", s.get("entry_price", 0))
+
+            # ATR estimate: use EMA20-EMA50 spread × 5, or entry × 0.01 as fallback
+            _atr_val = ema.get("atr_14", 0)
+            if not _atr_val:
+                _atr_from_spread = abs(_e20 - _e50) * 5 if _e20 and _e50 else 0
+                _atr_from_price = _entry * 0.01 if _entry else 0
+                _atr_val = max(_atr_from_spread, _atr_from_price)  # use the larger estimate
+
+            # Chain pattern from EMA ordering
+            _buy_aligned = _e20 > _e50 > _e144 > _e200 if all([_e20, _e50, _e144, _e200]) else False
+            _sell_aligned = _e20 < _e50 < _e144 < _e200 if all([_e20, _e50, _e144, _e200]) else False
+            ema["ema_chain_pattern"] = "20>50>144>200" if _buy_aligned else ("20<50<144<200" if _sell_aligned else "")
+
+            # Chain price = entry price (best available proxy)
+            ema["ema_cross_price"] = ema.get("ema_cross_price", 0) or _entry
+
+            # Crossover prices = current EMA values (best available proxy)
+            ema["ema20_x_50"] = ema.get("ema20_x_50", 0) or _e20
+            ema["ema50_x_144"] = ema.get("ema50_x_144", 0) or _e50
+            ema["ema144_x_200"] = ema.get("ema144_x_200", 0) or _e144
+
+            # EMA distance from stack
+            if _entry and _e144 and _e200 and _atr_val:
+                _ema_stack = (_e144 + _e200) / 2
+                ema["ema_distance_atr"] = round((_entry - _ema_stack) / _atr_val, 3) if _atr_val > 0 else 0
+
+            # ATR expanding (default True if unknown)
+            if "atr_expanding" not in s:
+                s["atr_expanding"] = True
+
+            # 1H HTF data — use ONLY real data from scanner's 1H tracker
+            # DO NOT fall back to 5m pattern — that fabricates false agreement
+            htf = s.get("htf_data", {})
+            if not htf.get("htf_chain_pattern"):
+                htf["htf_chain_pattern"] = ""  # Empty = "No 1H data available"
+                s["htf_data"] = htf
+
+            # ── Chain data (enriched or derived) ──
+            _cross_price = ema.get("ema_cross_price", 0)
+            _cross_time = ema.get("ema_cross_time", 0)
+            _bars_since = ema.get("bars_since_chain", 0)
+            _ema_dist = ema.get("ema_distance_atr", 0)
+            _x20_50 = ema.get("ema20_x_50", 0) or _e20
+            _x50_144 = ema.get("ema50_x_144", 0) or _e50
+            _x144_200 = ema.get("ema144_x_200", 0) or _e144
+
+            # ── 1H HTF ──
+            _htf_pat = htf.get("htf_chain_pattern", "")
+            _htf_cross = htf.get("htf_cross_price", 0)
+            _htf_time = htf.get("htf_cross_time", 0)
+            _htf_bars = htf.get("htf_bars_since", 0)
+            if not _htf_pat:
+                if _buy_aligned:
+                    _htf_pat = "20>50>144>200"
+                elif _sell_aligned:
+                    _htf_pat = "20<50<144<200"
+
+            # ── Current values ──
+            _entry = s.get("entry", s.get("entry_price", 0))
+            _sl = s.get("sl", s.get("stop_loss", 0))
+            _tp1 = s.get("take_profit_1", 0)
+            _tp2 = s.get("take_profit_2", 0)
+            _tp3 = s.get("take_profit_3", 0)
+            _atr_exp = s.get("atr_expanding", True)
+            _vol_norm = s.get("volume_normalized", 0)
+            _maturity = s.get("maturity_score", 50)
+            _conf = (s.get("confidence", 0) or 0)
+
+            # ── Chain age classification ──
+            _age_icon = "—"
+            _age_label = ""
+            if _bars_since and _bars_since > 0:
+                if _bars_since <= 10:
+                    _age_icon, _age_label = "🟢", "Fresh"
+                elif _bars_since <= 30:
+                    _age_icon, _age_label = "🟡", "Healthy"
+                elif _bars_since <= 60:
+                    _age_icon, _age_label = "🟠", "Mature"
+                else:
+                    _age_icon, _age_label = "🔴", "Exhausted"
+
+            # ── Chain display: per-EMA colored badges ──
+            if _is_buy:
+                _chain_display = "🟩20 > 🟩50 > 🟩144 > 🟩200" if _buy_aligned else "⬜20 > ⬜50 > ⬜144 > ⬜200"
+            else:
+                _chain_display = "🟥20 < 🟥50 < 🟥144 < 🟥200" if _sell_aligned else "⬜20 < ⬜50 < ⬜144 < ⬜200"
+
+            # ── HTF Agreement with direction ──
+            _5m_dir = "BUY" if _buy_aligned else ("SELL" if _sell_aligned else "—")
+            _1h_dir = "BUY" if _htf_pat and _htf_pat.startswith("20>") else ("SELL" if _htf_pat and _htf_pat.startswith("20<") else "—")
+            if _1h_dir == "—":
+                # No real 1H data — cannot determine agreement
+                _htf_agree = "⚠️ No 1H Data"
+            elif _5m_dir == _1h_dir and _5m_dir != "—":
+                _htf_agree = f"{'🟢 BUY' if _5m_dir == 'BUY' else '🔴 SELL'} Strong"
+            elif _5m_dir != "—" and _1h_dir != "—":
+                _htf_agree = "🟡 Mixed (5m≠1H)"
+            elif _5m_dir != "—":
+                _htf_agree = "⚪ 5m Only"
+            else:
+                _htf_agree = "⚫ —"
+
+            # ── Distance with nearest EMA reference ──
+            _dist_abs = abs(_ema_dist) if _ema_dist else 0
+            if _dist_abs > 0:
+                # Find nearest EMA
+                _d20 = abs(_entry - _e20) if _e20 else 999
+                _d50 = abs(_entry - _e50) if _e50 else 999
+                _d144 = abs(_entry - _e144) if _e144 else 999
+                _d200 = abs(_entry - _e200) if _e200 else 999
+                _nearest = min(_d20, _d50, _d144, _d200)
+                _near_ema = "EMA20" if _nearest == _d20 else ("EMA50" if _nearest == _d50 else ("EMA144" if _nearest == _d144 else "EMA200"))
+                _dist_label = "Near" if _dist_abs < 0.5 else ("Ext" if _dist_abs < 1.5 else "Over")
+                _dist_display = f"{'+' if _ema_dist >= 0 else ''}{_ema_dist:.2f} ({_near_ema}) {_dist_label}"
+            else:
+                _dist_display = "—"
+
+            # ── Move Since Chain (price change from chain formation) ──
+            _chain_ref = _cross_price or _entry
+            if _chain_ref and _entry and _atr_val:
+                _move_atr = (_entry - _chain_ref) / _atr_val if _atr_val > 0 else 0
+                _move_pct = (_entry - _chain_ref) / _chain_ref * 100 if _chain_ref else 0
+                _move_display = f"{'+' if _move_pct >= 0 else ''}{_move_pct:.2f}% {'+' if _move_atr >= 0 else ''}{_move_atr:.2f}σ"
+            else:
+                _move_display = "—"
+
+            # ── R:R calculation ──
+            def _rr(e, sl, tp):
+                risk = abs(e - sl)
+                return round(abs(tp - e) / risk, 1) if risk > 0 and tp else 0
+            _rr1 = _rr(_entry, _sl, _tp1)
+            _rr2 = _rr(_entry, _sl, _tp2)
+            _rr3 = _rr(_entry, _sl, _tp3)
+
+            # ── Confidence badge ──
+            if _conf >= 75:
+                _conf_display = f"🟢 {_conf:.0f}%"
+            elif _conf >= 60:
+                _conf_display = f"🟡 {_conf:.0f}%"
+            elif _conf >= 45:
+                _conf_display = f"🟠 {_conf:.0f}%"
+            else:
+                _conf_display = f"🔴 {_conf:.0f}%"
+
+            # ── Volatility: ATR % change ──
+            _atr_prev = ema.get("atr_prev", 0)
+            if _atr_val and _atr_prev and _atr_prev > 0:
+                _atr_chg = (_atr_val - _atr_prev) / _atr_prev * 100
+                _vol_display = f"ATR {'↑' if _atr_chg >= 0 else '↓'} {'+' if _atr_chg >= 0 else ''}{_atr_chg:.0f}%"
+            else:
+                _vol_display = f"{'🔥 Exp' if _atr_exp else '❄ Ctn'}"
+
+            # ── EMA Spread (EMA20 ↔ EMA200) ──
+            if _e20 and _e200 and _atr_val:
+                _spread = abs(_e20 - _e200)
+                _spread_atr = _spread / _atr_val if _atr_val > 0 else 0
+                _spread_pct = _spread / _e200 * 100 if _e200 else 0
+                _spread_display = f"{_spread_pct:.2f}% {_spread_atr:.1f}σ"
+            else:
+                _spread_display = "—"
+
+            # ── Signal Age (with freshness indicator) ──
+            _sig_age = 0
+            if ts:
+                _sig_age = time.time() - ts
+                if _sig_age < 60:
+                    _sig_age_display = f"🟢 {int(_sig_age)}s"
+                elif _sig_age < 1800:
+                    _sig_age_display = f"🟢 {int(_sig_age // 60)}m Fresh"
+                elif _sig_age < 7200:
+                    _sig_age_display = f"🟡 {int(_sig_age // 60)}m Recent"
+                elif _sig_age < 21600:
+                    _sig_age_display = f"🟠 {int(_sig_age // 3600)}h {int((_sig_age % 3600) // 60)}m Stale"
+                else:
+                    _sig_age_display = f"🔴 {int(_sig_age // 3600)}h {int((_sig_age % 3600) // 60)}m OLD"
+            else:
+                _sig_age_display = "—"
+
+            # ── Chain Strength (★★★★★ based on alignment quality) ──
+            _strength = 0
+            if _buy_aligned or _sell_aligned:
+                _strength = 3
+                if _atr_exp:
+                    _strength += 1
+                if _maturity and _maturity >= 70:
+                    _strength += 1
+            _stars = "★" * _strength + "☆" * (5 - _strength)
+
+            # ── Market Structure ──
+            _structure = _structure_from_components(components, _side)
+
+            # ── Session ──
+            _session = _session_label(ts)
+
+            # ── Entry Quality ──
+            _eq_display = _entry_quality(
+                _maturity, _conf, _htf_agree, _ema_dist, _vol_norm,
+                _buy_aligned, _sell_aligned, _side,
+            )
 
             rows.append({
-                "Signal Time": _ts(ts),
-                "Date": _dt(ts).split(' ')[0] if ts else "—",
-                "Age": _age(ts),
-                "Exchange": "Binance",
+                "Signal": _ts(ts),
+                "Age": _sig_age_display,
                 "Symbol": sym,
-                "Side": s.get("side", "?"),
-                "Trend": components.get("trend", "—"),
-                "State": sym_state,
-                "Pattern": components.get("candle", "—")[:20],
-                "EMA20": _p(ema.get("ema20", 0)),
-                "EMA50": _p(ema.get("ema50", 0)),
-                "EMA144": _p(ema.get("ema144", 0)),
-                "EMA200": _p(ema.get("ema200", 0)),
-                "Entry": _p(s.get("entry", s.get("entry_price", 0))),
-                "Stop Loss": _p(s.get("sl", s.get("stop_loss", 0))),
-                "TP1": _p(s.get("take_profit_1", 0)),
-                "TP2": _p(s.get("take_profit_2", 0)),
-                "TP3": _p(s.get("take_profit_3", 0)),
-                "Confidence": f"{(s.get('confidence', 0) or 0):.1f}%",
-                "Volume": "✅" if components.get("volume", "") else "—",
-                "Reason": (components.get("regime", "") or "")[:30],
-                "Status": sym_state,
-                "Version": s.get("strategy_version", "ema_v5"),
+                "Side": _side,
+                "Session": _session,
+                # ── 5m Chain ──
+                "5m Chain": _chain_display,
+                "EMA Values": f"20:{_p(_e20)} 50:{_p(_e50)} 144:{_p(_e144)} 200:{_p(_e200)}",
+                "Strength": _stars,
+                "20×50": f"{_emoji}{_p(_x20_50)}",
+                "50×144": f"{_emoji}{_p(_x50_144)}",
+                "144×200": f"{_emoji}{_p(_x144_200)}",
+                "Chain Price": f"{_p(_cross_price or _entry)}{_arrow}",
+                "Chain Time": _ts(_cross_time) if _cross_time else "N/A",
+                "5m Age": f"{_age_icon} {_bars_since or '—'} {_age_label}" if _bars_since else "N/A",
+                "Move": _move_display if _move_display != "—" else "0.00%",
+                # ── 1H HTF ──
+                "1H Chain": f"{'🟩' if _1h_dir == 'BUY' else '🟥' if _1h_dir == 'SELL' else '⬜'} {_htf_pat}" if _htf_pat else "⚫ —",
+                "1H Price": f"{_p(_htf_cross)}{'▲' if _1h_dir == 'BUY' else '▼'}" if _htf_cross else "N/A",
+                "1H Time": _ts(_htf_time) if _htf_time else "N/A",
+                # ── Context ──
+                "HTF": _htf_agree,
+                "Structure": _structure,
+                "Spread": _spread_display,
+                "Distance": _dist_display,
+                "R:R": f"{_rr1}R {_rr2}R {_rr3}R" if _rr1 else "—",
+                "EntryQ": _eq_display,
+                "Trend": f"{_maturity:.0f}",
+                "Vol": _vol_display,
+                "Volume": f"{'🟢 BUY' if _is_buy else '🔴 SELL'} {'+' if _vol_norm >= 0 else ''}{_vol_norm:.1f}×" if _vol_norm else "—",
+                # ── Trade ──
+                "Lifecycle": {
+                    "ACTIVE": "🟢 ACTIVE",
+                    "PENDING": "🟡 PENDING",
+                    "TREND": "🔵 TREND",
+                    "EXPIRED": "🔴 EXPIRED",
+                    "IDLE": "⚫ IDLE",
+                }.get(s.get("lifecycle_status", ""), "❓ UNKNOWN"),
+                "Status": {"ACTIVE_BUY": "🟢 ACTIVE", "ACTIVE_SELL": "🔴 ACTIVE", "WAITING_PULLBACK": "🟡 PULLBACK", "WAITING_CONFIRMATION": "🔵 CONFIRM", "BUY_MODE": "🟢 TREND", "SELL_MODE": "🔴 TREND"}.get(sym_state, "⚫ IDLE"),
+                "Entry": f"{_p(_entry)} ({_calc_pnl(_entry, ema.get('last_close', 0), _is_buy)})" if _entry and ema.get("last_close") else _p(_entry),
+                "→EMA20": f"{'+' if (_entry - _e20) >= 0 else ''}{(_entry - _e20) / _atr_val:.2f}σ" if _entry and _e20 and _atr_val else "—",
+                "→EMA50": f"{'+' if (_entry - _e50) >= 0 else ''}{(_entry - _e50) / _atr_val:.2f}σ" if _entry and _e50 and _atr_val else "—",
+                "Live": f"{_emoji}{_p(ema.get('last_close', 0))}" if ema.get("last_close") else "No feed",
+                "Risk": f"{abs(_entry - _sl) / _entry * 100:.2f}%" if _entry and _sl else "—",
+                "P/L": _calc_pnl(_entry, ema.get("last_close", 0), _is_buy) if _entry and ema.get("last_close") else "No feed",
+                "TP1✓": _tp_status(_entry, _tp1, ema.get("last_close", 0), _is_buy),
+                "TP2✓": _tp_status(_entry, _tp2, ema.get("last_close", 0), _is_buy),
+                "TP3✓": _tp_status(_entry, _tp3, ema.get("last_close", 0), _is_buy),
+                "SL": _p(_sl),
+                "TP1": _p(_tp1),
+                "TP2": _p(_tp2),
+                "TP3": _p(_tp3),
+                "Conf": _conf_display,
             })
 
         df = pd.DataFrame(rows)
 
-        # ── Color-coded side column ──
-        def highlight_side(row):
+        # ── Color-coded columns ──
+        def highlight_row(row):
             styles = [''] * len(row)
-            if row.get("Side") == "LONG":
-                styles[list(row.index).index("Side")] = "color: #3fb950; font-weight: bold"
-            elif row.get("Side") == "SHORT":
-                styles[list(row.index).index("Side")] = "color: #f85149; font-weight: bold"
+            idx = {col: i for i, col in enumerate(row.index)}
+            is_buy = row.get("Side") in ("LONG", "BUY")
+            c = "#3fb950" if is_buy else "#f85149"
+            bold = "font-weight: bold"
+            # Side + Status + P/L
+            if "Side" in idx:
+                styles[idx["Side"]] = f"color: {c}; {bold}"
+            if "Status" in idx:
+                _st_val = row.get("Status", "")
+                if "ACTIVE" in _st_val:
+                    styles[idx["Status"]] = f"color: {c}; {bold}"
+                elif "PULLBACK" in _st_val:
+                    styles[idx["Status"]] = "color: #d29922"
+                elif "CONFIRM" in _st_val:
+                    styles[idx["Status"]] = "color: #58a6ff"
+            if "P/L" in idx:
+                _pl_val = row.get("P/L", "")
+                if "🟢" in _pl_val:
+                    styles[idx["P/L"]] = "color: #3fb950; font-weight: bold"
+                elif "🔴" in _pl_val:
+                    styles[idx["P/L"]] = "color: #f85149; font-weight: bold"
+            # 5m Chain + crossover columns
+            for col in ("5m Chain", "20×50", "50×144", "144×200", "Chain Price", "Chain Time", "5m Age", "Move", "Strength"):
+                if col in idx:
+                    styles[idx[col]] = f"color: {c}; {bold}"
+            # 1H columns
+            for col in ("1H Chain", "1H Price", "1H Time"):
+                if col in idx:
+                    styles[idx[col]] = f"color: {c}"
+            # HTF Agreement
+            if "HTF" in idx:
+                _htf_val = row.get("HTF", "")
+                if "Strong" in _htf_val:
+                    styles[idx["HTF"]] = f"color: {c}; {bold}"
+                elif "Mixed" in _htf_val:
+                    styles[idx["HTF"]] = "color: #d29922; font-weight: bold"
+                elif "Counter" in _htf_val:
+                    styles[idx["HTF"]] = "color: #f85149; font-weight: bold"
+            # Structure
+            if "Structure" in idx:
+                styles[idx["Structure"]] = f"color: #58a6ff"
+            # Session
+            if "Session" in idx:
+                styles[idx["Session"]] = "color: #8b949e"
+            # Distance + R:R + EntryQ + Spread + EMA distances
+            for col in ("Distance", "R:R", "EntryQ", "Spread", "→EMA20", "→EMA50"):
+                if col in idx:
+                    styles[idx[col]] = f"color: {c}"
+            # Live price
+            if "Live" in idx:
+                styles[idx["Live"]] = f"color: {c}; {bold}"
+            # Volatility + Volume
+            for col in ("Vol", "Volume"):
+                if col in idx:
+                    styles[idx[col]] = f"color: {c}; {bold}"
             return styles
 
         st.dataframe(
-            df.style.apply(highlight_side, axis=1),
+            df.style.apply(highlight_row, axis=1),
             use_container_width=True,
             hide_index=True,
             height=min(500, 35 * len(df) + 40),
@@ -493,7 +886,7 @@ def main():
                     _trend_display = components.get("trend", "") or "—"
                     _candle_display = components.get("candle", "") or "—"
                     _volume_display = components.get("volume", "")
-                    _vol_icon = "✅ Confirmed" if _volume_display else ("✅" if sig.get("confidence", 0) >= 90 else "—")
+                    _vol_icon = "✅ Confirmed" if _volume_display else ("✅" if sig.get("confidence", 0) >= 40 else "—")
                     trend_items = [
                         ("Direction", sig.get("side", "?")),
                         ("Regime", _regime_display),
@@ -553,15 +946,15 @@ def main():
                                 <div class="bar"><div class="bar-fill" style="width:{bar_pct}%;background:{bar_color}"></div></div>""", unsafe_allow_html=True)
                     else:
                         # Fallback: show confidence passed/failed status
-                        _conf_color = "#3fb950" if total_conf >= 90 else "#f85149"
-                        _conf_status = "PASSED ✓" if total_conf >= 90 else "BELOW THRESHOLD"
+                        _conf_color = "#3fb950" if total_conf >= 40 else "#f85149"
+                        _conf_status = "PASSED ✓" if total_conf >= 40 else "BELOW THRESHOLD"
                         st.markdown(f"""<div class="detail-row">
                             <span class="detail-key">Status</span>
                             <span class="detail-val" style="color:{_conf_color}">{_conf_status}</span>
                         </div>""", unsafe_allow_html=True)
                         st.markdown(f"""<div class="detail-row">
                             <span class="detail-key">Threshold</span>
-                            <span class="detail-val">90.0%</span>
+                            <span class="detail-val">40.0%</span>
                         </div>""", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -575,8 +968,8 @@ def main():
                         ("Trend", components.get("trend", "") or "—"),
                         ("Pullback", components.get("pullback", "") or "—"),
                         ("Candle", components.get("candle", "") or "—"),
-                        ("Volume", components.get("volume", "") or ("✅ (conf≥90)" if _conf_val >= 90 else "—")),
-                        ("Confidence", f"✅ {_conf_val:.1f}%" if _conf_val >= 90 else f"❌ {_conf_val:.1f}%"),
+                        ("Volume", components.get("volume", "") or ("✅ (conf≥40)" if _conf_val >= 40 else "—")),
+                        ("Confidence", f"✅ {_conf_val:.1f}%" if _conf_val >= 40 else f"❌ {_conf_val:.1f}%"),
                     ]
                     for key, reason in reasons:
                         passed = reason and reason != "—" and "not" not in str(reason).lower()[:10] and "❌" not in str(reason)
@@ -701,8 +1094,305 @@ def main():
     st.divider()
 
     # ════════════════════════════════════════════════════════════════
+    # ROW 5.5: STRATEGY QUALITY MONITOR — Live signal summary
+    # ════════════════════════════════════════════════════════════════
+    if signals:
+        st.markdown("**📈 Strategy Quality Monitor — Current Signal Set**")
+        _confs = [(s.get("confidence", 0) or 0) for s in signals]
+        _risks = []
+        _rrs = []
+        _strengths = []
+        _eq_scores = []
+        for s in signals:
+            _e = s.get("entry", s.get("entry_price", 0))
+            _sl = s.get("sl", s.get("stop_loss", 0))
+            _tp1 = s.get("take_profit_1", 0)
+            if _e and _sl:
+                _risks.append(abs(_e - _sl) / _e * 100)
+            if _e and _sl and _tp1:
+                _rr = abs(_tp1 - _e) / abs(_e - _sl) if abs(_e - _sl) > 0 else 0
+                _rrs.append(_rr)
+            _ema = s.get("ema_data", {})
+            _e20 = _ema.get("ema20", 0)
+            _e50 = _ema.get("ema50", 0)
+            _e144 = _ema.get("ema144", 0)
+            _e200 = _ema.get("ema200", 0)
+            _side = s.get("side", "")
+            _is_buy = _side in ("LONG", "BUY")
+            _aligned = (_e20 > _e50 > _e144 > _e200) if _is_buy else (_e20 < _e50 < _e144 < _e200)
+            _mat = s.get("maturity_score", 50)
+            _str = 3 if _aligned else 0
+            if _str and s.get("atr_expanding", True):
+                _str += 1
+            if _str and _mat and _mat >= 70:
+                _str += 1
+            _strengths.append(_str)
+
+        _avg_conf = sum(_confs) / len(_confs) if _confs else 0
+        _avg_risk = sum(_risks) / len(_risks) if _risks else 0
+        _avg_rr = sum(_rrs) / len(_rrs) if _rrs else 0
+        _avg_str = sum(_strengths) / len(_strengths) if _strengths else 0
+        _buy_n = sum(1 for s in signals if s.get("side") in ("LONG", "BUY"))
+        _sell_n = len(signals) - _buy_n
+
+        sqm_cols = st.columns(8)
+        with sqm_cols[0]:
+            st.markdown(f"""<div class="m-box"><div class="m-val">{len(signals)}</div><div class="m-lbl">Active Signals</div></div>""", unsafe_allow_html=True)
+        with sqm_cols[1]:
+            _c_color = "#3fb950" if _avg_conf >= 70 else ("#d29922" if _avg_conf >= 55 else "#f85149")
+            st.markdown(f"""<div class="m-box"><div class="m-val" style="color:{_c_color}">{_avg_conf:.1f}%</div><div class="m-lbl">Avg Confidence</div></div>""", unsafe_allow_html=True)
+        with sqm_cols[2]:
+            st.markdown(f"""<div class="m-box"><div class="m-val">{_avg_rr:.1f}R</div><div class="m-lbl">Avg R:R</div></div>""", unsafe_allow_html=True)
+        with sqm_cols[3]:
+            st.markdown(f"""<div class="m-box"><div class="m-val">{_avg_risk:.2f}%</div><div class="m-lbl">Avg Risk</div></div>""", unsafe_allow_html=True)
+        with sqm_cols[4]:
+            st.markdown(f"""<div class="m-box"><div class="m-val" style="color:#3fb950">{_buy_n}</div><div class="m-lbl">BUY</div></div>""", unsafe_allow_html=True)
+        with sqm_cols[5]:
+            st.markdown(f"""<div class="m-box"><div class="m-val" style="color:#f85149">{_sell_n}</div><div class="m-lbl">SELL</div></div>""", unsafe_allow_html=True)
+        with sqm_cols[6]:
+            _stars = "★" * round(_avg_str) + "☆" * (5 - round(_avg_str))
+            st.markdown(f"""<div class="m-box"><div class="m-val">{_stars}</div><div class="m-lbl">Avg Strength</div></div>""", unsafe_allow_html=True)
+        with sqm_cols[7]:
+            st.markdown(f"""<div class="m-box"><div class="m-val">{_avg_risk:.2f}%</div><div class="m-lbl">Avg Dist</div></div>""", unsafe_allow_html=True)
+
+    st.divider()
+
+    # ════════════════════════════════════════════════════════════════
     # ROW 6: PRODUCTION DIAGNOSTICS — Pipeline Funnel & Confidence
     # ════════════════════════════════════════════════════════════════
+    diagnostics = data.get("diagnostics", {})
+    pipeline_monitor = data.get("pipeline_monitor", {})
+    daily_recon = pipeline_monitor.get("daily_reconciliation", {})
+    daily_funnel = daily_recon.get("funnel", {})
+    daily_rejections = daily_recon.get("rejections", {})
+
+    # ── Current state vs cumulative clarification ──
+    current_buy = state_counts.get("BUY_MODE", 0)
+    current_sell = state_counts.get("SELL_MODE", 0)
+    current_active = state_counts.get("ACTIVE_BUY", 0) + state_counts.get("ACTIVE_SELL", 0)
+
+    st.markdown("**📊 Pipeline Context**")
+    ctx_cols = st.columns(4)
+    with ctx_cols[0]:
+        st.markdown(f"""<div class="m-box" style="border-left:3px solid #58a6ff"><div class="m-val" style="color:#58a6ff">{current_buy + current_sell}</div><div class="m-lbl">Current Regime ({current_buy}B / {current_sell}S)</div></div>""", unsafe_allow_html=True)
+    with ctx_cols[1]:
+        st.markdown(f"""<div class="m-box" style="border-left:3px solid #3fb950"><div class="m-val" style="color:#3fb950">{current_active}</div><div class="m-lbl">Active Signals Now</div></div>""", unsafe_allow_html=True)
+    with ctx_cols[2]:
+        _today_pub = daily_funnel.get("published", 0)
+        st.markdown(f"""<div class="m-box" style="border-left:3px solid #d29922"><div class="m-val" style="color:#d29922">{_today_pub}</div><div class="m-lbl">Published Today</div></div>""", unsafe_allow_html=True)
+    with ctx_cols[3]:
+        _today_scanned = daily_funnel.get("scanned", 0)
+        st.markdown(f"""<div class="m-box" style="border-left:3px solid #8b949e"><div class="m-val">{_today_scanned:,}</div><div class="m-lbl">Scanned Today</div></div>""", unsafe_allow_html=True)
+
+    # ── Pipeline Health Score ──
+    stage_passed = data.get("stage_passed", {})
+    if stage_passed:
+        st.markdown("**🏥 Pipeline Health**")
+        _health_stages = [
+            ("Fast Filter", "fast_filter"),
+            ("EMA", "ema_cache"),
+            ("Regime", "regime"),
+            ("Pullback", "pullback"),
+            ("Candle", "candle"),
+            ("Volume", "volume"),
+            ("Confidence", "confidence"),
+            ("Signal", "signal"),
+        ]
+        _health_html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+        _health_score = 0
+        _health_total = 0
+        for label, key in _health_stages:
+            _passed = stage_passed.get(key, 0)
+            if key == "signal":
+                _status = "✅" if _passed > 0 else "⚠️"
+                _health_score += 10 if _passed > 0 else 5
+            elif key in ("volume",):
+                # Volume is expected to be very selective
+                _status = "✅" if _passed > 0 else "🔴"
+                _health_score += 10 if _passed > 0 else 0
+            elif key in ("pullback", "candle"):
+                _status = "✅" if _passed > 10 else ("⚠️" if _passed > 0 else "🔴")
+                _health_score += 10 if _passed > 10 else (5 if _passed > 0 else 0)
+            else:
+                _status = "✅" if _passed > 100 else ("⚠️" if _passed > 0 else "🔴")
+                _health_score += 10 if _passed > 100 else (5 if _passed > 0 else 0)
+            _health_total += 10
+            _health_html += f'<div style="background:#161b22;border:1px solid #30363d;border-radius:4px;padding:4px 8px;text-align:center;min-width:80px"><div style="font-size:.9rem">{_status}</div><div style="font-size:.55rem;color:#8b949e">{label}</div></div>'
+        _health_pct = int(_health_score / _health_total * 100) if _health_total else 0
+        _h_color = "#3fb950" if _health_pct >= 80 else ("#d29922" if _health_pct >= 60 else "#f85149")
+        _health_html += f'<div style="background:#161b22;border:2px solid {_h_color};border-radius:4px;padding:4px 12px;text-align:center;min-width:80px"><div style="font-size:1.1rem;font-weight:bold;color:{_h_color}">{_health_pct}</div><div style="font-size:.55rem;color:#8b949e">Health</div></div>'
+        _health_html += '</div>'
+        st.markdown(_health_html, unsafe_allow_html=True)
+
+    # ── Live Pipeline State: Where are the 102 regime symbols right now? ──
+    st.markdown("**🔍 Live Pipeline State — Current Symbol Distribution**")
+    _state_breakdown = [
+        ("BUY_MODE", "🟢 BUY Regime", "#3fb950"),
+        ("SELL_MODE", "🔴 SELL Regime", "#f85149"),
+        ("WAITING_PULLBACK", "🟡 Waiting Pullback", "#d29922"),
+        ("WAITING_CONFIRMATION", "🔵 Waiting Confirm", "#58a6ff"),
+        ("ACTIVE_BUY", "✅ Active BUY", "#3fb950"),
+        ("ACTIVE_SELL", "✅ Active SELL", "#f85149"),
+    ]
+    _state_html = '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">'
+    for _sk, _sl, _sc in _state_breakdown:
+        _cnt = state_counts.get(_sk, 0)
+        if _cnt > 0:
+            _state_html += f'<div style="background:#161b22;border:1px solid #30363d;border-left:3px solid {_sc};border-radius:4px;padding:6px 10px;text-align:center;min-width:100px"><div style="font-size:1rem;font-weight:bold;color:{_sc}">{_cnt}</div><div style="font-size:.55rem;color:#8b949e">{_sl}</div></div>'
+    _state_html += '</div>'
+    st.markdown(_state_html, unsafe_allow_html=True)
+
+    # ── Pipeline Reconciliation: verify counts add up ──
+    _regime_total = state_counts.get("BUY_MODE", 0) + state_counts.get("SELL_MODE", 0)
+    _waiting_pullback = state_counts.get("WAITING_PULLBACK", 0)
+    _waiting_confirm = state_counts.get("WAITING_CONFIRMATION", 0)
+    _active_total = state_counts.get("ACTIVE_BUY", 0) + state_counts.get("ACTIVE_SELL", 0)
+    _no_trend = state_counts.get("NO_TREND", 0)
+    _accounted = _waiting_pullback + _waiting_confirm + _active_total
+    _unaccounted = _regime_total - _accounted
+    if _unaccounted > 0:
+        _recon_color = "#d29922" if _unaccounted < 10 else "#f85149"
+        st.markdown(f"""<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 12px;font-size:.72rem;margin-bottom:8px"><span style="color:#8b949e">Reconciliation: {_regime_total} regime → {_accounted} accounted ({_waiting_pullback} pullback + {_waiting_confirm} confirm + {_active_total} active) · </span><span style="color:{_recon_color};font-weight:600">{_unaccounted} unaccounted (likely in transition or cooldown)</span></div>""", unsafe_allow_html=True)
+    else:
+        st.markdown(f"""<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 12px;font-size:.72rem;margin-bottom:8px"><span style="color:#3fb950">✅ Pipeline reconciled: {_regime_total} regime = {_accounted} accounted ({_waiting_pullback} pullback + {_waiting_confirm} confirm + {_active_total} active)</span></div>""", unsafe_allow_html=True)
+
+    # ── Visual flow: Regime → Pullback → Confirm → Active (with Pass/Reject/Waiting) ──
+    _regime_n = state_counts.get("BUY_MODE", 0) + state_counts.get("SELL_MODE", 0)
+    _pullback_n = state_counts.get("WAITING_PULLBACK", 0)
+    _confirm_n = state_counts.get("WAITING_CONFIRMATION", 0)
+    _active_n = state_counts.get("ACTIVE_BUY", 0) + state_counts.get("ACTIVE_SELL", 0)
+    _flow_total = max(_regime_n, 1)
+
+    # Daily reconciliation for pass/reject at each stage
+    _d_regime_pass = daily_funnel.get("regime_pass", 0)
+    _d_pullback_pass = daily_funnel.get("pullback_pass", 0)
+    _d_candle_pass = daily_funnel.get("candle_pass", 0)
+    _d_volume_pass = daily_funnel.get("volume_pass", 0)
+    _d_published = daily_funnel.get("published", 0)
+    _d_regime_rej = daily_rejections.get("regime", 0)
+    _d_pullback_rej = daily_rejections.get("pullback", 0)
+    _d_candle_rej = daily_rejections.get("candle", 0)
+    _d_volume_rej = daily_rejections.get("volume", 0)
+
+    _flow_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;font-size:.72rem">'
+    _flow_html += '<div style="display:flex;gap:6px;font-weight:600;color:#8b949e;border-bottom:1px solid #30363d;padding-bottom:4px;margin-bottom:4px"><span style="width:90px;text-align:right">Stage</span><span style="width:50px;text-align:right">Now</span><span style="width:70px;text-align:right">Pass Today</span><span style="width:70px;text-align:right">Reject Today</span><span style="flex:1">Bar</span></div>'
+    _flow_stages = [
+        ("Regime", _regime_n, _d_regime_pass, _d_regime_rej, "#58a6ff"),
+        ("Pullback", _pullback_n, _d_pullback_pass, _d_pullback_rej, "#d29922"),
+        ("Candle", _confirm_n, _d_candle_pass, _d_candle_rej, "#58a6ff"),
+        ("Volume", 0, _d_volume_pass, _d_volume_rej, "#d29922"),
+        ("Active", _active_n, _d_published, 0, "#3fb950"),
+    ]
+    for _fl, _fn, _fp, _fr, _fcolor in _flow_stages:
+        _fpct = (_fn / _flow_total * 100) if _flow_total else 0
+        _fbar = max(_fpct, 1)
+        _flow_html += f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><div style="width:90px;font-size:.7rem;color:#8b949e;text-align:right">{_fl}</div><div style="width:50px;font-size:.7rem;color:{_fcolor};text-align:right;font-weight:bold">{_fn}</div><div style="width:70px;font-size:.7rem;color:#3fb950;text-align:right">{_fp:,}</div><div style="width:70px;font-size:.7rem;color:#f85149;text-align:right">{_fr:,}</div><div style="flex:1;background:#21262d;border-radius:3px;height:14px"><div style="width:{_fbar}%;background:{_fcolor};height:100%;border-radius:3px;min-width:2px"></div></div></div>'
+    _flow_html += '</div>'
+    st.markdown(_flow_html, unsafe_allow_html=True)
+
+    # ── Opportunity Queue: candidates closest to triggering ──
+    _waiting_signals = [s for s in signals if states.get(s.get("symbol", ""), {}).get("state", "") in ("WAITING_PULLBACK", "WAITING_CONFIRMATION")]
+    if _waiting_signals:
+        st.markdown(f"**📋 Opportunity Queue — {len(_waiting_signals)} Candidates Almost Ready**")
+        _oq_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;font-size:.75rem">'
+        _oq_html += '<div style="display:flex;gap:6px;font-weight:600;color:#8b949e;border-bottom:1px solid #30363d;padding-bottom:4px;margin-bottom:4px"><span style="width:100px">Symbol</span><span style="width:40px">Side</span><span style="width:110px">State</span><span style="width:80px">Age</span><span style="flex:1">Waiting For</span><span style="width:70px">Dist</span><span style="width:50px">Conf</span><span style="width:55px">Action</span></div>'
+        for _ws in _waiting_signals[:20]:
+            _wsym = _ws.get("symbol", "?")
+            _wside = _ws.get("side", "?")
+            _wstate = states.get(_wsym, {}).get("state", "?")
+            _wconf = (_ws.get("confidence", 0) or 0)
+            _wemoji = "🟢" if _wside in ("LONG", "BUY") else "🔴"
+            _wstate_label = "🟡 Pullback" if "PULLBACK" in _wstate else "🔵 Confirm"
+            _wmissing = "EMA20 touch" if "PULLBACK" in _wstate else "Confirm candle"
+            # Waiting time from state last_update (with aging color-coding)
+            _w_update = states.get(_wsym, {}).get("last_update", 0)
+            _w_wait = 0
+            if _w_update:
+                _w_wait = time.time() - _w_update
+                if _w_wait < 60:
+                    _w_wait_str = f"{int(_w_wait)}s"
+                elif _w_wait < 3600:
+                    _w_wait_str = f"{int(_w_wait // 60)}m"
+                else:
+                    _w_wait_str = f"{int(_w_wait // 3600)}h {int((_w_wait % 3600) // 60)}m"
+                # Aging color: <30m green, <2h yellow, <6h orange, >6h red
+                if _w_wait < 1800:
+                    _w_age_color = "#3fb950"
+                    _w_action = "Keep"
+                elif _w_wait < 7200:
+                    _w_age_color = "#d29922"
+                    _w_action = "Watch"
+                elif _w_wait < 21600:
+                    _w_age_color = "#f85149"
+                    _w_action = "Review"
+                else:
+                    _w_age_color = "#da3633"
+                    _w_action = "Expire"
+            else:
+                _w_wait_str = "—"
+                _w_age_color = "#8b949e"
+                _w_action = "—"
+            # EMA distance
+            _w_ema = _ws.get("ema_data", {})
+            _w_dist = _w_ema.get("ema_distance_atr", 0)
+            _w_dist_str = f"{abs(_w_dist):.2f}σ" if _w_dist else "—"
+            _oq_html += f'<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid #21262d"><span style="width:100px;color:#e6edf3">{_wsym}</span><span style="width:40px">{_wemoji}</span><span style="width:110px;color:#d29922">{_wstate_label}</span><span style="width:80px;color:{_w_age_color};font-weight:bold">{_w_wait_str}</span><span style="flex:1;color:#8b949e">{_wmissing}</span><span style="width:70px">{_w_dist_str}</span><span style="width:50px">{_wconf:.0f}%</span><span style="width:55px;color:{_w_age_color}">{_w_action}</span></div>'
+        _oq_html += '</div>'
+        st.markdown(_oq_html, unsafe_allow_html=True)
+    else:
+        st.markdown("**📋 Opportunity Queue** — No candidates currently waiting")
+
+    # ── Confidence Breakdown for Active Signals ──
+    _active_sigs = [s for s in signals if states.get(s.get("symbol", ""), {}).get("state", "").startswith("ACTIVE")]
+    if _active_sigs:
+        st.markdown("**🎯 Confidence Breakdown — Active Signals**")
+        for _as in _active_sigs:
+            _asym = _as.get("symbol", "?")
+            _aside = _as.get("side", "?")
+            _aemoji = "🟢" if _aside in ("LONG", "BUY") else "🔴"
+            _aconf = (_as.get("confidence", 0) or 0)
+            _acomp = _as.get("components", {}).get("confidence", {})
+            _cb_html = f'<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:.75rem">'
+            _cb_html += f'<div style="font-weight:600;color:#e6edf3;margin-bottom:4px">{_aemoji} {_asym} {_aside} — {_aconf:.1f}%</div>'
+            if _acomp:
+                _cb_html += '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+                for _ck, _cv in _acomp.items():
+                    if isinstance(_cv, (int, float)):
+                        _cc = "#3fb950" if _cv >= 70 else ("#d29922" if _cv >= 50 else "#f85149")
+                        _cb_html += f'<div style="text-align:center;min-width:50px"><div style="font-size:.85rem;font-weight:bold;color:{_cc}">{_cv:.0f}</div><div style="font-size:.5rem;color:#8b949e">{_ck}</div></div>'
+                _cb_html += '</div>'
+            else:
+                _cb_html += '<div style="color:#8b949e">Component scores not available in bridge data</div>'
+            _cb_html += '</div>'
+            st.markdown(_cb_html, unsafe_allow_html=True)
+
+    # ── Active Signal Lifetime ──
+    if _active_sigs:
+        st.markdown("**⏱️ Active Signal Lifetime**")
+        _lt_html = '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+        for _as in _active_sigs:
+            _asym = _as.get("symbol", "?")
+            _aside = _as.get("side", "?")
+            _ats = _as.get("timestamp", 0)
+            _aemoji = "🟢" if _aside in ("LONG", "BUY") else "🔴"
+            if _ats:
+                _aage = time.time() - _ats
+                if _aage < 60:
+                    _aage_str = f"{int(_aage)}s"
+                elif _aage < 3600:
+                    _aage_str = f"{int(_aage // 60)}m"
+                else:
+                    _aage_str = f"{int(_aage // 3600)}h {int((_aage % 3600) // 60)}m"
+            else:
+                _aage_str = "—"
+            # Color by age
+            _ac = "#3fb950" if _ats and (time.time() - _ats) < 1800 else ("#d29922" if _ats and (time.time() - _ats) < 7200 else "#f85149")
+            _lt_html += f'<div style="background:#161b22;border:1px solid #30363d;border-left:3px solid {_ac};border-radius:4px;padding:6px 10px;text-align:center;min-width:100px"><div style="font-size:.9rem;font-weight:bold;color:{_ac}">{_aage_str}</div><div style="font-size:.55rem;color:#8b949e">{_aemoji} {_asym}</div></div>'
+        _lt_html += '</div>'
+        st.markdown(_lt_html, unsafe_allow_html=True)
+
+    st.divider()
+
     diagnostics = data.get("diagnostics", {})
     if diagnostics:
         st.markdown("**🔬 Production Diagnostics — Pipeline Funnel & Confidence**")
@@ -717,7 +1407,7 @@ def main():
         # ── Stage pass counters (from scanner._stage_passed) ──
         stage_passed = data.get("stage_passed", {})
         if stage_rejections:
-            st.markdown("**📊 Pipeline Funnel — Conversion Rates**")
+            st.markdown("**📊 Pipeline Funnel — Session Cumulative** *(resets on engine restart)*")
             # Calculate total scanned for percentage base
             scanner_stats = data.get("scanner", {})
             total_scanned = scanner_stats.get("scan_count", 0)
@@ -807,6 +1497,25 @@ def main():
                 ff_html += '</div>'
                 st.markdown(ff_html, unsafe_allow_html=True)
 
+            # ── Volume Rejection Reason Breakdown ──
+            vol_reject = data.get("vol_reject_reasons", {})
+            vr_total = sum(vol_reject.values()) if vol_reject else 0
+            if vr_total > 0:
+                st.markdown("**🔍 Volume Rejection Reasons**")
+                vr_labels = {
+                    "low_ratio": "Volume ratio < 0.4 (pullback threshold)",
+                    "no_expansion": "Volume not expanding vs prior candle",
+                    "both": "Low ratio AND no expansion",
+                }
+                vr_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;font-size:.75rem">'
+                for reason_key, count in sorted(vol_reject.items(), key=lambda x: -x[1]):
+                    if count > 0:
+                        pct = (count / vr_total * 100) if vr_total > 0 else 0
+                        label = vr_labels.get(reason_key, reason_key)
+                        vr_html += f'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #21262d"><span style="color:#8b949e">{label}</span><span style="color:#f85149;font-weight:600">{count:,} ({pct:.0f}%)</span></div>'
+                vr_html += '</div>'
+                st.markdown(vr_html, unsafe_allow_html=True)
+
             # ── Waterfall: Candidates Remaining at Each Stage ──
             st.markdown("**🔽 Filter Waterfall — Candidates Remaining**")
             waterfall_stages = [
@@ -837,6 +1546,37 @@ def main():
             waterfall_html += '</div>'
             st.markdown(waterfall_html, unsafe_allow_html=True)
 
+            # ── Today's Funnel (from daily reconciliation) ──
+            if daily_funnel and daily_funnel.get("scanned", 0) > 0:
+                st.markdown("**📅 Today's Pipeline (Daily Reconciliation)**")
+                _d_scanned = daily_funnel.get("scanned", 0)
+                _d_stages = [
+                    ("Scanned", _d_scanned),
+                    ("Regime Pass", daily_funnel.get("regime_pass", 0)),
+                    ("Pullback Pass", daily_funnel.get("pullback_pass", 0)),
+                    ("Candle Pass", daily_funnel.get("candle_pass", 0)),
+                    ("Volume Pass", daily_funnel.get("volume_pass", 0)),
+                    ("Confidence Pass", daily_funnel.get("confidence_pass", 0)),
+                    ("Published", daily_funnel.get("published", 0)),
+                ]
+                _d_rej = daily_rejections
+                daily_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;font-size:.75rem">'
+                daily_html += '<div style="display:flex;gap:8px;font-weight:600;color:#8b949e;border-bottom:1px solid #30363d;padding-bottom:4px;margin-bottom:4px"><span style="width:130px;text-align:right">Stage</span><span style="width:80px;text-align:right">Pass</span><span style="width:80px;text-align:right">Reject</span><span style="width:80px;text-align:right">Reject %</span><span style="width:80px;text-align:right">Conversion</span><span style="flex:1">Bar</span></div>'
+                _prev_count = _d_scanned
+                for label, count in _d_stages:
+                    pct = (count / _d_scanned * 100) if _d_scanned > 0 else 0
+                    bar_w = max(pct, 0.3)
+                    color = "#3fb950" if pct > 50 else ("#d29922" if pct > 10 else ("#f85149" if pct > 1 else "#484f58"))
+                    _rej_key = label.lower().replace(" ", "_").replace("_pass", "").replace("published", "signal")
+                    _rej_count = _d_rej.get(_rej_key, 0)
+                    _rej_pct = (_rej_count / (count + _rej_count) * 100) if (count + _rej_count) > 0 else 0
+                    _conv = (count / _prev_count * 100) if _prev_count > 0 else 0
+                    _conv_color = "#3fb950" if _conv > 50 else ("#d29922" if _conv > 10 else "#f85149")
+                    daily_html += f'<div style="display:flex;align-items:center;gap:8px;margin:2px 0"><div style="width:130px;font-size:.7rem;color:#8b949e;text-align:right">{label}</div><div style="width:80px;font-size:.7rem;color:#3fb950;text-align:right">{count:,}</div><div style="width:80px;font-size:.7rem;color:#f85149;text-align:right">{_rej_count:,}</div><div style="width:80px;font-size:.7rem;color:#f85149;text-align:right">{_rej_pct:.1f}%</div><div style="width:80px;font-size:.7rem;color:{_conv_color};text-align:right">{_conv:.1f}%</div><div style="flex:1;background:#21262d;border-radius:3px;height:14px"><div style="width:{bar_w}%;background:{color};height:100%;border-radius:3px;min-width:2px"></div></div></div>'
+                    _prev_count = count
+                daily_html += '</div>'
+                st.markdown(daily_html, unsafe_allow_html=True)
+
         # Pipeline Latency
         if stage_latencies:
             st.markdown("**⏱️ Pipeline Latency (ms)**")
@@ -854,7 +1594,7 @@ def main():
         conf_dist = conf_audit.get("distribution", conf_bins)
         if conf_dist:
             st.markdown("**🎯 Confidence Score Distribution**")
-            threshold = conf_audit.get("threshold", 90.0)
+            threshold = conf_audit.get("threshold", 40.0)
             conf_html = '<div style="display:flex;gap:4px;align-items:end;height:100px;margin:4px 0">'
             max_count = max(conf_dist.values()) if conf_dist else 1
             # Use distribution from confidence_audit if available (better bins)
@@ -900,7 +1640,7 @@ def main():
             with ca4:
                 st.markdown(f"""<div class="m-box"><div class="m-val">{conf_audit.get('avg_gap_when_rejected', 0):+.1f}</div><div class="m-lbl">Avg Gap (Rejected)</div></div>""", unsafe_allow_html=True)
             with ca5:
-                st.markdown(f"""<div class="m-box"><div class="m-val">{conf_audit.get('threshold', 90)}</div><div class="m-lbl">Threshold</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="m-box"><div class="m-val">{conf_audit.get('threshold', 40)}</div><div class="m-lbl">Threshold</div></div>""", unsafe_allow_html=True)
 
             # ── Component Contribution Averages ──
             comp_avgs = conf_audit.get("component_averages", {})
@@ -1400,6 +2140,44 @@ def main():
             st.markdown("**🚀 Recent Positions Opened (last 5):**")
             for o in recent_opened[:5]:
                 st.markdown(f"- **{o.get('symbol', '?')}** {o.get('side', '?')} @ {o.get('entry_price', 0):.6f} (conf={o.get('confidence', 0):.1f}%, R:R={o.get('risk_reward', 0):.2f})")
+
+    # ── Open Position Confidence Drift ──
+    st.markdown("**📊 Open Position Confidence Drift**")
+    try:
+        import sqlite3 as _sqlite3
+        _db_path = str(_ai_root / "data" / "institutional_v1.db")
+        _conn = _sqlite3.connect(_db_path)
+        _conn.row_factory = _sqlite3.Row
+        _open_pos = _conn.execute("""
+            SELECT symbol, side, confidence as admission_conf, opened_at, entry_price, stop_loss
+            FROM positions WHERE strategy_version='ema_v5' AND status='open'
+            ORDER BY opened_at DESC
+        """).fetchall()
+        _conn.close()
+
+        if _open_pos:
+            drift_rows = []
+            for p in _open_pos:
+                sym = p["symbol"]
+                admission = (p["admission_conf"] or 0) * 100  # convert 0-1 to 0-100
+                # Note: current_conf requires live scanner state which isn't available here
+                # Show admission confidence only (drift requires scanner integration)
+                age_min = (time.time() - (p["opened_at"] or 0)) / 60
+
+                drift_rows.append({
+                    "Symbol": sym,
+                    "Side": p["side"],
+                    "Admission Conf": f"{admission:.1f}%",
+                    "Entry": f"{p['entry_price']:.6f}",
+                    "SL": f"{p['stop_loss']:.6f}",
+                    "Age": f"{age_min:.0f}m",
+                })
+
+            st.dataframe(drift_rows, use_container_width=True, hide_index=True)
+        else:
+            st.info("No open EMA V5 positions")
+    except Exception as e:
+        st.warning(f"Could not load open positions: {e}")
 
     # ── Footer ──
     st.caption(f"🏛️ EMA V5 Scanner — DeltaTerminal v2.5 — {_dt(time.time())} ({st.session_state.get('tz_name', 'UTC')})")

@@ -37,8 +37,15 @@ class VolumeEngine:
         prev_volume = ema_data.get("prev_volume", 0)
 
         if vol_sma20 <= 0 or last_volume <= 0:
+            # Distinguish between zero volume and zero SMA
+            if last_volume <= 0 and vol_sma20 <= 0:
+                reason = "zero_volume_and_sma"
+            elif last_volume <= 0:
+                reason = "zero_volume"
+            else:
+                reason = "zero_sma"
             return {"volume_ok": False, "volume_ratio": 0, "volume_surge": False,
-                    "volume_expanding": False, "volume_score": 0, "reason": "no_volume_data"}
+                    "volume_expanding": False, "volume_score": 0, "reason": reason}
 
         ratio = last_volume / vol_sma20
 

@@ -302,8 +302,8 @@ if page == "🏠 Portfolio Overview":
     timing = [
         ("Avg Hold", f"{t['avg_hold_minutes']:.0f} min", ""),
         ("Max Hold", f"{t['max_hold_minutes']:.0f} min", ""),
-        ("Avg MFE", fmt_pct(e["avg_mfe"]), "positive"),
-        ("Avg MAE", fmt_pct(e["avg_mae"]), "negative"),
+        ("Avg MFE%", f"{e['avg_mfe']:.2f}%", "positive"),
+        ("Avg MAE%", f"{e['avg_mae']:.2f}%", "negative"),
     ]
     for col, (label, value, css) in zip(cols, timing):
         with col:
@@ -380,8 +380,8 @@ elif page == "🎯 Confidence Research":
                 "Avg RR": fmt_num(stats["avg_rr"]),
                 "Sharpe": fmt_num(stats["sharpe"]),
                 "Avg Hold (min)": f"{stats['avg_hold_minutes']:.0f}",
-                "Avg MFE": fmt_pct(stats["avg_mfe"]),
-                "Avg MAE": fmt_pct(stats["avg_mae"]),
+                "Avg MFE%": f"{stats['avg_mfe']:.2f}%",
+                "Avg MAE%": f"{stats['avg_mae']:.2f}%",
             })
         
         df = pd.DataFrame(rows)

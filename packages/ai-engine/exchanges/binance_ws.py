@@ -474,6 +474,9 @@ class BinanceWebSocket:
                     "low": d["low"],
                     "open": d["open"],
                     "count": d["count"],
+                    # Stamped identically to the WS cache entry so the engine's
+                    # stale-price gate (BLUAI fix) can measure data age.
+                    "last_update": d.get("last_update", 0),
                 }
                 for sym, d in self._ws_ticker_cache.items()
                 if d.get("price", 0) > 0 and sym.endswith("USDT")
@@ -482,6 +485,7 @@ class BinanceWebSocket:
         data = await self._get("/fapi/v1/ticker/24hr", use_data_url=True)
         if not data:
             return []
+        _rest_stamp = time.time()
         return [
             {
                 "symbol": t["symbol"],
@@ -494,6 +498,7 @@ class BinanceWebSocket:
                 "low": float(t["lowPrice"]),
                 "open": float(t["openPrice"]),
                 "count": int(t["count"]),
+                "last_update": _rest_stamp,
             }
             for t in data
             if t["symbol"].endswith("USDT")

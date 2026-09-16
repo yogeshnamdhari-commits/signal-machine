@@ -80,9 +80,25 @@ class CandleEngine:
             if is_bullish_pin_bar(o2, h2, l2, cl2, cfg.wick_ratio_min):
                 return {"pattern_found": True, "pattern": "bullish_pin_bar", "candle_score": 90, "reason": "bullish_pin_bar", "diagnostics": diagnostics}
 
-            # Log rejection details
-            diag_str = f"body={body_ratio:.2f}(min={cfg.body_ratio_min}) wick={wick_ratio:.1f}(min={cfg.wick_ratio_min})"
-            logger.debug("🔍 CANDLE BUY_MODE no_pattern | {}", diag_str)
+            # Determine specific rejection reason for BUY_MODE
+            _reasons = []
+            # Check engulfing failure reason
+            if cl1 >= o1:
+                _reasons.append("c1_not_bearish")
+            if cl2 <= o2:
+                _reasons.append("c2_not_bullish")
+            if body_ratio < cfg.body_ratio_min:
+                _reasons.append(f"body_low:{body_ratio:.2f}")
+            # Check hammer failure reason
+            lower_wick_val = min(o2, cl2) - l2
+            if body2 > 0 and lower_wick_val / body2 < cfg.wick_ratio_min:
+                _reasons.append(f"wick_low:{wick_ratio:.1f}")
+            if upper_wick > body2:
+                _reasons.append(f"upper_wick_high:{upper_wick_ratio:.1f}")
+            if abs(cl2 - o2) <= (h2 - l2) * 0.15:
+                _reasons.append("hammer_body_small")
+            _diag_reject = ",".join(_reasons) if _reasons else "no_pattern"
+            diagnostics["rejection_reason"] = _diag_reject
 
         else:  # SELL_MODE
             # Check bearish engulfing
@@ -99,8 +115,23 @@ class CandleEngine:
             if is_bearish_pin_bar(o2, h2, l2, cl2, cfg.wick_ratio_min):
                 return {"pattern_found": True, "pattern": "bearish_pin_bar", "candle_score": 90, "reason": "bearish_pin_bar", "diagnostics": diagnostics}
 
-            # Log rejection details
-            diag_str = f"body={body_ratio:.2f}(min={cfg.body_ratio_min}) wick={upper_wick_ratio:.1f}(min={cfg.wick_ratio_min})"
-            logger.debug("🔍 CANDLE SELL_MODE no_pattern | {}", diag_str)
+            # Determine specific rejection reason for SELL_MODE
+            _reasons = []
+            if cl1 <= o1:
+                _reasons.append("c1_not_bullish")
+            if cl2 >= o2:
+                _reasons.append("c2_not_bearish")
+            if body_ratio < cfg.body_ratio_min:
+                _reasons.append(f"body_low:{body_ratio:.2f}")
+            upper_wick_val = h2 - max(o2, cl2)
+            if body2 > 0 and upper_wick_val / body2 < cfg.wick_ratio_min:
+                _reasons.append(f"wick_low:{upper_wick_ratio:.1f}")
+            lower_wick_val = min(o2, cl2) - l2
+            if lower_wick_val > body2:
+                _reasons.append(f"lower_wick_high:{lower_wick_val / body2:.1f}")
+            if abs(cl2 - o2) <= (h2 - l2) * 0.15:
+                _reasons.append("ss_body_small")
+            _diag_reject = ",".join(_reasons) if _reasons else "no_pattern"
+            diagnostics["rejection_reason"] = _diag_reject
 
         return {"pattern_found": False, "reason": "no_pattern", "diagnostics": diagnostics}

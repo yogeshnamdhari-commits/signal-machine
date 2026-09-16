@@ -133,7 +133,7 @@ class ConfidenceCalibrator:
             # Invalidate cache
             self._cache.clear()
         except Exception as e:
-            logger.debug("Calibrator outcome failed: {}", e)
+            logger.warning("Calibrator outcome failed for {}: {}", symbol, e)
 
     def calibrate(self, raw_confidence: float) -> float:
         """

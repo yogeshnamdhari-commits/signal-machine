@@ -103,9 +103,10 @@ class ProductionAnalytics:
                     realized_r, planned_rr, volatility_score,
                     quiet_market_blocked, highest_pnl
                 FROM positions_archive
-                WHERE status IN ('closed', 'win', 'loss', 'breakeven')
-                   OR exit_reason IS NOT NULL
-                   OR pnl != 0
+                WHERE strategy_version = 'ema_v5'
+                  AND (status IN ('closed', 'win', 'loss', 'breakeven')
+                       OR exit_reason IS NOT NULL
+                       OR pnl != 0)
                 ORDER BY closed_at DESC
             """).fetchall()
             for r in rows:
@@ -130,6 +131,7 @@ class ProductionAnalytics:
                 FROM forward_trades
                 WHERE exit_price IS NOT NULL AND exit_price > 0
                   AND exit_reason IS NOT NULL AND exit_reason != ''
+                  AND (strategy_version = 'ema_v5' OR strategy_version IS NULL OR strategy_version = '')
                 ORDER BY exit_time DESC
             """).fetchall()
             for r in rows:

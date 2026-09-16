@@ -119,8 +119,12 @@ class RiskConfig:
     tier_elite_mult: float = 2.50             # 🆕 Position multiplier for elite trades
     tier_strong_score: float = 90.0           # 🆕 Score for 1.8x sizing
     tier_strong_mult: float = 1.80            # 🆕 Position multiplier for strong trades
-    tier_marginal_score: float = 85.0         # 🆕 Score for reduced sizing
-    tier_marginal_mult: float = 0.40          # 🆕 Position multiplier for marginal trades
+    tier_marginal_score: float = 85.0           # 🆕 Score for reduced sizing
+    tier_marginal_mult: float = 0.40            # 🆕 Position multiplier for marginal trades
+    # 🛡️ Data-health gate (BLUAI incident): risk/SL/trailing evaluation and new
+    # entries reject ticker prices older than this many seconds. Pure infrastructure —
+    # does not alter any strategy/risk parameter.
+    max_price_age_sec: float = 60.0
 
 
 @dataclass(frozen=True)
@@ -295,6 +299,51 @@ class ArbitrageConfig:
 
 # ── Root config ──────────────────────────────────────────────────
 @dataclass(frozen=True)
+class ProfitFilterConfig:
+    """App Profit Filter — diagnostic admission layer between LIVE SHEET and execution.
+
+    This is the ONLY admission layer allowed to change (Master Directive):
+    EMA V5 and Smart Money remain read-only. Phase A = diagnostic (log every
+    ACCEPT/REJECT decision, block nothing). Phase B = set blocking=True.
+    """
+    enabled: bool = field(default_factory=lambda: _env_bool("PROFIT_FILTER_ENABLED", True))
+    # Phase A diagnostic: log decisions but never block execution.
+    blocking: bool = field(default_factory=lambda: _env_bool("PROFIT_FILTER_BLOCKING", False))
+    # In blocking mode, WATCH (B-grade) trades are blocked too unless disabled.
+    block_watch: bool = field(default_factory=lambda: _env_bool("PROFIT_FILTER_BLOCK_WATCH", True))
+    # EXECUTE requires score >= min_execute_score (A+/A = 70+).
+    min_execute_score: int = field(default_factory=lambda: _env_int("PROFIT_FILTER_MIN_EXECUTE_SCORE", 70))
+    # WATCH band floor (B = 60-69). Below this is REJECT (C).
+    watch_min_score: int = field(default_factory=lambda: _env_int("PROFIT_FILTER_WATCH_MIN_SCORE", 60))
+    # Diagnostic-only regime-confidence class (HIGH/ACCEPTABLE/WATCH/REJECT).
+    # If enabled, regime class "REJECT" (<50%) also blocks in blocking mode.
+    enforce_regime_conf: bool = field(default_factory=lambda: _env_bool("PROFIT_FILTER_ENFORCE_REGIME_CONF", False))
+    # Persist decisions to a JSONL forensics log in addition to the DB table.
+    log_jsonl: bool = field(default_factory=lambda: _env_bool("PROFIT_FILTER_LOG_JSONL", True))
+    # ── App Profit Filter v2 (diagnostic admission layer) ────────────────────
+    # Data-freshness gate (v2 #1): stale LIVE SHEET data (OI/orderbook/CVD/flow)
+    # yields NO_APP_DECISION — a data-quality rejection, never a trading rejection.
+    # Blocking stays OFF by default: v2 is diagnostic until the cohort metrics
+    # (ALL vs ACCEPTED vs REJECTED vs WATCH) prove themselves.
+    require_freshness: bool = field(default_factory=lambda: _env_bool("PROFIT_FILTER_REQUIRE_FRESH", True))
+    # LIVE SHEET snapshot older than this many seconds is treated as STALE.
+    max_data_age_sec: float = field(default_factory=lambda: _env_float("PROFIT_FILTER_MAX_DATA_AGE_SEC", 300.0))
+    # ── App Profit Filter v3 (diagnostic upgrade) ────────────────────────────
+    # Selects the scoring path. "v2" preserves current behavior byte-for-byte;
+    # "v3" applies the evidence-based upgrade (side-aware asymmetric conflict
+    # penalties, HARD_CONFLICT veto that overrides high scores, Delta as the
+    # strongest confirmation, oversized-stop risk gate). NOTHING blocks in
+    # either version while PROFIT_FILTER_BLOCKING=false.
+    scoring_version: str = field(default_factory=lambda: _env("PROFIT_FILTER_SCORING_VERSION", "v2"))
+    # v3 risk gate (APP-only): a stop distance > X% of entry price is flagged
+    # as oversized expected loss. Diagnostic: records RISK:OVERSIZED_STOP even
+    # in blocking mode without changing underlying execution sizing.
+    risk_gate_max_stop_pct: float = field(default_factory=lambda: _env_float("PROFIT_FILTER_RISK_GATE_MAX_STOP_PCT", 5.0))
+    # v3 risk gate blocks non-ACCEPT decisions only when blocking is enabled.
+    risk_gate_blocking: bool = field(default_factory=lambda: _env_bool("PROFIT_FILTER_RISK_GATE_BLOCKING", False))
+
+
+@dataclass(frozen=True)
 class AppConfig:
     env: str = field(default_factory=lambda: _env("APP_ENV", "development"))
     debug: bool = field(default_factory=lambda: _env_bool("DEBUG", True))
@@ -312,6 +361,7 @@ class AppConfig:
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     intraday: IntradayConfig = field(default_factory=IntradayConfig)
     arbitrage: ArbitrageConfig = field(default_factory=ArbitrageConfig)
+    profit_filter: ProfitFilterConfig = field(default_factory=ProfitFilterConfig)
 
 
 # ── Singleton ────────────────────────────────────────────────────

@@ -35,6 +35,7 @@ class ConfidenceEngine:
         pullback_eval: Dict,
         candle_eval: Dict,
         volume_eval: Dict,
+        maturity_eval: Optional[Dict] = None,
     ) -> Dict:
         """Compute weighted confidence score.
 
@@ -56,6 +57,7 @@ class ConfidenceEngine:
         pullback_score = 100 if pullback_eval.get("pullback_detected") else 0
         candle_score = candle_eval.get("candle_score", 0)
         volume_score = volume_eval.get("volume_score", 0)
+        maturity_score = maturity_eval.get("maturity_score", 50) if maturity_eval else 50
 
         # v33: Recalibrated confidence formula
         # Validated via multivariate analysis:
@@ -77,13 +79,16 @@ class ConfidenceEngine:
         candle_contrib = -(candle_score * cfg.candle_weight)       # INVERTED: low FVG = reward
         volume_contrib = -(volume_score * cfg.volume_weight)       # INVERTED: low Vol = reward
 
+        maturity_contrib = maturity_score * cfg.maturity_weight
+
         confidence = (
             inst_score * 0.50 +     # institutional_score is primary (positive corr)
             regime_contrib +
             trend_contrib +
             pullback_contrib +
             candle_contrib +
-            volume_contrib
+            volume_contrib +
+            maturity_contrib         # NEW: trend maturity scoring
         )
         confidence = max(0, min(100, confidence))  # clamp to 0-100
 
@@ -122,6 +127,12 @@ class ConfidenceEngine:
                 "contribution": round(volume_contrib, 2),
                 "pct_of_confidence": round(volume_contrib / max(confidence, 0.01) * 100, 1),
             },
+            "maturity": {
+                "score": round(maturity_score, 1),
+                "weight": cfg.maturity_weight,
+                "contribution": round(maturity_contrib, 2),
+                "pct_of_confidence": round(maturity_contrib / max(confidence, 0.01) * 100, 1),
+            },
             "raw_confidence": round(confidence, 2),
             "final_confidence": round(confidence, 1),
             "threshold": cfg.min_confidence,
@@ -153,6 +164,8 @@ class ConfidenceEngine:
             "candle_contrib": round(candle_contrib, 2),
             "volume": round(volume_score, 1),
             "volume_contrib": round(volume_contrib, 2),
+            "maturity": round(maturity_score, 1),
+            "maturity_contrib": round(maturity_contrib, 2),
         })
         if len(self._score_history) > 500:
             self._score_history = self._score_history[-500:]
@@ -162,6 +175,7 @@ class ConfidenceEngine:
         logger.info(
             "🎯 CONF_SCORED inst={:.0f} regime={:.0f}(+{:.1f}) trend={:.0f}({:+.1f}) "
             "pullback={:.0f}(+{:.1f}) candle={:.0f}({:+.1f}) volume={:.0f}({:+.1f}) "
+            "maturity={:.0f}(+{:.1f}) "
             "→ conf={:.1f}/{:.0f} gap={:+.1f} {}",
             inst_score,
             regime_score, regime_contrib,
@@ -169,6 +183,7 @@ class ConfidenceEngine:
             pullback_score, pullback_contrib,
             candle_score, candle_contrib,
             volume_score, volume_contrib,
+            maturity_score, maturity_contrib,
             confidence, cfg.min_confidence, gap,
             "PASS" if passed else "REJECT",
         )
@@ -179,6 +194,7 @@ class ConfidenceEngine:
             "pullback": round(pullback_score, 1),
             "candle": round(candle_score, 1),
             "volume": round(volume_score, 1),
+            "maturity": round(maturity_score, 1),
             "confidence": round(confidence, 1),
         }
 
