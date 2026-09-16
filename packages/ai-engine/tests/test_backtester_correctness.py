@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 import pandas as pd
+import pytest
 
 from backtesting.backtester import BacktestConfig, BacktestEngine
 
@@ -59,4 +60,4 @@ def test_trade_net_pnl_includes_funding():
         entry_time=datetime(2026, 1, 1), exit_time=datetime(2026, 1, 1, 1),
         pnl=1, fees=0.1, slippage=0.1, funding=0.2, exit_reason="test", hold_time_minutes=60,
     )
-    assert trade.net_pnl == 0.6
+    assert trade.net_pnl == pytest.approx(0.6, abs=1e-12)
