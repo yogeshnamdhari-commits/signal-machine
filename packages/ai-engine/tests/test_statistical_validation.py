@@ -1,6 +1,28 @@
 from validation.statistical_validation import ResearchEvidence, evaluate_research_evidence
 
 
+def _complete_evidence(**overrides):
+    values = {
+        "completed_trades": 150,
+        "train_period": ("2025-01-01", "2025-05-01"),
+        "validation_period": ("2025-05-02", "2025-06-01"),
+        "test_period": ("2025-06-02", "2025-07-01"),
+        "regime_counts": {"bull": 80, "bear": 70},
+        "cost_model": "fees+spread+slippage",
+        "funding_source": "historical",
+        "rejected_signals": 2000,
+        "rejected_outcomes_complete": True,
+        "bootstrap_seed": 1,
+        "code_commit": "abc",
+        "config_fingerprint": "def",
+        "profit_factor": 1.35,
+        "expectancy": 2.5,
+        "max_drawdown_pct": 8.0,
+    }
+    values.update(overrides)
+    return ResearchEvidence(**values)
+
+
 def test_insufficient_evidence_is_rejected():
     evidence = ResearchEvidence(
         completed_trades=47,
@@ -15,20 +37,21 @@ def test_insufficient_evidence_is_rejected():
 
 
 def test_temporal_overlap_is_rejected():
-    evidence = ResearchEvidence(
-        completed_trades=150,
-        train_period=("2025-01-01", "2025-05-01"),
+    evidence = _complete_evidence(
         validation_period=("2025-04-15", "2025-06-01"),
-        test_period=("2025-06-02", "2025-07-01"),
-        regime_counts={"bull": 80, "bear": 70},
-        cost_model="fees+spread+slippage",
-        funding_source="historical",
-        rejected_signals=2000,
-        rejected_outcomes_complete=True,
-        bootstrap_seed=1,
-        code_commit="abc",
-        config_fingerprint="def",
     )
     decision = evaluate_research_evidence(evidence)
     assert not decision.approved
     assert "overlapping_temporal_windows" in decision.reasons
+
+
+def test_negative_profit_factor_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(profit_factor=0.82))
+    assert not decision.approved
+    assert "profit_factor_below_minimum" in decision.reasons
+
+
+def test_negative_expectancy_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(expectancy=-4.27))
+    assert not decision.approved
+    assert "expectancy_not_positive" in decision.reasons
