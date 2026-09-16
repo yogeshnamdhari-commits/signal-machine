@@ -1,5 +1,17 @@
 from validation.certification import CertificationState, generate_certification
+from validation.evidence_manifest import EvidenceManifest
 from validation.statistical_validation import ResearchDecision
+from config.schema import config_fingerprint
+
+
+def _manifest():
+    return EvidenceManifest(
+        commit_sha="abc",
+        configuration_fingerprint=config_fingerprint({}),
+        issued_at=1_000.0,
+        expires_at=2_000.0,
+        dataset_fingerprint="dataset-1",
+    )
 
 
 def test_rejected_research_decision_cannot_certify():
@@ -11,6 +23,8 @@ def test_rejected_research_decision_cannot_certify():
         failures=(),
         research_decision=decision,
         research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=1_500.0,
     )
 
     assert artifact.state is CertificationState.ENGINEERING_VALID
@@ -26,6 +40,8 @@ def test_approved_research_decision_can_reach_research_validated():
         failures=(),
         research_decision=decision,
         research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=1_500.0,
     )
 
     assert artifact.state is CertificationState.RESEARCH_VALIDATED
@@ -41,6 +57,8 @@ def test_live_eligibility_requires_approved_research_decision():
         failures=(),
         research_decision=decision,
         research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=1_500.0,
         live_eligible=True,
     )
 
