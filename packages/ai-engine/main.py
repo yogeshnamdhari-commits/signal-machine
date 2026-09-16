@@ -5,7 +5,6 @@ Production entry point with graceful shutdown.
 from __future__ import annotations
 
 import asyncio
-import os
 import signal
 import sys
 from contextlib import asynccontextmanager
@@ -46,6 +45,8 @@ def _setup_logging(level: str = "INFO") -> None:
     )
 
 
+# Source-level exchange and risk hardening is currently centralized here while
+# the underlying engine modules are migrated to the same contracts.
 apply_integrity_patches()
 apply_risk_integrity_patch()
 CONFIG_FINGERPRINT = validate_runtime_config(config)
@@ -101,6 +102,7 @@ async def _acquire_engine_lock() -> bool:
             old_pid = int(_pid_path.read_text().strip())
             alive = False
             try:
+                import os
                 os.kill(old_pid, 0)
                 alive = True
             except OSError:
@@ -122,6 +124,7 @@ async def _acquire_engine_lock() -> bool:
         lock_fd.close()
         return False
 
+    import os
     _pid_path.write_text(str(os.getpid()))
     global _engine_lock_fd
     _engine_lock_fd = lock_fd
@@ -219,16 +222,29 @@ def _run_api() -> None:
     uvicorn.run("main:app", host=config.dashboard.host, port=8000, reload=False)
 
 
+def _run_live() -> int:
+    """Never start live execution without a current matching certification artifact."""
+    from validation.live_gate import LiveCertificationError, verify_live_certification
+
+    try:
+        artifact = verify_live_certification()
+    except LiveCertificationError as exc:
+        logger.error("LIVE EXECUTION BLOCKED: {}", exc)
+        return 2
+
+    logger.info("LIVE CERTIFICATION VERIFIED: state={}, commit={}", artifact.get("state"), artifact.get("commit_sha"))
+    # The existing engine remains the execution implementation. This branch is
+    # reached only after certification; exchange-side execution is not started
+    # automatically here because no current research certification exists yet.
+    return 0
+
+
 def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="DeltaTerminal")
-    parser.add_argument("--mode", choices=["engine", "dashboard", "api", "both"], default="engine")
-    parser.add_argument("--testnet", action="store_true")
+    parser.add_argument("--mode", choices=["engine", "dashboard", "api", "both", "live"], default="engine")
     args = parser.parse_args()
-
-    if args.testnet:
-        os.environ["BINANCE_TESTNET"] = "true"
 
     _setup_logging(config.log_level)
 
@@ -249,6 +265,8 @@ def main() -> None:
         t = threading.Thread(target=lambda: asyncio.run(_run_engine()), daemon=True)
         t.start()
         _run_dashboard()
+    elif args.mode == "live":
+        raise SystemExit(_run_live())
 
 
 if __name__ == "__main__":
