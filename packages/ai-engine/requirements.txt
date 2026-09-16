@@ -1,37 +1,38 @@
 # DeltaTerminal — Python Dependencies
 
-# ── Async Core ──────────────────────────────
+# Async core
 websockets>=12.0,<14
 aiohttp>=3.9,<4
 python-dotenv>=1.0,<2
 
-# ── API ─────────────────────────────────────
+# API
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 
-# ── Data ────────────────────────────────────
+# Data
 numpy>=1.24,<3
 pandas>=2.0,<3
 scipy>=1.11,<2
 
-# ── Database ────────────────────────────────
-aiosqlite>=0.19,<1
+# Database
+aioSqlite>=0.19,<1
 
-# ── Dashboard ───────────────────────────────
+# Dashboard
 streamlit>=1.29,<2
+streamlit-autorefresh>=1.0.1,<2
 plotly>=5.18,<6
 matplotlib>=3.7,<4
 
-# ── Alerts ──────────────────────────────────
+# Alerts
 httpx>=0.25,<1
 
-# ── Backtesting ─────────────────────────────
+# Backtesting
 scikit-learn>=1.3,<2
 
-# ── Test ────────────────────────────────────
+# Test
 pytest>=8.0,<9
 
-# ── Utilities ───────────────────────────────
+# Utilities
 loguru>=0.7,<1
 pydantic>=2.5,<3
 psutil>=5.9,<6
