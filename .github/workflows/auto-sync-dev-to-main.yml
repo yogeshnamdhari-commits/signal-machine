@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: auto-sync-dev-to-main
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validate-and-sync:
