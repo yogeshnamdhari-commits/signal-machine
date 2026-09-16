@@ -210,7 +210,7 @@ class BinanceWebSocket:
         sym = trade["symbol"]
         self._buffer.setdefault(sym, []).append(trade)
         if self._callback:
-            await self._callback("trade", trade)
+            await self._callback('trade', trade)
 
     async def _on_book_ticker(self, d: Dict) -> None:
         depth = {
