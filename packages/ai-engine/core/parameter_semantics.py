@@ -119,13 +119,20 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
     return DirectionalFactor(key, DirectionState.NEUTRAL, 0, "no directional semantics defined", "", "", observed_at or 1.0, DataQuality.NOT_APPLICABLE)
 
 
-def signal_from_canonical(signal: Dict[str, Any], *, bridge_trusted: bool = False) -> str:
-    """Return BUY/SELL only for a Python-canonical signal; never infer one."""
-    if not bridge_trusted and str(signal.get("source", "")).lower() not in {"python", "python_engine", "canonical"}:
+def signal_from_canonical(signal: Dict[str, Any]) -> str:
+    """Return BUY/SELL only for a structurally canonical Python-engine signal.
+
+    A non-empty bridge payload is never trusted merely because it came from a
+    readable JSON file. The signal must carry explicit Python authority and the
+    canonical marker emitted by the writer/normalizer.
+    """
+    if not isinstance(signal, dict) or not signal:
         return "NO_SIGNAL"
-    if str(signal.get("authority", "python")).lower() not in {"python", ""}:
+    if str(signal.get("source", "")).lower() not in {"python", "python_engine"}:
         return "NO_SIGNAL"
-    if signal.get("canonical") is False:
+    if str(signal.get("authority", "")).lower() != "python":
+        return "NO_SIGNAL"
+    if signal.get("canonical") is not True:
         return "NO_SIGNAL"
     side = str(signal.get("side", signal.get("type", ""))).upper()
     if side in {"BUY", "LONG"}:
