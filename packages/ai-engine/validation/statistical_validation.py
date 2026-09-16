@@ -1,8 +1,15 @@
-"""Fail-closed research evidence gates; no profitability is inferred."""
+"""Fail-closed research evidence gates for current strategy certification."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Dict, Tuple
+
+
+MIN_COMPLETED_TRADES = 100
+MIN_PROFIT_FACTOR = 1.20
+MIN_EXPECTANCY = 0.0
+MAX_DRAWDOWN_PCT = 12.0
 
 
 @dataclass(frozen=True)
@@ -19,6 +26,9 @@ class ResearchEvidence:
     bootstrap_seed: int | None = None
     code_commit: str = ""
     config_fingerprint: str = ""
+    profit_factor: float | None = None
+    expectancy: float | None = None
+    max_drawdown_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -29,7 +39,7 @@ class ResearchDecision:
 
 def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
     reasons = []
-    if e.completed_trades < 100:
+    if e.completed_trades < MIN_COMPLETED_TRADES:
         reasons.append("insufficient_completed_trades")
     if not e.cost_model:
         reasons.append("missing_cost_model")
@@ -41,6 +51,22 @@ def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
         reasons.append("missing_rejected_signal_outcomes")
     if not e.regime_counts or sum(e.regime_counts.values()) <= 0:
         reasons.append("missing_regime_coverage")
+
+    if e.profit_factor is None or not isfinite(e.profit_factor):
+        reasons.append("missing_profit_factor")
+    elif e.profit_factor < MIN_PROFIT_FACTOR:
+        reasons.append("profit_factor_below_minimum")
+
+    if e.expectancy is None or not isfinite(e.expectancy):
+        reasons.append("missing_expectancy")
+    elif e.expectancy <= MIN_EXPECTANCY:
+        reasons.append("expectancy_not_positive")
+
+    if e.max_drawdown_pct is None or not isfinite(e.max_drawdown_pct):
+        reasons.append("missing_max_drawdown")
+    elif e.max_drawdown_pct >= MAX_DRAWDOWN_PCT:
+        reasons.append("max_drawdown_above_limit")
+
     periods = [e.train_period, e.validation_period, e.test_period]
     for earlier, later in zip(periods, periods[1:]):
         if earlier[1] > later[0]:
