@@ -72,6 +72,7 @@ for source_row in market_data:
     symbol = str(row.get("symbol", "?"))
     display = build_signal_display(signal_lookup.get(symbol, {}), row)
     fvg = display["fvg"]
+    liq_risk = str(row.get("liq_risk_level", row.get("liq_risk", "UNAVAILABLE")) or "UNAVAILABLE").upper()
     rows.append({
         "Symbol": symbol,
         "Price": fmt(row.get("price"), "$"),
@@ -90,7 +91,9 @@ for source_row in market_data:
         "Ex Flow": evidence(display["exchange_flow"]),
         "Vol Bias": evidence(display["volume"]),
         "Imbalance": evidence(display["imbalance"]),
-        "Liq Risk": str(display["liq_risk"]).upper(),
+        "Liq Zone ↓": fmt(row.get("long_liq_vol"), "$"),
+        "Liq Zone ↑": fmt(row.get("short_liq_vol"), "$"),
+        "Liq Risk": liq_risk,
         "Sweep": evidence(display["sweep"]),
         "Sweep Price": fmt(display["sweep_price"], "$"),
         "FVG": f"{fvg['state']} | {fvg['quality']}",
@@ -119,8 +122,8 @@ semantics = [
     ("Flow / Ex Flow", "Directional classification only from actual underlying flow observations."),
     ("Vol Bias", "Directional volume classification produced by the engine."),
     ("Imbalance", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL."),
+    ("Liq Zone ↓ / ↑", "Long/short liquidation-volume context from the liquidation engine; not standalone votes."),
     ("Liq Risk", "Risk state only; never a standalone BUY/SELL generator."),
-    ("Liq Zone ↓ / ↑", "Liquidity-location context only; never an independent trade vote."),
     ("Sweep", "BUY/SELL only when a qualifying sweep event is detected; otherwise NOT_APPLICABLE."),
     ("Sweep Price", "Event location only; it is not an independent trade vote."),
     ("FVG", "Actual detector state from FVG gap boundaries; contextual evidence."),
