@@ -1243,6 +1243,12 @@ def render_live_signals(signals: List[Dict]):
         accum_p_color = '#00ff88' if accum_prob > 0.5 else ('#f59e0b' if accum_prob > 0.3 else '#64748b')
         whale_p_color = '#00ff88' if whale_prob > 0.5 else ('#f59e0b' if whale_prob > 0.3 else '#64748b')
 
+        # Precompute all nested HTML snippets outside the outer card f-string.
+        sl_source_html = f'<span style="font-size:0.6rem;color:#666;">{sl_source}</span>' if sl_source else ''
+        tp1_source_html = f'<span style="font-size:0.6rem;color:#666;">{tp1_source}</span>' if tp1_source else ''
+        rr2_html = f'<span style="font-size:0.68rem;color:#3b82f6;">→{rr_2:.1f}x</span>' if rr_2 > 0 else ''
+        rr3_html = f'<span style="font-size:0.68rem;color:#8b5cf6;">→{rr_3:.1f}x</span>' if rr_3 > 0 else ''
+        levels_html_card = f'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:2px;">{levels_html}</div>' if levels_html else ''
         # Precompute optional TP2/TP3 HTML outside the outer card f-string.
         tp23_html = ""
         if tp2 > 0:
@@ -1267,15 +1273,15 @@ def render_live_signals(signals: List[Dict]):
             </div>
             <div style="display:flex; gap:12px; font-size:0.82rem; flex-wrap:wrap;">
                 <span>Entry: <strong>${entry:,.4f}</strong></span>
-                <span style="color:#ff4444;">SL: <strong>${sl:,.4f}</strong> <span style="font-size:0.72rem;">({sl_dist:.2f}%)</span>{f' <span style="font-size:0.6rem;color:#666;">{sl_source}</span>' if sl_source else ''}</span>
-                <span style="color:#00ff88;">TP: <strong>${tp:,.4f}</strong> <span style="font-size:0.72rem;">({tp_dist:.2f}%)</span>{f' <span style="font-size:0.6rem;color:#666;">{tp1_source}</span>' if tp1_source else ''}</span>
+                <span style="color:#ff4444;">SL: <strong>${sl:,.4f}</strong> <span style="font-size:0.72rem;">({sl_dist:.2f}%)</span>{sl_source_html}</span>
+                <span style="color:#00ff88;">TP: <strong>${tp:,.4f}</strong> <span style="font-size:0.72rem;">({tp_dist:.2f}%)</span>{tp1_source_html}</span>
             </div>
             {tp23_html}
             <div style="display:flex; gap:10px; font-size:0.75rem; color:#94a3b8; flex-wrap:wrap;">
                 <span>Conf: <strong style="color:#fff;">{conf:.0%}</strong></span>
                 <span>R:R: <strong style="color:{'#00ff88' if rr >= 2 else '#f59e0b' if rr >= 1.5 else '#ff4444'};">{rr:.1f}x</strong></span>
-                {f'<span style="font-size:0.68rem;color:#3b82f6;">→{rr_2:.1f}x</span>' if rr_2 > 0 else ''}
-                {f'<span style="font-size:0.68rem;color:#8b5cf6;">→{rr_3:.1f}x</span>' if rr_3 > 0 else ''}
+                {rr2_html}
+                {rr3_html}
                 {mtf_html}
                 <span>{trend_html}</span>
                 <span>Vol: <span style="color:{'#ff4444' if vol_regime == 'extreme' else '#f59e0b' if vol_regime == 'high' else '#3b82f6' if vol_regime == 'low' else '#94a3b8'};">{vol_regime.title()}</span></span>
@@ -1288,7 +1294,7 @@ def render_live_signals(signals: List[Dict]):
                 <span style="color:{accum_p_color};">📈 Accum <strong>{accum_prob:.0%}</strong> <span style="color:#64748b;">(±{accum_prob_conf:.0%})</span></span>
                 <span style="color:{whale_p_color};">🐋 Whale <strong>{whale_prob:.0%}</strong> <span style="color:#64748b;">(±{whale_prob_conf:.0%})</span></span>
             </div>
-            {f'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:2px;">{levels_html}</div>' if levels_html else ''}
+            {levels_html_card}
             {_render_score_breakdown(score_breakdown, inst_score)}
         </div>
         """, unsafe_allow_html=True)

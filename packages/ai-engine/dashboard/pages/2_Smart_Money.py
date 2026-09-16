@@ -176,6 +176,9 @@ def _render_sm_signal_card(sig: Dict, sm_data: Dict, rank: int) -> None:
     # R:R color
     rr_color = '#00ff88' if rr >= 2.0 else '#f59e0b' if rr >= 1.5 else '#ff4444'
 
+    # Precompute all nested HTML snippets outside the outer card f-string.
+    rr2_html = f'<span style="font-size:0.65rem;color:#3b82f6;">→{rr_2:.1f}x</span>' if rr_2 > 0 else ''
+    rr3_html = f'<span style="font-size:0.65rem;color:#8b82f6;">→{rr_3:.1f}x</span>' if rr_3 > 0 else ''
     # Precompute optional TP2/TP3 HTML outside the outer card f-string.
     tp23_html = ""
     if tp2 > 0:
@@ -243,8 +246,8 @@ def _render_sm_signal_card(sig: Dict, sm_data: Dict, rank: int) -> None:
             <span><span style="color:#aaa;font-size:0.7rem;">INST</span> <code style="color:#fff;font-size:0.78rem;">{inst_score:.0f}</code></span>
             <span><span style="color:#aaa;font-size:0.7rem;">CONF</span> <code style="color:#fff;font-size:0.78rem;">{confidence:.0%}</code></span>
             <span><span style="color:#aaa;font-size:0.7rem;">R:R</span> <code style="color:{rr_color};font-size:0.78rem;">{rr:.1f}x</code></span>
-            {f'<span style="font-size:0.65rem;color:#3b82f6;">→{rr_2:.1f}x</span>' if rr_2 > 0 else ''}
-            {f'<span style="font-size:0.65rem;color:#8b5cf6;">→{rr_3:.1f}x</span>' if rr_3 > 0 else ''}
+            {rr2_html}
+            {rr3_html}
             <span><span style="color:#aaa;font-size:0.7rem;">RSI</span> <code style="color:{'#ff4444' if rsi>70 else '#00ff88' if rsi<30 else '#fff'};font-size:0.78rem;">{rsi:.0f}</code></span>
             <span><span style="color:#aaa;font-size:0.7rem;">VOL</span> <code style="color:#fff;font-size:0.78rem;">{vol_ratio:.1f}x</code></span>
             <span><span style="color:#aaa;font-size:0.7rem;">24h</span> <code style="color:{chg_color};font-size:0.78rem;">{chg_24h:+.1f}%</code></span>
