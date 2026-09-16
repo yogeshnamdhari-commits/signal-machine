@@ -101,9 +101,18 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
     return DirectionalFactor(key, DirectionState.NEUTRAL, 0, "no directional semantics defined", "", "", now_ts, DataQuality.NOT_APPLICABLE)
 
 
-def signal_from_canonical(signal: Dict[str, Any]) -> str:
-    """Return BUY/SELL only for a Python-canonical signal; never infer one."""
-    if str(signal.get("source", "")).lower() not in {"python", "python_engine", "canonical"}:
+def signal_from_canonical(signal: Dict[str, Any], *, bridge_trusted: bool = False) -> str:
+    """Return BUY/SELL only for a Python-canonical signal; never infer one.
+
+    ``bridge_trusted`` is reserved for data read directly from the Python engine's
+    atomic bridge file. A dashboard-created dict never qualifies merely because it
+    contains LONG/SHORT text.
+    """
+    if not bridge_trusted and str(signal.get("source", "")).lower() not in {"python", "python_engine", "canonical"}:
+        return "NO_SIGNAL"
+    if str(signal.get("authority", "python")).lower() not in {"python", ""}:
+        return "NO_SIGNAL"
+    if signal.get("canonical") is False:
         return "NO_SIGNAL"
     side = str(signal.get("side", signal.get("type", ""))).upper()
     if side in {"BUY", "LONG"}:
