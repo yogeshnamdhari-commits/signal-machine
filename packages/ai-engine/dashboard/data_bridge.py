@@ -87,11 +87,14 @@ class BridgeWriter:
         self._write_interval = 1.0  # min 1s between writes
 
     def write_signals(self, signals: List[Dict]) -> None:
-        """Write active signals list."""
+        """Write active signals with an explicit Python-canonical provenance envelope."""
+        from core.signal_provenance import canonicalize_signal
+
+        canonical_signals = [canonicalize_signal(dict(signal)) for signal in signals]
         _atomic_write(SIGNALS_FILE, {
-            "signals": signals,
+            "signals": canonical_signals,
             "timestamp": time.time(),
-            "count": len(signals),
+            "count": len(canonical_signals),
         })
 
     def write_metrics(self, metrics: Dict) -> None:
