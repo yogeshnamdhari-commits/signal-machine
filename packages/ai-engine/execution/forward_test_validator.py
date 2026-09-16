@@ -27,11 +27,27 @@ class ForwardTestValidator:
         "trailing_stop",
         "duplicate_cleanup",
     }
+    EXIT_REASON_ALIASES = {
+        "sl": "stop_loss",
+        "stop": "stop_loss",
+        "tp": "take_profit",
+        "tp1": "take_profit",
+        "tp2": "take_profit",
+        "tp3": "take_profit",
+        "time": "time_exit",
+        "timeout": "time_exit",
+        "trailing": "trailing_stop",
+        "duplicate": "duplicate_cleanup",
+    }
 
     def __init__(self, report_path: Optional[Path] = None) -> None:
         self._report_path = report_path or Path(__file__).parent.parent / "data" / "production_audit.json"
         self._last_check: float = 0
         self._check_interval = 300
+
+    def _normalize_exit_reason(self, reason: object) -> str:
+        normalized = str(reason or "").strip().lower().replace("-", "_").replace(" ", "_")
+        return self.EXIT_REASON_ALIASES.get(normalized, normalized)
 
     def validate(self, trades: list, pnl_history: list = None) -> Dict:
         """Run full production-readiness validation with fail-closed data checks."""
@@ -56,12 +72,15 @@ class ForwardTestValidator:
 
         non_finite_pnl = 0
         missing_pnl = 0
+        invalid_fee_records = 0
         unknown_exit_reasons = 0
         known_exit_reasons = 0
         normalized_trades = []
 
         for trade in trades:
-            pnl = trade.get("pnl")
+            # Prefer observed net PnL when available so fees/costs already attached
+            # to the paper-trade record cannot be silently ignored by certification.
+            pnl = trade.get("net_pnl") if "net_pnl" in trade else trade.get("pnl")
             if pnl is None:
                 missing_pnl += 1
             elif not isinstance(pnl, (int, float)) or not math.isfinite(float(pnl)):
@@ -69,7 +88,12 @@ class ForwardTestValidator:
             else:
                 normalized_trades.append(float(pnl))
 
-            reason = str(trade.get("exit_reason") or "").strip().lower()
+            if "fees" in trade:
+                fee = trade.get("fees")
+                if not isinstance(fee, (int, float)) or not math.isfinite(float(fee)) or float(fee) < 0:
+                    invalid_fee_records += 1
+
+            reason = self._normalize_exit_reason(trade.get("exit_reason"))
             if reason in self.REQUIRED_EXIT_REASONS:
                 known_exit_reasons += 1
             else:
@@ -98,7 +122,7 @@ class ForwardTestValidator:
         initial_capital = 10000.0
         dd_pct = (max_dd / initial_capital * 100) if initial_capital > 0 else float("inf")
 
-        data_quality_pass = missing_pnl == 0 and non_finite_pnl == 0 and total == len(trades)
+        data_quality_pass = missing_pnl == 0 and non_finite_pnl == 0 and invalid_fee_records == 0 and total == len(trades)
         outcome_attribution_pass = unknown_exit_reasons == 0 and known_exit_reasons == len(trades)
 
         checks = {
@@ -106,8 +130,10 @@ class ForwardTestValidator:
                 "pass": data_quality_pass,
                 "missing_pnl": missing_pnl,
                 "non_finite_pnl": non_finite_pnl,
+                "invalid_fee_records": invalid_fee_records,
                 "total_records": len(trades),
                 "usable_pnl_records": total,
+                "pnl_source": "net_pnl_when_available",
             },
             "outcome_attribution": {
                 "pass": outcome_attribution_pass,
