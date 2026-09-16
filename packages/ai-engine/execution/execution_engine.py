@@ -56,6 +56,7 @@ from exchanges.delta_adapter import DeltaAdapter
 from exchanges.smart_order_router import SmartOrderRouter
 from core.event_bus import bus
 from execution.arbitrage_engine import ArbitrageEngine
+from execution.live_execution_gate import require_live_certification, LiveCertificationError
 
 from execution.capital_allocator import CapitalAllocationEngine, AllocationRequest, AllocationModel
 
@@ -245,6 +246,17 @@ class ExecutionEngine:
         if not all([signal_id, symbol, side, entry_price]):
             return None
 
+        # P0 execution gate: certification must match the current source/config
+        # before any live order path can proceed. This protects callers that start
+        # ExecutionEngine directly instead of going through `main --mode live`.
+        try:
+            require_live_certification()
+        except LiveCertificationError as exc:
+            logger.error("🚫 LIVE_EXECUTION_BLOCKED: {}", exc)
+            if getattr(self, "audit", None) is not None:
+                await self.audit.signal_rejected(signal_id, f"live_certification_gate: {exc}")
+            return None
+
         # ═══════════════════════════════════════════════════════════════
         # P0 GATE: Block zero-confidence / unknown-regime trades
         # June 16 proof: 3 trades with conf=0, regime=unknown, inst=0
@@ -341,7 +353,7 @@ class ExecutionEngine:
             symbol=symbol,
             side=order_side.value,
             order_type=OrderType.MARKET,
-            purpose=OrderPurpose.ENTRY, # This is an entry order for a signal
+            purpose=OrderPurpose.ENTRY,
             quantity=quantity,
             price=entry_price,
             leverage=leverage,
@@ -423,7 +435,7 @@ class ExecutionEngine:
                 stop_price=stop_loss,
                 reduce_only=True,
                 leverage=leverage,
-                timeout_sec=0,  # No timeout for SL
+                timeout_sec=0,
             )
             if sl_order:
                 position.stop_order_id = sl_order.order_id
@@ -441,7 +453,7 @@ class ExecutionEngine:
                 stop_price=take_profit,
                 reduce_only=True,
                 leverage=leverage,
-                timeout_sec=0,  # No timeout for TP
+                timeout_sec=0,
             )
             if tp_order:
                 position.tp_order_id = tp_order.order_id
@@ -474,6 +486,17 @@ class ExecutionEngine:
         Places an order for an arbitrage leg, bypassing SmartOrderRouter and CapitalAllocationEngine.
         Still goes through PortfolioRiskEngine and OrderManager.
         """
+        try:
+            require_live_certification()
+        except LiveCertificationError as exc:
+            logger.error("🚫 LIVE_ARBITRAGE_BLOCKED: {}", exc)
+            await self.audit.system_event(
+                AuditEventType.RISK_CHECK_FAILED,
+                f"Arbitrage execution blocked by certification gate: {exc}",
+                {"arb_id": arb_id, "symbol": symbol, "exchange": exchange_name},
+            )
+            return None
+
         # 1. Global Portfolio Risk Validation (arbitrage-specific)
         snapshot = await self.portfolio_risk.get_snapshot(self._equity)
         can_trade, violations = self.portfolio_risk.can_add_position(
@@ -494,16 +517,16 @@ class ExecutionEngine:
         
         # Create and submit order for arbitrage leg
         order = await self.order_manager.create_order(
-            signal_id=arb_id, # Use arb_id as signal_id for tracking
+            signal_id=arb_id,
             symbol=symbol,
             side=order_side.value,
-            order_type=OrderType.MARKET, # Arbitrage usually uses market orders for speed
-            purpose=OrderPurpose.ENTRY, # Both legs are "entry" for the arbitrage
+            order_type=OrderType.MARKET,
+            purpose=OrderPurpose.ENTRY,
             quantity=quantity,
-            price=price, # Use the expected price for tracking
-            leverage=1, # Arbitrage is typically 1x leverage
-            timeout_sec=config.arbitrage.execution_timeout_sec, # Short timeout for arb legs
-            exchange_adapter=exchange # Pass the specific exchange adapter
+            price=price,
+            leverage=1,
+            timeout_sec=config.arbitrage.execution_timeout_sec,
+            exchange_adapter=exchange
         )
 
         if not order:
@@ -530,17 +553,14 @@ class ExecutionEngine:
         )
 
         if order.purpose == OrderPurpose.ENTRY.value:
-            # Entry filled — position will be created by on_signal
             pass
         elif order.purpose == OrderPurpose.STOP_LOSS.value:
-            # SL filled — close position
             pos = self._find_position_by_sl(order)
             if pos:
                 await self.position_manager.close_position(
                     pos.position_id, order.avg_price, "stop_loss",
                 )
         elif order.purpose == OrderPurpose.TAKE_PROFIT.value:
-            # TP filled — close position
             pos = self._find_position_by_tp(order)
             if pos:
                 await self.position_manager.close_position(
@@ -567,13 +587,8 @@ class ExecutionEngine:
 
     async def _on_position_closed(self, position: Position) -> None:
         """Handle position close."""
-        # Update portfolio risk
         self.portfolio_risk.record_pnl(position.net_pnl)
-
-        # Update equity
         self._equity += position.net_pnl
-
-        # Cancel any remaining orders for this signal
         await self.order_manager.cancel_signal_orders(
             position.signal_id, "Position closed",
         )
@@ -593,7 +608,6 @@ class ExecutionEngine:
         )
 
     def _find_position_by_sl(self, order: OrderRecord) -> Optional[Position]:
-        """Find position associated with a stop loss order."""
         for pos in self.position_manager.get_open_positions():
             if pos.stop_order_id == order.order_id:
                 return pos
@@ -602,7 +616,6 @@ class ExecutionEngine:
         return None
 
     def _find_position_by_tp(self, order: OrderRecord) -> Optional[Position]:
-        """Find position associated with a take profit order."""
         for pos in self.position_manager.get_open_positions():
             if pos.tp_order_id == order.order_id:
                 return pos
@@ -620,24 +633,18 @@ class ExecutionEngine:
                 for pos in open_positions:
                     if pos.current_price <= 0:
                         continue
-
                     exits = await self.position_manager.update_price(
                         pos.symbol, pos.current_price,
                     )
-
                     for pos_id, reason in exits:
-                        # Close position directly (exchange SL/TP orders handle actual execution)
-                        # This is a backup check
                         logger.info("SL/TP hit detected: {} {}", pos_id[:8], reason)
                         await self.position_manager.close_position(
                             pos_id, pos.current_price, reason,
                         )
-
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.error("SL/TP check error: {}", exc)
-
             await asyncio.sleep(self.SL_CHECK_INTERVAL)
 
     async def _order_sync_loop(self) -> None:
