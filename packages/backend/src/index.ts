@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -14,14 +14,12 @@ import { websocketService, MarketData } from './services/websocket';
 import { signalEngine } from './services/signalEngine';
 import { riskManager } from './services/riskManager';
 import { marketScanner } from './services/marketScanner';
-import { tradeSimulator } from './services/tradeSimulator';
 
 const CANONICAL_SIGNAL_AUTHORITY = process.env.CANONICAL_SIGNAL_AUTHORITY ?? 'python';
 if (CANONICAL_SIGNAL_AUTHORITY !== 'python') {
   throw new Error('Unsafe configuration: Python must be the canonical signal authority');
 }
 
-// Create Express app
 const app = express();
 const httpServer = createServer(app);
 
@@ -48,6 +46,35 @@ app.use(morgan('combined', {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
+
+// Node is an integration/UI layer. Any endpoint capable of generating, mutating,
+// or simulating an executable trading decision is fail-closed here. Canonical
+// signal/risk decisions originate in Python and are consumed downstream.
+const canonicalReadOnlyGuard = (req: Request, res: Response, next: NextFunction) => {
+  const blocked = new Set([
+    'POST /api/signals/scan',
+    'PUT /api/signals/:id/status',
+    'POST /api/indicators/signal',
+    'PUT /api/risk/params',
+    'POST /api/risk/position/check',
+    'POST /api/risk/position/size',
+    'POST /api/scanner/scan',
+    'POST /api/simulator/reset',
+  ]);
+  const key = `${req.method} ${req.baseUrl}${req.path}`;
+  if (blocked.has(key)) {
+    return res.status(409).json({
+      success: false,
+      error: {
+        code: 'PYTHON_CANONICAL_AUTHORITY',
+        message: 'Trading decisions and risk mutations are owned exclusively by the Python engine.',
+      },
+    });
+  }
+  return next();
+};
+
+app.use('/api', canonicalReadOnlyGuard);
 app.use('/api', routes);
 
 app.use('/api/*', (req: Request, res: Response) => {
@@ -78,8 +105,6 @@ io.on('connection', (socket) => {
   socket.on('unsubscribe', (symbols: string[]) => {
     symbols.forEach((symbol) => socket.leave(`symbol:${symbol}`));
   });
-
-  socket.emit('sheet:data', marketScanner.getLastData());
 
   socket.on('disconnect', () => {
     logger.info(`Client disconnected: ${socket.id}`);
@@ -112,7 +137,6 @@ websocketService.on('trade', (data: any) => {
   io.to(`symbol:${data.symbol}`).emit('trade', data);
 });
 
-// Backend only relays canonical Python signals; it never recalculates trading decisions.
 signalEngine.on('signal', (signal) => {
   io.emit('signal', { ...signal, authority: 'python' });
   logger.info(`Relayed canonical signal: ${signal.type} ${signal.symbol}`);
@@ -129,12 +153,8 @@ marketScanner.on('scan', (data) => {
 async function startServices() {
   try {
     websocketService.connect(['!ticker@arr']);
-
-    // These services remain available for read-only UI compatibility. They are
-    // deliberately not started as independent trading/signal authorities.
     logger.info('Canonical signal authority: Python');
-    logger.info('Node signal generation/scanning/trade simulation is disabled as an execution authority.');
-
+    logger.info('Node executable signal generation, risk mutation, scanning and simulation are disabled.');
     await marketScanner.discoverSymbols();
 
     httpServer.listen(config.port, () => {
@@ -152,7 +172,6 @@ async function startServices() {
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully...');
   websocketService.disconnect();
-  signalEngine.stopContinuousScan();
   marketScanner.stop();
   httpServer.close(() => process.exit(0));
 });
@@ -160,7 +179,6 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down...');
   websocketService.disconnect();
-  signalEngine.stopContinuousScan();
   marketScanner.stop();
   httpServer.close(() => process.exit(0));
 });
