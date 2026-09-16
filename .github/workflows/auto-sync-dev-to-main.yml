@@ -76,9 +76,9 @@ jobs:
           npm install
           npm run build
 
-      - name: Configuration and repository contract gate
+      - name: Production repository validation gate
         run: |
-          PYTHONPATH=packages/ai-engine python -m validation_gate
+          PYTHONPATH=packages/ai-engine python -m production_validation_gate
 
       - name: Sync dev to main
         shell: bash
