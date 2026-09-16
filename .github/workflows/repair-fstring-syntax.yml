@@ -46,22 +46,34 @@ jobs:
           live_path.write_text(''.join(live_lines), encoding='utf-8')
           print(f'Repaired {live_path}')
 
-          # Smart Money: nested f-strings containing backslash escapes are illegal
-          # in Python 3.11. Precompute the HTML fragment outside the outer f-string.
+          # Smart Money: remove the nested f-string fragment itself and replace it
+          # with a precomputed HTML fragment. This avoids backslashes inside the
+          # outer f-string expression, which Python 3.11 rejects.
           sm_path = Path('packages/ai-engine/dashboard/pages/2_Smart_Money.py')
           sm_text = sm_path.read_text(encoding='utf-8')
-          old = r"""        {f'''<div style=\"display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;\">\n            {f\"<span style=\\\"color:#3b82f6;\\\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>\" if tp2 > 0 else \"\"}\n            {f\"<span style=\\\"color:#8b5cf6;\\\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>\" if tp3 > 0 else \"\"}\n        </div>''' if tp2 > 0 else ''}\n"""
-          new = """        {tp23_html}\n"""
-          if old not in sm_text:
-              raise SystemExit(f'{sm_path}: exact nested f-string block not found')
 
-          marker = "    # SL/TP distance bars\n"
-          if marker not in sm_text:
-              raise SystemExit(f'{sm_path}: insertion marker not found')
+          block_start = sm_text.find("        {f'''<div style=")
+          block_end = sm_text.find("        <!-- SL/TP distance bars -->", block_start)
+          if block_start < 0 or block_end < 0:
+              raise SystemExit(f'{sm_path}: nested TP2/TP3 f-string block markers not found')
+          if block_end <= block_start:
+              raise SystemExit(f'{sm_path}: invalid nested f-string block boundaries')
+          sm_text = sm_text[:block_start] + "        {tp23_html}\n" + sm_text[block_end:]
 
-          helper = """    # Precompute optional TP2/TP3 HTML outside the outer card f-string.\n    tp23_html = \"\"\n    if tp2 > 0:\n        tp23_parts = [f'<span style=\"color:#3b82f6;\">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>']\n        if tp3 > 0:\n            tp23_parts.append(f'<span style=\"color:#8b5cf6;\">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>')\n        tp23_html = '<div style=\"display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;\">' + ''.join(tp23_parts) + '</div>'\n\n"""
-          sm_text = sm_text.replace(old, new, 1)
-          sm_text = sm_text.replace(marker, helper + marker, 1)
+          card_marker = '    card_html = f"""'
+          if card_marker not in sm_text:
+              raise SystemExit(f'{sm_path}: card_html marker not found')
+
+          helper = '''    # Precompute optional TP2/TP3 HTML outside the outer card f-string.
+    tp23_html = ""
+    if tp2 > 0:
+        tp23_parts = [f'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>']
+        if tp3 > 0:
+            tp23_parts.append(f'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>')
+        tp23_html = '<div style="display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;">' + ''.join(tp23_parts) + '</div>'
+
+'''
+          sm_text = sm_text.replace(card_marker, helper + card_marker, 1)
           sm_path.write_text(sm_text, encoding='utf-8')
           print(f'Repaired {sm_path}')
           PY
