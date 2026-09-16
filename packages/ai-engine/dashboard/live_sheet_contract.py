@@ -17,25 +17,53 @@ def freshness_state(snapshot_ts: float, now: float | None = None, *, max_age: fl
     return "LIVE" if age <= max_age else "STALE"
 
 
-def _safe_value(row: Dict[str, Any], key: str, suffix: str = "") -> str:
-    value = row.get(key)
-    if value is None or value == "":
-        return "UNAVAILABLE"
-    if isinstance(value, (int, float)):
-        return f"{value}{suffix}"
-    return str(value)
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_positive_float(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
+    value = _as_float(value)
+    return value if value is not None and value > 0 else None
+
+
+def display_value(row: Dict[str, Any], key: str) -> Any:
+    """Return a semantically valid value; do not display placeholder zeroes as live data."""
+    value = row.get(key)
+
+    if key in {"open_interest", "oi_change_pct"}:
+        if _as_positive_float(row.get("open_interest")) is None:
+            return None
+
+    if key in {"net_delta", "buy_sell_ratio"}:
+        if int(row.get("flow_total_trades", 0) or 0) <= 0:
+            return None
+
+    if key in {"exchange_flow", "aggressive_buy_vol", "aggressive_sell_vol", "flow_strength"}:
+        if int(row.get("flow_total_trades", 0) or 0) <= 0:
+            return None
+
+    if key in {"long_liq_vol", "short_liq_vol"}:
+        if int(row.get("cluster_count", 0) or 0) <= 0 and int(row.get("long_liq_count", 0) or 0) <= 0 and int(row.get("short_liq_count", 0) or 0) <= 0:
+            return None
+
+    if key == "liq_risk_level":
+        has_liq_data = (
+            int(row.get("cluster_count", 0) or 0) > 0
+            or int(row.get("long_liq_count", 0) or 0) > 0
+            or int(row.get("short_liq_count", 0) or 0) > 0
+        )
+        return value if has_liq_data and value not in (None, "", "low") else (value if has_liq_data else None)
+
+    if key == "volume_24h" and (_as_float(value) or 0) <= 0:
         return None
-    return number if number > 0 else None
+
+    return value
 
 
 def _fvg_display(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Use detector gap boundaries, never an unrelated price such as VP POC."""
     alignment = str(row.get("fvg_alignment", "") or "").lower()
     gap_high = _as_positive_float(row.get("fvg_gap_high"))
     gap_low = _as_positive_float(row.get("fvg_gap_low"))
@@ -76,8 +104,8 @@ def build_signal_display(signal: Dict[str, Any], row: Dict[str, Any]) -> Dict[st
         "price": direction_for_parameter("price", row),
         "fvg": _fvg_display(row),
         "sweep_price": row.get("sweep_price") if row.get("sweep_detected") else None,
-        "liq_risk": row.get("liq_risk_level", "UNAVAILABLE"),
-        "regime_conf": row.get("regime_confidence_pct"),
+        "liq_risk": display_value(row, "liq_risk_level"),
+        "regime_conf": row.get("regime_confidence_pct") if row.get("regime") not in (None, "") else None,
     }
 
 
