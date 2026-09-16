@@ -29,24 +29,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Detect Python project
-        id: python_project
-        shell: bash
-        run: |
-          if [ -f "packages/ai-engine/requirements.txt" ] || find packages/ai-engine -type f -name '*.py' -print -quit 2>/dev/null | grep -q .; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Install Python dependencies
-        if: steps.python_project.outputs.enabled == 'true' && hashFiles('packages/ai-engine/requirements.txt') != ''
         run: |
           python -m pip install --upgrade pip
           pip install -r packages/ai-engine/requirements.txt
 
       - name: Compile-check Python source
-        if: steps.python_project.outputs.enabled == 'true'
         shell: bash
         run: |
           python - <<'PY'
@@ -65,6 +53,34 @@ jobs:
               raise SystemExit(1)
           print('Python compile check passed.')
           PY
+
+      - name: Python tests
+        working-directory: packages/ai-engine
+        run: python -m pytest -q
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: packages/backend/package-lock.json
+
+      - name: Backend dependency and build gate
+        working-directory: packages/backend
+        run: |
+          npm install
+          npm test -- --runInBand
+          npm run build
+
+      - name: Frontend dependency and build gate
+        working-directory: packages/frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Configuration and repository contract gate
+        run: |
+          PYTHONPATH=packages/ai-engine python -m validation_gate
 
       - name: Sync dev to main
         shell: bash
