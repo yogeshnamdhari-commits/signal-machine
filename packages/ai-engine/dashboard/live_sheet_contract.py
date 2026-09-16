@@ -26,25 +26,31 @@ def _safe_value(row: Dict[str, Any], key: str, suffix: str = "") -> str:
     return str(value)
 
 
-def _fvg_display(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Use the detector's real gap boundaries, never an unrelated price such as VP POC."""
-    alignment = str(row.get("fvg_alignment", "") or "").lower()
-    score = row.get("fvg_score")
-    gap_high = row.get("fvg_gap_high")
-    gap_low = row.get("fvg_gap_low")
+def _as_positive_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
-    valid_gap = gap_high not in (None, "", 0) and gap_low not in (None, "", 0)
-    if not valid_gap:
+
+def _fvg_display(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Use detector gap boundaries, never an unrelated price such as VP POC."""
+    alignment = str(row.get("fvg_alignment", "") or "").lower()
+    gap_high = _as_positive_float(row.get("fvg_gap_high"))
+    gap_low = _as_positive_float(row.get("fvg_gap_low"))
+    score = _as_positive_float(row.get("fvg_score"))
+
+    if gap_high is None or gap_low is None or gap_high < gap_low:
         return {"state": "NEUTRAL", "value": None, "quality": "NOT_APPLICABLE"}
 
     state = "BUY" if alignment == "bullish" else "SELL" if alignment == "bearish" else "NEUTRAL"
-    midpoint = (float(gap_high) + float(gap_low)) / 2.0
     return {
         "state": state,
-        "value": midpoint,
-        "gap_high": float(gap_high),
-        "gap_low": float(gap_low),
-        "score": float(score or 0),
+        "value": (gap_high + gap_low) / 2.0,
+        "gap_high": gap_high,
+        "gap_low": gap_low,
+        "score": score or 0.0,
         "quality": "CALCULATED",
     }
 
