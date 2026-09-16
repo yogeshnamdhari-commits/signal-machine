@@ -2,7 +2,7 @@
 
 The dashboard is a read-only presentation layer. It never manufactures a BUY/SELL
 signal from component votes. The executable Signal column is populated only from
-the Python engine bridge.
+the Python engine bridge and only from a fresh market-data snapshot.
 """
 from __future__ import annotations
 
@@ -55,8 +55,9 @@ def evidence(factor):
 market_data = bridge_reader.read_market_data()
 signals = bridge_reader.read_signals()
 fresh = bridge_reader.read_market_data_freshness()
-state = freshness_state(fresh.get("timestamp", 0), max_age=60)
-signal_lookup = {str(s.get("symbol")): s for s in signals if s.get("symbol")}
+snapshot_ts = float(fresh.get("timestamp", 0) or 0)
+state = freshness_state(snapshot_ts, max_age=60)
+signal_lookup = {str(s.get("symbol")): s for s in signals if s.get("symbol")} if state == "LIVE" else {}
 
 st.title("📡 DeltaTerminal — Canonical Live Data")
 st.caption(
@@ -65,7 +66,9 @@ st.caption(
 )
 
 rows = []
-for row in market_data:
+for source_row in market_data:
+    row = dict(source_row)
+    row["timestamp"] = snapshot_ts
     symbol = str(row.get("symbol", "?"))
     display = build_signal_display(signal_lookup.get(symbol, {}), row)
     fvg = display["fvg"]
@@ -108,6 +111,7 @@ semantics = [
     ("Price", "BUY = positive 24h direction; SELL = negative; NEUTRAL = flat."),
     ("OI", "Raw open interest level. Direction is supplied separately by OI Bias."),
     ("OI Bias", "BUY/SELL = engine OI positioning interpretation. Missing OI never becomes zero."),
+    ("OI Δ%", "Open-interest change, interpreted together with the engine's OI state."),
     ("Funding", "Raw funding rate. It is a positioning/risk input, not a standalone signal."),
     ("Fund Bias", "BUY/SELL = engine interpretation of the funding/positioning state."),
     ("B/S Ratio", "BUY > 1.02; SELL < 0.98; otherwise NEUTRAL."),
@@ -119,7 +123,8 @@ semantics = [
     ("Liq Zone ↓ / ↑", "Liquidity-location context only; never an independent trade vote."),
     ("Sweep", "BUY/SELL only when a qualifying sweep event is detected; otherwise NOT_APPLICABLE."),
     ("Sweep Price", "Event location only; it is not an independent trade vote."),
-    ("FVG", "Calculated bullish/bearish structure only; FVG price is contextual."),
+    ("FVG", "Actual detector state from FVG gap boundaries; contextual evidence."),
+    ("FVG Price", "Midpoint of the detected FVG gap; contextual only."),
     ("Regime", "BUY = bullish regime; SELL = bearish regime; range/unknown = NEUTRAL."),
     ("Reg Conf", "Confidence in regime classification, not a standalone signal."),
     ("Signal", "Canonical Python engine only: BUY / SELL / NO_SIGNAL. No implied signals are permitted."),
