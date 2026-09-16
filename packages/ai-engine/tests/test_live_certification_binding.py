@@ -28,8 +28,10 @@ def test_live_certification_rejects_source_commit_mismatch(tmp_path, monkeypatch
         verify_live_certification(path)
 
 
-def test_live_certification_rejects_embedded_failures(tmp_path):
+def test_live_certification_rejects_embedded_failures(tmp_path, monkeypatch):
     path = _write_artifact(tmp_path, failures=["missing_forward_evidence"])
+    # Isolate the failure-list assertion from the source-commit binding gate.
+    monkeypatch.setenv("GITHUB_SHA", "commit-a")
 
     with pytest.raises(LiveCertificationError, match="contains failures"):
         verify_live_certification(path)
