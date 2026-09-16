@@ -15,7 +15,7 @@ pandas>=2.0,<3
 scipy>=1.11,<2
 
 # Database
-aioSqlite>=0.19,<1
+aiosqlite>=0.19,<1
 
 # Dashboard
 streamlit>=1.29,<2
