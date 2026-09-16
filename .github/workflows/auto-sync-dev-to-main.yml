@@ -79,6 +79,41 @@ jobs:
           npm install
           npm run build
 
+      - name: Backend dependency security audit
+        id: backend-audit
+        continue-on-error: true
+        working-directory: packages/backend
+        run: |
+          mkdir -p ../../ci-artifacts/security
+          npm audit --audit-level=high --json > ../../ci-artifacts/security/backend-npm-audit.json 2>&1
+          rc=$?
+          echo "$rc" > ../../ci-artifacts/security/backend-npm-audit.exit
+          exit 0
+
+      - name: Frontend dependency security audit
+        id: frontend-audit
+        continue-on-error: true
+        working-directory: packages/frontend
+        run: |
+          mkdir -p ../../ci-artifacts/security
+          npm audit --audit-level=high --json > ../../ci-artifacts/security/frontend-npm-audit.json 2>&1
+          rc=$?
+          echo "$rc" > ../../ci-artifacts/security/frontend-npm-audit.exit
+          exit 0
+
+      - name: Security dependency gate
+        run: |
+          backend_rc=$(cat ci-artifacts/security/backend-npm-audit.exit)
+          frontend_rc=$(cat ci-artifacts/security/frontend-npm-audit.exit)
+          echo "Backend npm audit exit: $backend_rc"
+          echo "Frontend npm audit exit: $frontend_rc"
+          if [ "$backend_rc" -ne 0 ] || [ "$frontend_rc" -ne 0 ]; then
+            echo "SECURITY_GATE_FAILED: high/critical dependency vulnerability detected."
+            echo "Audit JSON files are preserved as CI artifacts."
+            exit 1
+          fi
+          echo "Security dependency gate passed: no high/critical npm audit findings."
+
       - name: Production repository validation gate
         run: |
           PYTHONPATH=packages/ai-engine python -m production_validation_gate
