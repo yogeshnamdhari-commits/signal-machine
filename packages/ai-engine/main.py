@@ -25,6 +25,26 @@ from config import config
 from config.environment_contract import validate_runtime_config
 from exchanges.integrity_patch import apply_integrity_patches
 
+
+def _setup_logging(level: str = "INFO") -> None:
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        format=(
+            "<green>{time:HH:mm:ss}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan> — <level>{message}</level>"
+        ),
+        level=level,
+    )
+    logger.add(
+        "data/logs/engine_{time:YYYY-MM-DD}.log",
+        rotation="1 day",
+        retention="7 days",
+        level="DEBUG",
+    )
+
+
 # Apply the same data-integrity boundary before any engine instance is created.
 apply_integrity_patches()
 CONFIG_FINGERPRINT = validate_runtime_config(config)
@@ -36,7 +56,6 @@ if FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        """Handles the startup and shutdown of the DeltaTerminal Engine."""
         logger.info("Initializing Engine via API lifespan...")
         await api_engine.start()
         yield
@@ -63,8 +82,6 @@ else:
 async def _acquire_engine_lock() -> bool:
     """Acquire singleton engine lock using fcntl.flock() to prevent race conditions."""
     import fcntl
-    import os
-    import time
 
     _data_dir = Path(__file__).parent / "data"
     _data_dir.mkdir(parents=True, exist_ok=True)
