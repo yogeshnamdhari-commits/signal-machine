@@ -19,13 +19,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -56,12 +56,15 @@ jobs:
 
       - name: Python tests
         working-directory: packages/ai-engine
-        run: python -m pytest -q
+        run: |
+          mkdir -p ../../ci-artifacts
+          python -m pytest -q --junitxml=../../ci-artifacts/python-tests.xml
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
+          package-manager-cache: false
 
       - name: Backend dependency and build gate
         working-directory: packages/backend
@@ -80,7 +83,37 @@ jobs:
         run: |
           PYTHONPATH=packages/ai-engine python -m production_validation_gate
 
+      - name: Capture CI verification context
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p ci-artifacts
+          {
+            echo "workflow=${{ github.workflow }}"
+            echo "run_id=${{ github.run_id }}"
+            echo "run_attempt=${{ github.run_attempt }}"
+            echo "event=${{ github.event_name }}"
+            echo "branch=${{ github.ref_name }}"
+            echo "commit=${{ github.sha }}"
+            echo "repository=${{ github.repository }}"
+            echo "runner_os=${{ runner.os }}"
+            echo "python=$(python --version 2>&1 || true)"
+            echo "node=$(node --version 2>&1 || true)"
+            echo "npm=$(npm --version 2>&1 || true)"
+            echo "captured_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > ci-artifacts/ci-verification-context.txt
+
+      - name: Upload CI verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Sync dev to main
+        if: success()
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -92,6 +125,7 @@ jobs:
           git push origin main
 
       - name: Sync summary
+        if: success()
         run: |
           echo "Dev branch validated and fast-forwarded to main."
           echo "Commit: $(git rev-parse HEAD)"
