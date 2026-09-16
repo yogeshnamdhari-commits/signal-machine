@@ -26,6 +26,29 @@ def _safe_value(row: Dict[str, Any], key: str, suffix: str = "") -> str:
     return str(value)
 
 
+def _fvg_display(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Use the detector's real gap boundaries, never an unrelated price such as VP POC."""
+    alignment = str(row.get("fvg_alignment", "") or "").lower()
+    score = row.get("fvg_score")
+    gap_high = row.get("fvg_gap_high")
+    gap_low = row.get("fvg_gap_low")
+
+    valid_gap = gap_high not in (None, "", 0) and gap_low not in (None, "", 0)
+    if not valid_gap:
+        return {"state": "NEUTRAL", "value": None, "quality": "NOT_APPLICABLE"}
+
+    state = "BUY" if alignment == "bullish" else "SELL" if alignment == "bearish" else "NEUTRAL"
+    midpoint = (float(gap_high) + float(gap_low)) / 2.0
+    return {
+        "state": state,
+        "value": midpoint,
+        "gap_high": float(gap_high),
+        "gap_low": float(gap_low),
+        "score": float(score or 0),
+        "quality": "CALCULATED",
+    }
+
+
 def build_signal_display(signal: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
     """Build display metadata without ever voting factors into a trade signal."""
     canonical = signal_from_canonical(signal, bridge_trusted=bool(signal))
@@ -45,11 +68,7 @@ def build_signal_display(signal: Dict[str, Any], row: Dict[str, Any]) -> Dict[st
         "sweep": direction_for_parameter("sweep", row),
         "regime": direction_for_parameter("regime", row),
         "price": direction_for_parameter("price", row),
-        "fvg": {
-            "state": "BUY" if str(signal.get("side", "")).upper() == "LONG" and signal.get("fvg_score", 0) else "SELL" if str(signal.get("side", "")).upper() == "SHORT" and signal.get("fvg_score", 0) else "NEUTRAL",
-            "value": signal.get("vp_poc") if signal.get("fvg_score", 0) else None,
-            "quality": "CALCULATED" if signal.get("fvg_score", 0) else "NOT_APPLICABLE",
-        },
+        "fvg": _fvg_display(row),
         "sweep_price": row.get("sweep_price") if row.get("sweep_detected") else None,
         "liq_risk": row.get("liq_risk_level", "UNAVAILABLE"),
         "regime_conf": row.get("regime_confidence_pct"),
