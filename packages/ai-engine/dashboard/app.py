@@ -1,8 +1,8 @@
 """Canonical root dashboard.
 
-The dashboard is a read-only presentation layer. It never manufactures a BUY/SELL
-signal from component votes. The executable Signal column is populated only from
-the Python engine bridge and only from a fresh market-data snapshot.
+Read-only presentation layer. It never manufactures a BUY/SELL signal from
+component votes; executable signal state comes only from the canonical Python
+engine bridge.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ if str(_AI_ROOT) not in sys.path:
     sys.path.insert(0, str(_AI_ROOT))
 
 from dashboard.data_bridge import reader as bridge_reader
-from dashboard.live_sheet_contract import build_signal_display, freshness_state
+from dashboard.live_sheet_contract import build_signal_display, display_value, freshness_state
 
 st.set_page_config(
     page_title="DeltaTerminal — Canonical Live Data",
@@ -72,28 +72,27 @@ for source_row in market_data:
     symbol = str(row.get("symbol", "?"))
     display = build_signal_display(signal_lookup.get(symbol, {}), row)
     fvg = display["fvg"]
-    liq_risk = str(row.get("liq_risk_level", row.get("liq_risk", "UNAVAILABLE")) or "UNAVAILABLE").upper()
     rows.append({
         "Symbol": symbol,
-        "Price": fmt(row.get("price"), "$"),
-        "24h": fmt(row.get("change_24h"), "%"),
-        "Volume 24h": fmt(row.get("volume_24h"), "$"),
-        "OI": fmt(row.get("open_interest"), "$"),
+        "Price": fmt(display_value(row, "price"), "$"),
+        "24h": fmt(display_value(row, "change_24h"), "%"),
+        "Volume 24h": fmt(display_value(row, "volume_24h"), "$"),
+        "OI": fmt(display_value(row, "open_interest"), "$"),
         "OI Bias": evidence(display["oi"]),
-        "OI Δ%": fmt(row.get("oi_change_pct"), "%"),
-        "Funding": fmt(row.get("funding"), "%"),
+        "OI Δ%": fmt(display_value(row, "oi_change_pct"), "%"),
+        "Funding": fmt(display_value(row, "funding"), "%"),
         "Fund Bias": evidence(display["funding"]),
-        "Net Delta": fmt(row.get("net_delta"), "$"),
-        "B/S Ratio": fmt(row.get("buy_sell_ratio")),
+        "Net Delta": fmt(display_value(row, "net_delta"), "$"),
+        "B/S Ratio": fmt(display_value(row, "buy_sell_ratio")),
         "B/S": evidence(display["b_s_ratio"]),
         "CVD": evidence(display["cvd"]),
         "Flow": evidence(display["flow"]),
         "Ex Flow": evidence(display["exchange_flow"]),
         "Vol Bias": evidence(display["volume"]),
         "Imbalance": evidence(display["imbalance"]),
-        "Liq Zone ↓": fmt(row.get("long_liq_vol"), "$"),
-        "Liq Zone ↑": fmt(row.get("short_liq_vol"), "$"),
-        "Liq Risk": liq_risk,
+        "Liq Zone ↓": fmt(display_value(row, "long_liq_vol"), "$"),
+        "Liq Zone ↑": fmt(display_value(row, "short_liq_vol"), "$"),
+        "Liq Risk": str(display["liq_risk"] or "UNAVAILABLE").upper(),
         "Sweep": evidence(display["sweep"]),
         "Sweep Price": fmt(display["sweep_price"], "$"),
         "FVG": f"{fvg['state']} | {fvg['quality']}",
@@ -102,6 +101,7 @@ for source_row in market_data:
         "Reg Conf": fmt(display["regime_conf"], "%"),
         "Signal": display["signal"],
         "Signal Authority": display["authority"],
+        "Signal Reason": display["signal_reason"],
     })
 
 if not rows:
@@ -109,32 +109,35 @@ if not rows:
 else:
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=700)
 
-st.markdown("### What every field means")
+st.markdown("### Parameter semantics")
 semantics = [
-    ("Price", "BUY = positive 24h direction; SELL = negative; NEUTRAL = flat."),
-    ("OI", "Raw open interest level. Direction is supplied separately by OI Bias."),
-    ("OI Bias", "BUY/SELL = engine OI positioning interpretation. Missing OI never becomes zero."),
-    ("OI Δ%", "Open-interest change, interpreted together with the engine's OI state."),
-    ("Funding", "Raw funding rate. It is a positioning/risk input, not a standalone signal."),
-    ("Fund Bias", "BUY/SELL = engine interpretation of the funding/positioning state."),
-    ("B/S Ratio", "BUY > 1.02; SELL < 0.98; otherwise NEUTRAL."),
-    ("Delta / CVD", "BUY = positive taker pressure; SELL = negative taker pressure; unavailable stays unavailable."),
-    ("Flow / Ex Flow", "Directional classification only from actual underlying flow observations."),
-    ("Vol Bias", "Directional volume classification produced by the engine."),
-    ("Imbalance", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL."),
-    ("Liq Zone ↓ / ↑", "Long/short liquidation-volume context from the liquidation engine; not standalone votes."),
-    ("Liq Risk", "Risk state only; never a standalone BUY/SELL generator."),
-    ("Sweep", "BUY/SELL only when a qualifying sweep event is detected; otherwise NOT_APPLICABLE."),
-    ("Sweep Price", "Event location only; it is not an independent trade vote."),
-    ("FVG", "Actual detector state from FVG gap boundaries; contextual evidence."),
-    ("FVG Price", "Midpoint of the detected FVG gap; contextual only."),
-    ("Regime", "BUY = bullish regime; SELL = bearish regime; range/unknown = NEUTRAL."),
-    ("Reg Conf", "Confidence in regime classification, not a standalone signal."),
+    ("Price", "BUY = positive price direction; SELL = negative; NEUTRAL = flat."),
+    ("Volume 24h", "Market-size/selection context; never a standalone BUY/SELL trigger."),
+    ("OI", "Raw open interest level. OI Bias supplies the directional interpretation."),
+    ("OI Bias", "BUY = bullish positioning interpretation; SELL = bearish positioning interpretation; UNAVAILABLE when OI is absent."),
+    ("OI Δ%", "Change in open interest; use with price/OI regime rather than as a standalone trigger."),
+    ("Funding", "Raw funding rate. Negative funding is long-supportive; positive funding is short-supportive; near zero is neutral."),
+    ("Fund Bias", "Directional funding interpretation; contextual risk/positioning evidence, not a standalone trigger."),
+    ("Net Delta", "BUY = positive taker delta; SELL = negative taker delta; unavailable when no real trade tape exists."),
+    ("B/S Ratio", "BUY > 1.02; SELL < 0.98; NEUTRAL between those thresholds; unavailable without trade tape."),
+    ("CVD", "BUY = rising/positive taker-flow evidence; SELL = falling/negative; unavailable without real trades."),
+    ("Flow / Ex Flow", "BUY/SELL only from actual underlying trade-flow observations; missing source remains unavailable."),
+    ("Vol Bias", "Directional volume interpretation; it is not a substitute for order-flow evidence."),
+    ("Imbalance", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL; requires real L2 depth evidence."),
+    ("Liq Zone ↓ / ↑", "Long/short liquidation-volume context; location/risk evidence, not standalone votes."),
+    ("Liq Risk", "Risk classification only; UNAVAILABLE when no liquidation-cluster evidence exists."),
+    ("Sweep", "BUY/SELL only when a qualifying sweep event exists; otherwise NOT_APPLICABLE."),
+    ("Sweep Price", "Event location only; never an independent BUY/SELL generator."),
+    ("FVG", "BUY/SELL contextual evidence from actual detected FVG boundaries; NOT_APPLICABLE when no FVG exists."),
+    ("FVG Price", "Midpoint of the detected FVG gap; contextual location only."),
+    ("Regime", "BUY = bullish regime; SELL = bearish regime; RANGE = NEUTRAL; unavailable when regime snapshot is absent."),
+    ("Reg Conf", "Confidence in regime classification, not a standalone trading signal."),
     ("Signal", "Canonical Python engine only: BUY / SELL / NO_SIGNAL. No implied signals are permitted."),
+    ("Signal Authority", "python-bridge only when the signal carries canonical Python provenance."),
 ]
 st.dataframe(pd.DataFrame(semantics, columns=["Parameter", "Definition"]), width="stretch", hide_index=True)
 
 st.info(
-    "Authenticity rule: a missing, stale, or unavailable input is shown explicitly. "
-    "The dashboard never converts OI + CVD + Flow + Imbalance into an executable signal."
+    "Authenticity rule: LIVE/CALCULATED/STALE/UNAVAILABLE/NOT_APPLICABLE are distinct states. "
+    "A missing input is never turned into zero, neutral evidence, or an implied trade."
 )
