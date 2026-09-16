@@ -24,6 +24,7 @@ from loguru import logger
 from config import config
 from config.environment_contract import validate_runtime_config
 from exchanges.integrity_patch import apply_integrity_patches
+from execution.risk_integrity import apply_risk_integrity_patch
 
 
 def _setup_logging(level: str = "INFO") -> None:
@@ -45,8 +46,8 @@ def _setup_logging(level: str = "INFO") -> None:
     )
 
 
-# Apply the same data-integrity boundary before any engine instance is created.
 apply_integrity_patches()
+apply_risk_integrity_patch()
 CONFIG_FINGERPRINT = validate_runtime_config(config)
 
 if FastAPI:
@@ -80,7 +81,6 @@ else:
 
 
 async def _acquire_engine_lock() -> bool:
-    """Acquire singleton engine lock using fcntl.flock() to prevent race conditions."""
     import fcntl
 
     _data_dir = Path(__file__).parent / "data"
@@ -133,7 +133,6 @@ _engine_lock_fd = None
 
 
 def _release_engine_lock() -> None:
-    """Release singleton engine lock."""
     import fcntl
 
     global _engine_lock_fd
