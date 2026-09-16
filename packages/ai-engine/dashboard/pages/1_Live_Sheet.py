@@ -66,8 +66,6 @@ st.caption(
     f"rows {freshness.get('rows', 0)} · refresh 1s · signal authority: Python"
 )
 
-# A stale snapshot can be useful for diagnostics, but must never display a current
-# executable signal as though it were live.
 signal_lookup = {str(s.get("symbol")): s for s in signals if s.get("symbol")} if snapshot_state == "LIVE" else {}
 rows = []
 
@@ -77,9 +75,9 @@ for source_row in market_data:
     row["timestamp"] = snapshot_ts
     signal = signal_lookup.get(symbol, {})
     display = build_signal_display(signal, row)
-
     fvg = display["fvg"]
     fvg_state = f"{fvg['state']} | {fvg['quality']}" if fvg["value"] is not None else "NOT_APPLICABLE"
+    liq_risk = str(row.get("liq_risk_level", row.get("liq_risk", "UNAVAILABLE")) or "UNAVAILABLE").upper()
 
     rows.append({
         "Symbol": symbol,
@@ -99,7 +97,9 @@ for source_row in market_data:
         "Ex Flow": evidence_cell(display["exchange_flow"]),
         "Vol Bias": evidence_cell(display["volume"]),
         "Imbalance": evidence_cell(display["imbalance"]),
-        "Liq Risk": str(display["liq_risk"]).upper(),
+        "Liq Zone ↓": fmt_number(row.get("long_liq_vol"), "$"),
+        "Liq Zone ↑": fmt_number(row.get("short_liq_vol"), "$"),
+        "Liq Risk": liq_risk,
         "Sweep": evidence_cell(display["sweep"]),
         "Sweep Price": fmt_number(display["sweep_price"], "$"),
         "FVG": fvg_state,
@@ -130,6 +130,7 @@ semantics = [
     ("Flow / Ex Flow", "Directional classification from actual underlying flow only."),
     ("Vol Bias", "Directional volume classification from the engine."),
     ("Imbalance", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL."),
+    ("Liq Zone ↓ / ↑", "Long/short liquidation-volume context from the liquidation engine; not standalone votes."),
     ("Liq Risk", "Risk state only; never a standalone BUY/SELL generator."),
     ("Sweep", "BUY/SELL only on a detected qualifying event; otherwise NOT_APPLICABLE."),
     ("Sweep Price", "Event location only; not an independent vote."),
