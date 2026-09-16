@@ -53,6 +53,8 @@ def main() -> None:
     total_streams = config.scanner.max_symbols * len(config.scanner.ws_streams) + 1 + len(config.scanner.global_streams)
     if total_streams > 1024:
         failures.append(f"effective Binance stream budget exceeded: {total_streams}>1024")
+    if config.binance.testnet and config.binance.ws_url != config.binance.ws_production:
+        failures.append("market-data WebSocket must remain on production Binance feed")
 
     backend_index = repo / "packages" / "backend" / "src" / "index.ts"
     backend_routes = repo / "packages" / "backend" / "src" / "routes" / "index.ts"
@@ -82,6 +84,13 @@ def main() -> None:
         ]:
             if forbidden not in text:
                 failures.append(f"Node route authority boundary missing: {forbidden}")
+
+    for dashboard_path in [root / "dashboard" / "app.py", root / "dashboard" / "pages" / "1_Live_Sheet.py"]:
+        if dashboard_path.exists():
+            text = dashboard_path.read_text(encoding="utf-8").lower()
+            for forbidden in ("long (implied)", "short (implied)", "_compute_implied_signal", "_signal_implied"):
+                if forbidden in text:
+                    failures.append(f"dashboard still contains implied executable signal logic: {dashboard_path}:{forbidden}")
 
     main_py = root / "main.py"
     if main_py.exists():
