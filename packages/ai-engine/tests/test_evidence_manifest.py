@@ -45,7 +45,7 @@ def test_historical_manifest_cannot_reach_research_validated():
         failures=(),
         research_decision=decision,
         research_validated=True,
-        evidence_manifest=_manifest(expires_at=900.0),
+        evidence_manifest=_manifest(issued_at=0.0, expires_at=900.0),
         evidence_now_ts=1_000.0,
     )
     assert artifact.state is CertificationState.ENGINEERING_VALID
