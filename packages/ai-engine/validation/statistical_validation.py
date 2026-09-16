@@ -20,6 +20,7 @@ class ResearchEvidence:
     test_period: Tuple[str, str]
     regime_counts: Dict[str, int] = field(default_factory=dict)
     cost_model: str = ""
+    slippage_model: str = ""
     funding_source: str = ""
     rejected_signals: int = 0
     rejected_outcomes_complete: bool = False
@@ -43,10 +44,16 @@ def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
         reasons.append("insufficient_completed_trades")
     if not e.cost_model:
         reasons.append("missing_cost_model")
+    if not e.slippage_model:
+        reasons.append("missing_slippage_model")
     if not e.funding_source:
         reasons.append("missing_funding_source")
     if not e.code_commit or not e.config_fingerprint:
         reasons.append("missing_reproducibility_fingerprint")
+    if e.bootstrap_seed is None:
+        reasons.append("missing_bootstrap_seed")
+    if e.rejected_signals < 0:
+        reasons.append("invalid_rejected_signal_count")
     if not e.rejected_outcomes_complete:
         reasons.append("missing_rejected_signal_outcomes")
     if not e.regime_counts or sum(e.regime_counts.values()) <= 0:
