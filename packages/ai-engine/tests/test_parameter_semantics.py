@@ -2,17 +2,25 @@ from core.parameter_semantics import direction_for_parameter, signal_from_canoni
 
 
 def test_bullish_price_is_buy():
-    result = direction_for_parameter("price", {"change_24h": 1.2})
+    result = direction_for_parameter("price", {"change_24h": 1.2, "timestamp": 100})
     assert result.state.value == "BUY"
+    assert result.quality.value == "LIVE"
 
 
 def test_bearish_price_is_sell():
-    result = direction_for_parameter("price", {"change_24h": -1.2})
+    result = direction_for_parameter("price", {"change_24h": -1.2, "timestamp": 100})
     assert result.state.value == "SELL"
+    assert result.quality.value == "LIVE"
+
+
+def test_direction_without_timestamp_is_unavailable():
+    result = direction_for_parameter("price", {"change_24h": 1.2})
+    assert result.state.value == "NEUTRAL"
+    assert result.quality.value == "UNAVAILABLE"
 
 
 def test_neutral_ratio_is_neutral():
-    result = direction_for_parameter("b_s_ratio", {"buy_sell_ratio": 1.0})
+    result = direction_for_parameter("b_s_ratio", {"buy_sell_ratio": 1.0, "timestamp": 100})
     assert result.state.value == "NEUTRAL"
 
 
