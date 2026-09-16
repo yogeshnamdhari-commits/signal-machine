@@ -23,6 +23,9 @@ def main() -> None:
         root / "core" / "market_data.py",
         root / "core" / "signal_contract.py",
         root / "core" / "signal_consensus.py",
+        root / "core" / "directional_factor.py",
+        root / "core" / "parameter_semantics.py",
+        root / "core" / "signal_provenance.py",
         root / "config" / "environment_contract.py",
         root / "config" / "runtime_defaults.py",
         root / "config" / "schema.py",
@@ -31,6 +34,7 @@ def main() -> None:
         root / "validation" / "statistical_validation.py",
         root / "validation" / "live_readiness.py",
         root / "validation" / "live_gate.py",
+        root / "dashboard" / "live_sheet_contract.py",
     ]
     for path in required:
         if not path.exists():
@@ -41,9 +45,14 @@ def main() -> None:
         text = adapter.read_text(encoding="utf-8")
         if '"_source": "ticker_arr"' in text or "Generate synthetic trade events" in text:
             failures.append("canonical Binance adapter still contains ticker-to-trade synthetic injection")
+        if '"feed": "ticker24h"' in text and 'await self._callback("trade"' in text:
+            failures.append("ticker24h is still capable of producing trade callbacks")
 
     if "depth@100ms" not in config.scanner.ws_streams:
         failures.append("effective scanner configuration lacks L2 depth@100ms feed")
+    total_streams = config.scanner.max_symbols * len(config.scanner.ws_streams) + 1 + len(config.scanner.global_streams)
+    if total_streams > 1024:
+        failures.append(f"effective Binance stream budget exceeded: {total_streams}>1024")
 
     backend_index = repo / "packages" / "backend" / "src" / "index.ts"
     backend_routes = repo / "packages" / "backend" / "src" / "routes" / "index.ts"
@@ -51,16 +60,28 @@ def main() -> None:
         text = backend_index.read_text(encoding="utf-8")
         if "signalEngine.startContinuousScan" in text or "tradeSimulator.start()" in text:
             failures.append("Node backend still starts an independent executable trading authority")
-        for marker in ["PYTHON_CANONICAL_AUTHORITY", "/indicators/signal", "/risk/position/size", "/scanner/scan"]:
+        for marker in ["CANONICAL_SIGNAL_AUTHORITY", "canonicalReadOnlyGuard", "authority: 'python'", "PYTHON_CANONICAL_AUTHORITY"]:
             if marker not in text:
-                failures.append(f"Node canonical-authority guard missing: {marker}")
+                failures.append(f"Node entrypoint guard missing: {marker}")
     if backend_routes.exists():
         text = backend_routes.read_text(encoding="utf-8")
-        for marker in ["dataQuality: 'UNAVAILABLE'", "provenance: 'binance_aggTrades'", "PYTHON_CANONICAL_AUTHORITY"]:
+        for marker in ["PYTHON_CANONICAL_AUTHORITY", "dataQuality: 'UNAVAILABLE'", "provenance: 'binance_aggTrades'", "provenance: 'aggTrades_request_failed'"]:
             if marker not in text:
                 failures.append(f"Node route provenance/authority marker missing: {marker}")
         if "takerBuyVol: vol * 0.5" in text or "takerSellVol: vol * 0.5" in text or "buyRatio: 0.5" in text:
             failures.append("Node orderflow contains a synthetic 50/50 fallback")
+        for forbidden in [
+            "router.post('/signals/scan'",
+            "router.put('/signals/:id/status'",
+            "router.post('/indicators/signal'",
+            "router.put('/risk/params'",
+            "router.post('/risk/position/check'",
+            "router.post('/risk/position/size'",
+            "router.post('/scanner/scan'",
+            "router.post('/simulator/reset'",
+        ]:
+            if forbidden not in text:
+                failures.append(f"Node route authority boundary missing: {forbidden}")
 
     main_py = root / "main.py"
     if main_py.exists():
@@ -69,6 +90,8 @@ def main() -> None:
             failures.append("risk integrity gate is not installed before engine startup")
         if '"live"' not in text or "verify_live_certification" not in text:
             failures.append("live mode is not fail-closed behind current certification")
+        if "reload=False" not in text:
+            failures.append("API server must not run with autoreload in production")
 
     for path in root.rglob("*.py"):
         try:
