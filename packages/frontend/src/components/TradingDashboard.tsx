@@ -5,7 +5,6 @@ import {
   Activity,
   ArrowDownRight,
   ArrowUpRight,
-  Minus,
   RefreshCw,
   Search,
   TrendingDown,
@@ -57,7 +56,6 @@ export default function TradingDashboard() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'symbol' | 'volume' | 'delta' | 'confidence'>('volume');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
   const fetchData = useCallback(async () => {
     try {
@@ -76,7 +74,7 @@ export default function TradingDashboard() {
       const flowMap = new Map<string, OrderFlowData>();
       for (const flow of flowList as OrderFlowData[]) flowMap.set(flow.symbol, flow);
 
-      const merged: DashboardRow[] = tickerList.map((ticker) => ({
+      setRows(tickerList.map((ticker) => ({
         symbol: ticker.symbol,
         base: ticker.symbol.replace('USDT', ''),
         price: ticker.price ?? 0,
@@ -86,10 +84,7 @@ export default function TradingDashboard() {
         openInterest: 'UNAVAILABLE',
         signal: signalMap.get(ticker.symbol) ?? null,
         orderFlow: flowMap.get(ticker.symbol) ?? null,
-      }));
-
-      setRows(merged);
-      setLastUpdate(new Date());
+      })));
     } catch (error) {
       console.error('Dashboard fetch error:', error);
     } finally {
@@ -129,19 +124,11 @@ export default function TradingDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Activity className="h-6 w-6 text-primary-400" />
-          <div>
-            <h2 className="text-xl font-bold text-white">Trading Dashboard</h2>
-            <p className="text-xs text-dark-500">Python engine is the canonical signal authority.</p>
-          </div>
+          <div><h2 className="text-xl font-bold text-white">Trading Dashboard</h2><p className="text-xs text-dark-500">Python engine is the canonical signal authority.</p></div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-500" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search symbol..." className="w-48 rounded-lg border border-dark-700 bg-dark-800 py-2 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary-500" />
-          </div>
-          <button onClick={() => void fetchData()} className="rounded-lg border border-dark-700 bg-dark-800 p-2 hover:border-primary-500" aria-label="Refresh">
-            <RefreshCw className={`h-4 w-4 text-dark-400 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search symbol..." className="w-48 rounded-lg border border-dark-700 bg-dark-800 py-2 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary-500" /></div>
+          <button onClick={() => void fetchData()} className="rounded-lg border border-dark-700 bg-dark-800 p-2 hover:border-primary-500" aria-label="Refresh"><RefreshCw className={`h-4 w-4 text-dark-400 ${loading ? 'animate-spin' : ''}`} /></button>
         </div>
       </div>
 
@@ -155,42 +142,28 @@ export default function TradingDashboard() {
       <div className="overflow-hidden rounded-xl border border-dark-700 bg-dark-900">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
-            <thead className="border-b border-dark-700 text-xs uppercase text-dark-400">
-              <tr>
-                <Header label="Symbol" column="symbol" sortBy={sortBy} onSort={handleSort} />
-                <th className="px-3 py-3 text-right">Price</th>
-                <th className="px-3 py-3 text-right">24h %</th>
-                <Header label="Volume" column="volume" sortBy={sortBy} onSort={handleSort} />
-                <th className="px-3 py-3">Signal</th>
-                <Header label="Confidence" column="confidence" sortBy={sortBy} onSort={handleSort} />
-                <Header label="Delta" column="delta" sortBy={sortBy} onSort={handleSort} />
-                <th className="px-3 py-3 text-right">CVD</th>
-                <th className="px-3 py-3 text-right">Agg Buy</th>
-                <th className="px-3 py-3 text-right">Agg Sell</th>
-                <th className="px-3 py-3">Authority</th>
-              </tr>
-            </thead>
+            <thead className="border-b border-dark-700 text-xs uppercase text-dark-400"><tr>
+              <Header label="Symbol" column="symbol" sortBy={sortBy} onSort={handleSort} /><th className="px-3 py-3 text-right">Price</th><th className="px-3 py-3 text-right">24h %</th><Header label="Volume" column="volume" sortBy={sortBy} onSort={handleSort} /><th className="px-3 py-3">Signal</th><Header label="Confidence" column="confidence" sortBy={sortBy} onSort={handleSort} /><Header label="Delta" column="delta" sortBy={sortBy} onSort={handleSort} /><th className="px-3 py-3 text-right">CVD</th><th className="px-3 py-3 text-right">Agg Buy</th><th className="px-3 py-3 text-right">Agg Sell</th><th className="px-3 py-3">Authority</th>
+            </tr></thead>
             <tbody>
               {filtered.map((row) => {
                 const signal = row.signal;
                 const flow = row.orderFlow;
                 const isBuy = signal?.type === 'buy';
                 const confidence = signal ? Math.round(signal.confidence * 100) : 0;
-                return (
-                  <tr key={row.symbol} className="border-b border-dark-800 hover:bg-dark-800/50">
-                    <td className="px-3 py-3 font-semibold text-white">{row.base}<span className="ml-1 text-xs text-dark-500">/USDT</span></td>
-                    <td className="px-3 py-3 text-right font-mono text-white">${fmtPrice(row.price)}</td>
-                    <td className={`px-3 py-3 text-right font-mono ${row.priceChange >= 0 ? 'text-success' : 'text-danger'}`}>{row.priceChange >= 0 ? '+' : ''}{row.priceChange.toFixed(2)}%</td>
-                    <td className="px-3 py-3 text-right font-mono text-dark-300">{fmtUsd(row.volume)}</td>
-                    <td className="px-3 py-3">{signal ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${isBuy ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>{isBuy ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}{signal.type.toUpperCase()}</span> : <span className="text-xs text-dark-600">NO_SIGNAL</span>}</td>
-                    <td className="px-3 py-3 text-right font-mono text-dark-300">{signal ? `${confidence}%` : '—'}</td>
-                    <td className="px-3 py-3 text-right font-mono text-dark-300">{flow ? fmtUsd(flow.delta) : 'UNAVAILABLE'}</td>
-                    <td className="px-3 py-3 text-right font-mono text-dark-300">{flow ? fmtUsd(flow.cvd) : 'UNAVAILABLE'}</td>
-                    <td className="px-3 py-3 text-right font-mono text-success">{flow ? fmtUsd(flow.takerBuyVol) : 'UNAVAILABLE'}</td>
-                    <td className="px-3 py-3 text-right font-mono text-danger">{flow ? fmtUsd(flow.takerSellVol) : 'UNAVAILABLE'}</td>
-                    <td className="px-3 py-3 text-xs text-dark-400">{signal ? 'Python engine' : 'none'}</td>
-                  </tr>
-                );
+                return <tr key={row.symbol} className="border-b border-dark-800 hover:bg-dark-800/50">
+                  <td className="px-3 py-3 font-semibold text-white">{row.base}<span className="ml-1 text-xs text-dark-500">/USDT</span></td>
+                  <td className="px-3 py-3 text-right font-mono text-white">${fmtPrice(row.price)}</td>
+                  <td className={`px-3 py-3 text-right font-mono ${row.priceChange >= 0 ? 'text-success' : 'text-danger'}`}>{row.priceChange >= 0 ? '+' : ''}{row.priceChange.toFixed(2)}%</td>
+                  <td className="px-3 py-3 text-right font-mono text-dark-300">{fmtUsd(row.volume)}</td>
+                  <td className="px-3 py-3">{signal ? <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${isBuy ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>{isBuy ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}{signal.type.toUpperCase()}</span> : <span className="text-xs text-dark-600">NO_SIGNAL</span>}</td>
+                  <td className="px-3 py-3 text-right font-mono text-dark-300">{signal ? `${confidence}%` : '—'}</td>
+                  <td className="px-3 py-3 text-right font-mono text-dark-300">{flow ? fmtUsd(flow.delta) : 'UNAVAILABLE'}</td>
+                  <td className="px-3 py-3 text-right font-mono text-dark-300">{flow ? fmtUsd(flow.cvd) : 'UNAVAILABLE'}</td>
+                  <td className="px-3 py-3 text-right font-mono text-success">{flow ? fmtUsd(flow.takerBuyVol) : 'UNAVAILABLE'}</td>
+                  <td className="px-3 py-3 text-right font-mono text-danger">{flow ? fmtUsd(flow.takerSellVol) : 'UNAVAILABLE'}</td>
+                  <td className="px-3 py-3 text-xs text-dark-400">{signal ? 'Python engine' : 'none'}</td>
+                </tr>;
               })}
               {!filtered.length && <tr><td colSpan={11} className="px-3 py-12 text-center text-dark-400">{loading ? 'Loading market data...' : 'No symbols match the current filter.'}</td></tr>}
             </tbody>
@@ -201,10 +174,6 @@ export default function TradingDashboard() {
   );
 }
 
-function Header({ label, column, sortBy, onSort }: { label: string; column: 'symbol' | 'volume' | 'delta' | 'confidence'; sortBy: string; onSort: (column: 'symbol' | 'volume' | 'delta' | 'confidence') => void }) {
-  return <th onClick={() => onSort(column)} className="cursor-pointer px-3 py-3 text-left hover:text-white">{label}{sortBy === column ? ' ↕' : ''}</th>;
-}
+function Header({ label, column, sortBy, onSort }: { label: string; column: 'symbol' | 'volume' | 'delta' | 'confidence'; sortBy: string; onSort: (column: 'symbol' | 'volume' | 'delta' | 'confidence') => void }) { return <th onClick={() => onSort(column)} className="cursor-pointer px-3 py-3 text-left hover:text-white">{label}{sortBy === column ? ' ↕' : ''}</th>; }
 
-function SummaryCard({ label, value, icon, color = 'text-white' }: { label: string; value: string; icon: React.ReactNode; color?: string }) {
-  return <div className="rounded-xl border border-dark-700 bg-dark-900 p-4"><div className="flex items-center justify-between"><div><p className="text-xs text-dark-400">{label}</p><p className={`text-xl font-bold ${color}`}>{value}</p></div>{icon}</div></div>;
-}
+function SummaryCard({ label, value, icon, color = 'text-white' }: { label: string; value: string; icon: React.ReactNode; color?: string }) { return <div className="rounded-xl border border-dark-700 bg-dark-900 p-4"><div className="flex items-center justify-between"><div><p className="text-xs text-dark-400">{label}</p><p className={`text-xl font-bold ${color}`}>{value}</p></div>{icon}</div></div>; }
