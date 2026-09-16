@@ -15,3 +15,7 @@ def test_configuration_fingerprint_is_stable():
     second = config_fingerprint(config)
     assert first == second
     assert len(first) == 64
+
+
+def test_dom_runtime_feed_uses_l2_depth():
+    assert "depth@100ms" in config.scanner.ws_streams
