@@ -20,17 +20,28 @@ class EnvironmentContractError(RuntimeError):
 
 
 def enforce_data_feed_environment(config: Any) -> None:
-    """Apply effective feed settings without changing trading strategy parameters."""
+    """Make the market-data path production-grade while retaining testnet trading REST.
+
+    Public Binance market data is deliberately sourced from the production feed so
+    a testnet execution environment cannot silently display a different market.
+    The adapter is public market-data-only; execution credentials/endpoints are
+    validated separately and are not changed here.
+    """
     streams = tuple(config.scanner.ws_streams)
     if "depth@100ms" not in streams:
         streams = streams + ("depth@100ms",)
-    global_count = 1 + len(config.scanner.global_streams)  # !ticker@arr + configured globals
+    global_count = 1 + len(config.scanner.global_streams)
     total_streams = config.scanner.max_symbols * len(streams) + global_count
     if total_streams > BINANCE_MAX_STREAMS_PER_CONNECTION:
         raise EnvironmentContractError(
             f"Binance stream budget exceeded: {total_streams}>{BINANCE_MAX_STREAMS_PER_CONNECTION}"
         )
     object.__setattr__(config, "scanner", replace(config.scanner, ws_streams=streams))
+
+    # Preserve testnet REST trading configuration but route public market data
+    # WebSocket traffic to the production market feed.
+    if config.binance.testnet and config.binance.ws_url != config.binance.ws_production:
+        object.__setattr__(config, "binance", replace(config.binance, ws_testnet=config.binance.ws_production))
 
 
 def enforce_delta_environment(config: Any) -> str:
