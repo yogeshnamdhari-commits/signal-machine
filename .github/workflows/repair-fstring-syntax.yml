@@ -29,54 +29,47 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          # 1) Live Sheet: move the nested TP2/TP3 f-string out of the outer
-          # card f-string. This preserves the rendered HTML without using
-          # backslashes inside an f-string expression.
-          path = Path('packages/ai-engine/dashboard/pages/1_Live_Sheet.py')
-          text = path.read_text(encoding='utf-8')
-          start_marker = '            {f\'\'\'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">'
-          end_marker = '            <div style="display:flex; gap:10px; font-size:0.75rem; color:#94a3b8; flex-wrap:wrap;">'
-          start = text.find(start_marker)
-          end = text.find(end_marker, start)
-          if start < 0 or end < 0 or end <= start:
-              raise SystemExit(f'{path}: TP2/TP3 nested f-string markers not found')
-          text = text[:start] + '            {tp23_html}\n' + text[end:]
+          def repair_nested_tp(path: Path, start_marker: str, end_marker: str, helper_lines: list[str], replacement: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              start = text.find(start_marker)
+              end = text.find(end_marker, start)
+              if start < 0 or end < 0 or end <= start:
+                  raise SystemExit(f'{path}: nested TP2/TP3 block markers not found')
 
-          marker = '    card_html = f"""'
-          if marker not in text:
-              raise SystemExit(f'{path}: card_html marker not found')
+              # Find the opening quote of the surrounding outer f-string by
+              # scanning backwards from the nested block, regardless of the
+              # outer variable name or indentation.
+              outer_double = text.rfind('f"""', 0, start)
+              outer_single = text.rfind("f'''", 0, start)
+              outer = max(outer_double, outer_single)
+              if outer < 0:
+                  raise SystemExit(f'{path}: surrounding outer f-string not found')
+              insert_at = text.rfind('\n', 0, outer) + 1
 
-          helper_lines = [
-              '    # Precompute optional TP2/TP3 HTML outside the outer card f-string.',
-              '    tp23_html = ""',
-              '    if tp2 > 0:',
-              '        tp23_parts = [f\'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>\']',
-              '        if tp3 > 0:',
-              '            tp23_parts.append(f\'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>\')',
-              '        tp23_html = \'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">\' + \'\'.join(tp23_parts) + \'</div>\'',
-              '',
+              text = text[:start] + replacement + text[end:]
+              helper = '\n'.join(helper_lines) + '\n\n'
+              text = text[:insert_at] + helper + text[insert_at:]
+              path.write_text(text, encoding='utf-8')
+              print(f'Repaired {path}')
+
+          helper_live = [
+              '        # Precompute optional TP2/TP3 HTML outside the outer card f-string.',
+              '        tp23_html = ""',
+              '        if tp2 > 0:',
+              '            tp23_parts = [f\'<span style="color:#3b82f6;">🎯 TP2 ${tp2:,.4f} ({rr_2:.1f}x)</span>\']',
+              '            if tp3 > 0:',
+              '                tp23_parts.append(f\'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>\')',
+              '            tp23_html = \'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">\' + \'\'.join(tp23_parts) + \'</div>\'',
           ]
-          helper = '\n'.join(helper_lines)
-          text = text.replace(marker, helper + '\n' + marker, 1)
-          path.write_text(text, encoding='utf-8')
-          print(f'Repaired {path}')
+          repair_nested_tp(
+              Path('packages/ai-engine/dashboard/pages/1_Live_Sheet.py'),
+              '            {f\'\'\'<div style="display:flex; gap:8px; font-size:0.72rem; margin-top:1px; flex-wrap:wrap;">',
+              '            <div style="display:flex; gap:10px; font-size:0.75rem; color:#94a3b8; flex-wrap:wrap;">',
+              helper_live,
+              '            {tp23_html}\n',
+          )
 
-          # 2) Smart Money: move the TP2/TP3 HTML out of the outer f-string.
-          path = Path('packages/ai-engine/dashboard/pages/2_Smart_Money.py')
-          text = path.read_text(encoding='utf-8')
-          start_marker = "        {f'''<div style="
-          end_marker = '        <!-- SL/TP distance bars -->'
-          start = text.find(start_marker)
-          end = text.find(end_marker, start)
-          if start < 0 or end < 0 or end <= start:
-              raise SystemExit(f'{path}: TP2/TP3 nested f-string markers not found')
-          text = text[:start] + '        {tp23_html}\n' + text[end:]
-
-          marker = '    card_html = f"""'
-          if marker not in text:
-              raise SystemExit(f'{path}: card_html marker not found')
-
-          helper_lines = [
+          helper_sm = [
               '    # Precompute optional TP2/TP3 HTML outside the outer card f-string.',
               '    tp23_html = ""',
               '    if tp2 > 0:',
@@ -84,12 +77,14 @@ jobs:
               '        if tp3 > 0:',
               '            tp23_parts.append(f\'<span style="color:#8b5cf6;">🚀 TP3 ${tp3:,.4f} ({rr_3:.1f}x)</span>\')',
               '        tp23_html = \'<div style="display:flex;gap:8px;font-size:0.68rem;margin-top:1px;flex-wrap:wrap;">\' + \'\'.join(tp23_parts) + \'</div>\'',
-              '',
           ]
-          helper = '\n'.join(helper_lines)
-          text = text.replace(marker, helper + '\n' + marker, 1)
-          path.write_text(text, encoding='utf-8')
-          print(f'Repaired {path}')
+          repair_nested_tp(
+              Path('packages/ai-engine/dashboard/pages/2_Smart_Money.py'),
+              "        {f'''<div style=",
+              '        <!-- SL/TP distance bars -->',
+              helper_sm,
+              '        {tp23_html}\n',
+          )
           PY
 
       - name: Compile every Python source file
