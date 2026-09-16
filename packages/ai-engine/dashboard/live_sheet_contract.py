@@ -57,7 +57,7 @@ def _fvg_display(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_signal_display(signal: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
     """Build display metadata without ever voting factors into a trade signal."""
-    canonical = signal_from_canonical(signal, bridge_trusted=bool(signal))
+    canonical = signal_from_canonical(signal)
     return {
         "signal": canonical,
         "authority": "python-bridge" if canonical != "NO_SIGNAL" else "none",
