@@ -124,9 +124,6 @@ service/*.log
 launcher.pid
 api.pid
 
-# Lock files
-package-lock.json
-
 # Dashboard log
 dashboard.log
 *.env
