@@ -1,0 +1,83 @@
+name: Auto Sync Dev to Main
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-sync-dev-to-main
+  cancel-in-progress: false
+
+jobs:
+  validate-and-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Detect Python project
+        id: python_project
+        shell: bash
+        run: |
+          if [ -f "packages/ai-engine/requirements.txt" ] || find packages/ai-engine -type f -name '*.py' -print -quit 2>/dev/null | grep -q .; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Python dependencies
+        if: steps.python_project.outputs.enabled == 'true' && hashFiles('packages/ai-engine/requirements.txt') != ''
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r packages/ai-engine/requirements.txt
+
+      - name: Compile-check Python source
+        if: steps.python_project.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib
+          import py_compile
+          root = pathlib.Path('packages/ai-engine')
+          failures = []
+          for path in root.rglob('*.py'):
+              try:
+                  py_compile.compile(str(path), doraise=True)
+              except Exception as exc:
+                  failures.append((str(path), str(exc)))
+          if failures:
+              for path, err in failures:
+                  print(f'PY_COMPILE_FAILURE: {path}: {err}')
+              raise SystemExit(1)
+          print('Python compile check passed.')
+          PY
+
+      - name: Sync dev to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main dev
+          git checkout main
+          git reset --hard origin/main
+          git merge --ff-only origin/dev
+          git push origin main
+
+      - name: Sync summary
+        run: |
+          echo "Dev branch validated and fast-forwarded to main."
+          echo "Commit: $(git rev-parse HEAD)"
