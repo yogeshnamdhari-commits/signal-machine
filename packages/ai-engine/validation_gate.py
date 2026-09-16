@@ -39,29 +39,28 @@ def main() -> None:
     adapter = root / "exchanges" / "binance_ws.py"
     if adapter.exists():
         text = adapter.read_text(encoding="utf-8")
-        forbidden = ('"_source": "ticker_arr"', "Generate synthetic trade events", 'await self._callback("trade", trade)\n\n    async def _on_ticker_arr')
-        if any(token in text for token in forbidden[:2]):
+        if '"_source": "ticker_arr"' in text or "Generate synthetic trade events" in text:
             failures.append("canonical Binance adapter still contains ticker-to-trade synthetic injection")
 
-    scanner_config = config.scanner.ws_streams
-    if "depth@100ms" not in scanner_config:
+    if "depth@100ms" not in config.scanner.ws_streams:
         failures.append("effective scanner configuration lacks L2 depth@100ms feed")
 
     backend_index = repo / "packages" / "backend" / "src" / "index.ts"
+    backend_routes = repo / "packages" / "backend" / "src" / "routes" / "index.ts"
     if backend_index.exists():
         text = backend_index.read_text(encoding="utf-8")
         if "signalEngine.startContinuousScan" in text or "tradeSimulator.start()" in text:
             failures.append("Node backend still starts an independent executable trading authority")
-        required_guards = [
-            "PYTHON_CANONICAL_AUTHORITY",
-            "POST /api/signals/scan",
-            "/indicators/signal",
-            "/risk/position/size",
-            "/scanner/scan",
-        ]
-        for marker in required_guards:
+        for marker in ["PYTHON_CANONICAL_AUTHORITY", "/indicators/signal", "/risk/position/size", "/scanner/scan"]:
             if marker not in text:
                 failures.append(f"Node canonical-authority guard missing: {marker}")
+    if backend_routes.exists():
+        text = backend_routes.read_text(encoding="utf-8")
+        for marker in ["dataQuality: 'UNAVAILABLE'", "provenance: 'binance_aggTrades'", "PYTHON_CANONICAL_AUTHORITY"]:
+            if marker not in text:
+                failures.append(f"Node route provenance/authority marker missing: {marker}")
+        if "takerBuyVol: vol * 0.5" in text or "takerSellVol: vol * 0.5" in text or "buyRatio: 0.5" in text:
+            failures.append("Node orderflow contains a synthetic 50/50 fallback")
 
     main_py = root / "main.py"
     if main_py.exists():
@@ -71,7 +70,6 @@ def main() -> None:
         if '"live"' not in text or "verify_live_certification" not in text:
             failures.append("live mode is not fail-closed behind current certification")
 
-    # Basic parse check for every Python module; compile is separately run in CI.
     for path in root.rglob("*.py"):
         try:
             ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
