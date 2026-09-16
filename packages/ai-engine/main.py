@@ -21,29 +21,17 @@ except ImportError:
 
 from loguru import logger
 
+from config import config
+from config.environment_contract import validate_runtime_config
+from exchanges.integrity_patch import apply_integrity_patches
 
-def _setup_logging(level: str = "INFO") -> None:
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        format=(
-            "<green>{time:HH:mm:ss}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan> — <level>{message}</level>"
-        ),
-        level=level,
-    )
-    logger.add(
-        "data/logs/engine_{time:YYYY-MM-DD}.log",
-        rotation="1 day",
-        retention="7 days",
-        level="DEBUG",
-    )
+# Apply the same data-integrity boundary before any engine instance is created.
+apply_integrity_patches()
+CONFIG_FINGERPRINT = validate_runtime_config(config)
 
 if FastAPI:
     from core.engine import DeltaTerminalEngine
-    
-    # Create a global engine instance for the API
+
     api_engine = DeltaTerminalEngine()
 
     @asynccontextmanager
@@ -59,7 +47,11 @@ if FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "engine": api_engine.get_status()}
+        return {
+            "status": "ok",
+            "config_fingerprint": CONFIG_FINGERPRINT,
+            "engine": api_engine.get_status(),
+        }
 
     @app.get("/signals")
     async def get_signals():
@@ -69,19 +61,16 @@ else:
 
 
 async def _acquire_engine_lock() -> bool:
-    """Acquire singleton engine lock using fcntl.flock() to prevent race conditions.
-
-    This uses an atomic file lock (not just a PID check) so that two processes
-    starting at the exact same time cannot both acquire the lock.
-    """
-    import fcntl, os, time
+    """Acquire singleton engine lock using fcntl.flock() to prevent race conditions."""
+    import fcntl
+    import os
+    import time
 
     _data_dir = Path(__file__).parent / "data"
     _data_dir.mkdir(parents=True, exist_ok=True)
     _lock_path = _data_dir / "engine.lock"
     _pid_path = _data_dir / "engine.pid"
 
-    # Step 1: open lock file and try non-blocking exclusive flock
     try:
         lock_fd = open(_lock_path, "w")
     except OSError as exc:
@@ -91,8 +80,6 @@ async def _acquire_engine_lock() -> bool:
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        # Another engine holds the lock
-        # Read its PID for a helpful message
         try:
             old_pid = int(_pid_path.read_text().strip())
             alive = False
@@ -103,41 +90,35 @@ async def _acquire_engine_lock() -> bool:
                 pass
             if alive:
                 logger.error(
-                    "❌ Another engine is already running (PID {}). "
-                    "Exiting to prevent duplicate trading. "
-                    "Kill it first with: kill {}", old_pid, old_pid
+                    "❌ Another engine is already running (PID {}). Exiting to prevent duplicate trading. Kill it first with: kill {}",
+                    old_pid,
+                    old_pid,
                 )
             else:
-                logger.error(
-                    "❌ Stale lock from dead PID {}. Cleaning up.", old_pid
-                )
+                logger.error("❌ Stale lock from dead PID {}. Cleaning up.", old_pid)
                 _pid_path.unlink(missing_ok=True)
                 lock_fd.close()
                 _lock_path.unlink(missing_ok=True)
-                # Retry once after cleanup
                 return await _acquire_engine_lock()
         except (ValueError, OSError):
             logger.error("❌ Engine lock held by unknown process. Exiting.")
         lock_fd.close()
         return False
 
-    # Step 2: Lock acquired — write our PID
     _pid_path.write_text(str(os.getpid()))
-    # Keep fd open so the lock stays held for the lifetime of the process
-    # Store ref so it isn't garbage-collected
     global _engine_lock_fd
     _engine_lock_fd = lock_fd
-
     logger.info("✅ Engine lock acquired. PID {} written to {}", os.getpid(), _pid_path)
     return True
 
-# Module-level ref to prevent lock fd from being garbage-collected
+
 _engine_lock_fd = None
 
 
 def _release_engine_lock() -> None:
     """Release singleton engine lock."""
-    import fcntl, os
+    import fcntl
+
     global _engine_lock_fd
     _pid_file = Path(__file__).parent / "data" / "engine.pid"
     _lock_file = Path(__file__).parent / "data" / "engine.lock"
@@ -159,16 +140,14 @@ async def _run_engine() -> None:
     if not await _acquire_engine_lock():
         return
 
-    # FORWARD-TEST COHORT: announce the frozen baseline on startup so the
-    # fresh-cohort boundary is visible in the engine log. The manifest records
-    # the exact strategy/config hash + infrastructure version (Phase 1).
     try:
         import json as _json
         _manifest_path = Path(__file__).parent / "data" / "cohort_baseline_v1.json"
         _bl = _json.loads(_manifest_path.read_text())
         logger.info(
             "🧪 FORWARD-TEST COHORT START: {} — strategy FROZEN (config hash {}), infra v{}",
-            _bl["cohort"]["id"], _bl["hashes"]["strategy_config_hash"],
+            _bl["cohort"]["id"],
+            _bl["hashes"]["strategy_config_hash"],
             _bl["infrastructure_version"]["id"],
         )
     except Exception:
@@ -197,14 +176,20 @@ async def _run_engine() -> None:
 
 def _run_dashboard() -> None:
     import subprocess
-    from config import config
 
     path = Path(__file__).parent / "dashboard" / "app.py"
     cmd = [
-        sys.executable, "-m", "streamlit", "run", str(path),
-        "--server.port", str(config.dashboard.port),
-        "--server.address", config.dashboard.host,
-        "--theme.base", "dark",
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(path),
+        "--server.port",
+        str(config.dashboard.port),
+        "--server.address",
+        config.dashboard.host,
+        "--theme.base",
+        "dark",
     ]
     logger.info("Dashboard → http://{}:{}", config.dashboard.host, config.dashboard.port)
     subprocess.run(cmd)
@@ -212,11 +197,10 @@ def _run_dashboard() -> None:
 
 def _run_api() -> None:
     if not app:
-        logger.error("FastAPI is not installed. Run 'pip install fastapi uvicorn'")
+        logger.error("FastAPI is not installed. Install the locked API dependencies before using --mode api.")
         return
-    from config import config
     logger.info("Starting REST API on http://{}:8000", config.dashboard.host)
-    uvicorn.run("main:app", host=config.dashboard.host, port=8000, reload=True)
+    uvicorn.run("main:app", host=config.dashboard.host, port=8000, reload=False)
 
 
 def main() -> None:
@@ -230,12 +214,12 @@ def main() -> None:
     if args.testnet:
         os.environ["BINANCE_TESTNET"] = "true"
 
-    from config import config
     _setup_logging(config.log_level)
 
     logger.info("=" * 56)
     logger.info("⚡ DeltaTerminal — AI-Powered Binance Futures Scanner")
     logger.info("=" * 56)
+    logger.info("Configuration fingerprint: {}", CONFIG_FINGERPRINT)
 
     if args.mode == "engine":
         asyncio.run(_run_engine())
