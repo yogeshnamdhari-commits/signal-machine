@@ -14,3 +14,74 @@ def test_short_position_has_inverse_funding_cashflow():
 def test_zero_notional_or_zero_rate_has_zero_funding():
     assert calculate_funding_pnl("LONG", 0.0, 0.0001) == 0.0
     assert calculate_funding_pnl("LONG", 100000.0, 0.0) == 0.0
+
+
+def test_funding_is_accrued_to_trade_and_included_in_closed_net_pnl():
+    from backtesting.paper_trading_validator import PaperSignal, SimulatedPositionManager
+    import time
+
+    mgr = SimulatedPositionManager()
+    sig = PaperSignal(
+        id="SIG-FUND-001", timestamp=time.time(), symbol="BTCUSDT",
+        side="LONG", entry_price=65000, stop_loss=64000, take_profit=67000,
+        confidence=0.8, institutional_score=80, market_regime="trending_up",
+    )
+    trade = mgr.open_position(sig, 65000, 1.0, 1)
+
+    funding = mgr.apply_funding(trade.id, funding_rate=0.0001, mark_price=65000, settlement_time=1_800_000_000_000)
+    assert funding == -6.5
+    assert trade.funding_pnl == -6.5
+    assert trade.funding_events == 1
+    assert trade.last_funding_time == 1_800_000_000_000
+
+    closed = mgr.close_position(trade.id, 65000, "test_close")
+    assert closed is not None
+    assert closed.funding_pnl == -6.5
+    assert closed.net_pnl < 0
+
+
+def test_same_funding_settlement_cannot_be_applied_twice():
+    from backtesting.paper_trading_validator import PaperSignal, SimulatedPositionManager
+    import time
+
+    mgr = SimulatedPositionManager()
+    sig = PaperSignal(
+        id="SIG-FUND-002", timestamp=time.time(), symbol="ETHUSDT",
+        side="SHORT", entry_price=3500, stop_loss=3600, take_profit=3300,
+        confidence=0.8, institutional_score=80, market_regime="trending_down",
+    )
+    trade = mgr.open_position(sig, 3500, 1.0, 1)
+
+    first = mgr.apply_funding(trade.id, funding_rate=0.0002, mark_price=3500, settlement_time=1_800_000_000_000)
+    second = mgr.apply_funding(trade.id, funding_rate=0.0002, mark_price=3500, settlement_time=1_800_000_000_000)
+    assert first == 7.0
+    assert second == 0.0
+    assert trade.funding_events == 1
+    assert trade.funding_pnl == 7.0
+
+
+def test_funding_event_is_ingested_as_real_market_data():
+    import time
+    from backtesting.paper_trading_validator import PaperTradingEngine
+
+    engine = PaperTradingEngine()
+    engine.active_symbols.add("BTCUSDT")
+    observed_at = int(time.time() * 1000)
+    event = {
+        "symbol": "BTCUSDT",
+        "mark_price": 65000.0,
+        "index_price": 64990.0,
+        "funding_rate": 0.0001,
+        "next_funding_time": observed_at + 60_000,
+        "timestamp": observed_at,
+        "source": "binance",
+        "feed": "markPrice",
+        "data_quality": "REAL",
+    }
+    import asyncio
+    asyncio.run(engine._on_market_data("funding", event))
+
+    cached = engine.symbol_data["BTCUSDT"]["funding"]
+    assert cached["funding_rate"] == 0.0001
+    assert cached["next_funding_time"] == observed_at + 60_000
+    assert cached["data_quality"] == "REAL"
