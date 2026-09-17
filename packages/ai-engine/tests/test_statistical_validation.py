@@ -91,6 +91,17 @@ def test_timezone_aware_datetime_window_is_accepted():
     assert decision.approved
 
 
+def test_mixed_date_and_datetime_endpoints_are_comparable():
+    decision = evaluate_research_evidence(
+        _complete_evidence(
+            train_period=("2025-01-01", "2025-05-01T00:00:00Z"),
+            validation_period=("2025-05-02", "2025-06-01T00:00:00Z"),
+            test_period=("2025-06-02", "2025-07-01T00:00:00Z"),
+        )
+    )
+    assert decision.approved
+
+
 def test_negative_completed_trade_count_is_rejected():
     decision = evaluate_research_evidence(_complete_evidence(completed_trades=-1))
     assert not decision.approved
