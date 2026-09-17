@@ -85,6 +85,37 @@ SLIPPAGE_BPS = 2.0    # 2 basis points simulated slippage
 MIN_DURATION_DAYS = 14
 PREFERRED_DURATION_DAYS = 30
 
+
+def calculate_funding_pnl(side: str, notional: float, funding_rate: float) -> float:
+    """Calculate funding cash flow for one settled funding interval.
+
+    Positive funding rates mean longs pay shorts; negative rates reverse the
+    cash flow. This function only performs accounting on an explicitly supplied
+    observed rate and notional; it never invents market observations.
+    """
+    import math
+
+    try:
+        notional_f = float(notional)
+        rate_f = float(funding_rate)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("notional and funding_rate must be numeric") from exc
+
+    if not math.isfinite(notional_f) or not math.isfinite(rate_f):
+        raise ValueError("notional and funding_rate must be finite")
+    if notional_f < 0:
+        raise ValueError("notional must be non-negative")
+
+    normalized_side = str(side).upper()
+    if normalized_side not in {"LONG", "SHORT"}:
+        raise ValueError("side must be LONG or SHORT")
+
+    if notional_f == 0 or rate_f == 0:
+        return 0.0
+
+    cash_flow = notional_f * rate_f
+    return -cash_flow if normalized_side == "LONG" else cash_flow
+
 # Success criteria thresholds
 CRITERIA_PF = 1.30
 CRITERIA_WR = 0.48
