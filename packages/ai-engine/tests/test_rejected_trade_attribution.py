@@ -34,7 +34,9 @@ def test_rejected_signal_counterfactual_attribution_records_path_metrics(tmp_pat
     signal = learner._rejected_signals[0]
     assert signal.outcome_tracked is True
     assert signal.outcome_r == 2.0
-    assert signal.mfe_r == 2.0
+    # MFE/MAE describe the supplied evaluation horizon, while holding_bars
+    # records the first deterministic TP/SL exit.
+    assert signal.mfe_r == 2.5
     assert signal.mae_r == 0.5
     assert signal.holding_bars == 2
     assert signal.exit_reason == "TP"
