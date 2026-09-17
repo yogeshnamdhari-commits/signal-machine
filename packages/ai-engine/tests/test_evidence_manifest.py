@@ -36,6 +36,28 @@ def test_config_mismatch_is_rejected():
     assert "evidence_config_mismatch" in decision.reasons
 
 
+def test_boolean_manifest_timestamps_are_rejected():
+    decision = verify_evidence_manifest(
+        _manifest(issued_at=True, expires_at=2_000.0),
+        expected_commit="abc",
+        expected_config={},
+        now_ts=1_500.0,
+    )
+    assert not decision.approved
+    assert "invalid_evidence_window" in decision.reasons
+
+
+def test_boolean_evidence_timestamp_is_rejected():
+    decision = verify_evidence_manifest(
+        _manifest(),
+        expected_commit="abc",
+        expected_config={},
+        now_ts=False,
+    )
+    assert not decision.approved
+    assert "invalid_evidence_timestamp" in decision.reasons
+
+
 def test_historical_manifest_cannot_reach_research_validated():
     decision = ResearchDecision(True, ())
     artifact = generate_certification(
