@@ -37,7 +37,7 @@ def display_value(row: Dict[str, Any], key: str) -> Any:
         if _as_positive_float(row.get("open_interest")) is None:
             return None
 
-    if key in {"net_delta", "buy_sell_ratio"}:
+    if key in {"net_delta", "buy_sell_ratio", "cvd_5m"}:
         if int(row.get("flow_total_trades", 0) or 0) <= 0:
             return None
 
@@ -61,6 +61,19 @@ def display_value(row: Dict[str, Any], key: str) -> Any:
         return None
 
     return value
+
+
+def live_observation_values(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return raw observations separately from their directional interpretations.
+
+    Missing trade-tape inputs remain unavailable rather than being converted to zero.
+    """
+    return {
+        "cvd_5m": display_value(row, "cvd_5m"),
+        "flow_strength": display_value(row, "flow_strength"),
+        "exchange_flow": display_value(row, "exchange_flow"),
+        "imbalance": display_value(row, "imbalance"),
+    }
 
 
 def _fvg_display(row: Dict[str, Any]) -> Dict[str, Any]:
