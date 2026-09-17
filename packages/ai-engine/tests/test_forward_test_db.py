@@ -20,8 +20,9 @@ def test_record_trade_includes_funding_in_net_pnl(tmp_path):
         }
     )
 
-    row = db.query("SELECT net_pnl, funding, outcome FROM forward_trades WHERE id=?", (trade_id,))[0]
+    row = db.query("SELECT gross_pnl, net_pnl, funding, outcome FROM forward_trades WHERE id=?", (trade_id,))[0]
 
+    assert row["gross_pnl"] == 100.0
     assert row["net_pnl"] == 95.0
     assert row["funding"] == 2.0
     assert row["outcome"] == "win"
