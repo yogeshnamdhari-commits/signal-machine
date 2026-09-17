@@ -27,6 +27,7 @@ import sqlite3
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -40,14 +41,9 @@ _LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "rejected_signals.
 # REJECTION LEARNING CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 
-# Minimum outcomes needed for threshold analysis
 MIN_OUTCOMES_FOR_ANALYSIS = 20
-
-# Threshold adjustment recommendation thresholds
-FALSE_REJECTION_RATE_TARGET = 0.15  # Target: < 15% of rejections were wrong
-FALSE_ACCEPTANCE_RATE_TARGET = 0.30  # Target: < 30% of acceptances lost money
-
-# Rolling window for recent analysis
+FALSE_REJECTION_RATE_TARGET = 0.15
+FALSE_ACCEPTANCE_RATE_TARGET = 0.30
 ROLLING_WINDOW = 100
 
 
@@ -58,16 +54,22 @@ class RejectedSignal:
     symbol: str = ""
     side: str = ""
     timestamp: float = 0.0
-    rejection_stage: str = ""     # Which stage rejected it
+    rejection_stage: str = ""
     rejection_reason: str = ""
     scores: Dict[str, float] = field(default_factory=dict)
-    # Scores at rejection: quality, eligibility, validation, etc.
 
     # Outcome (filled in later if we can track it)
     outcome_tracked: bool = False
-    outcome_r: float = 0.0        # What would have happened
+    outcome_r: float = 0.0
     outcome_pnl: float = 0.0
     would_have_been_profitable: bool = False
+    mfe_r: float = 0.0
+    mae_r: float = 0.0
+    holding_bars: int = 0
+    exit_reason: str = ""
+    tp_hit: bool = False
+    sl_hit: bool = False
+    outcome_source: str = ""
 
     def to_dict(self) -> Dict:
         return {
@@ -80,7 +82,15 @@ class RejectedSignal:
             "scores": self.scores,
             "outcome_tracked": self.outcome_tracked,
             "outcome_r": round(self.outcome_r, 3),
+            "outcome_pnl": round(self.outcome_pnl, 2),
             "would_have_been_profitable": self.would_have_been_profitable,
+            "mfe_r": round(self.mfe_r, 3),
+            "mae_r": round(self.mae_r, 3),
+            "holding_bars": self.holding_bars,
+            "exit_reason": self.exit_reason,
+            "tp_hit": self.tp_hit,
+            "sl_hit": self.sl_hit,
+            "outcome_source": self.outcome_source,
         }
 
 
@@ -111,8 +121,8 @@ class RejectionLearningResult:
     timestamp: float = 0.0
     total_rejected: int = 0
     total_outcomes_tracked: int = 0
-    false_rejections: int = 0     # Rejected but would have been profitable
-    good_rejections: int = 0      # Rejected and would have lost money
+    false_rejections: int = 0
+    good_rejections: int = 0
     false_rejection_rate: float = 0.0
     threshold_analysis: Optional[ThresholdAnalysis] = None
     by_stage: Dict[str, Dict] = field(default_factory=dict)
@@ -132,22 +142,7 @@ class RejectionLearningResult:
 
 
 class RejectedTradeLearner:
-    """
-    Learns from rejected trades to optimize pipeline thresholds.
-
-    Per Executive Assessment v4:
-        "Tracking both executed and rejected outcomes lets the eligibility
-         threshold evolve automatically instead of remaining fixed."
-
-    This engine:
-        1. Logs all rejected signals with their scores
-        2. Attempts to track outcomes (did the rejected signal later appear?)
-        3. Calculates false rejection rate
-        4. Recommends threshold adjustments
-        5. Identifies which rejection stages are too strict/loose
-
-    READ-ONLY: Never modifies upstream data. Uses separate log file.
-    """
+    """Learn from rejected signals without changing upstream trading data."""
 
     def __init__(self, db_path: Optional[Path] = None, log_path: Optional[Path] = None):
         self._db_path = db_path or _DB_PATH
@@ -156,45 +151,31 @@ class RejectedTradeLearner:
         self._last_load = 0.0
 
     def _ensure_loaded(self) -> None:
-        """Load rejected signals from log file."""
         if time.time() - self._last_load < 300:
             return
         self._load_rejected_signals()
 
     def _load_rejected_signals(self) -> None:
-        """Load rejected signals from JSON log."""
         try:
             if self._log_path.exists():
                 with open(self._log_path, "r") as f:
                     data = json.load(f)
-                self._rejected_signals = [
-                    RejectedSignal(**item) for item in data
-                ]
+                self._rejected_signals = [RejectedSignal(**item) for item in data]
             else:
                 self._rejected_signals = []
-
             self._last_load = time.time()
-            logger.info(
-                "📊 Rejection Learner loaded: {} rejected signals",
-                len(self._rejected_signals),
-            )
-
+            logger.info("📊 Rejection Learner loaded: {} rejected signals", len(self._rejected_signals))
         except Exception as e:
             logger.warning("Could not load rejection learner: {}", e)
             self._rejected_signals = []
 
     def _save_rejected_signals(self) -> None:
-        """Save rejected signals to JSON log."""
         try:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self._log_path, "w") as f:
                 json.dump([s.to_dict() for s in self._rejected_signals], f, indent=2)
         except Exception as e:
             logger.warning("Could not save rejected signals: {}", e)
-
-    # ═══════════════════════════════════════════════════════════════
-    # LOGGING
-    # ═══════════════════════════════════════════════════════════════
 
     def log_rejection(
         self,
@@ -204,16 +185,6 @@ class RejectedTradeLearner:
         rejection_reason: str,
         scores: Optional[Dict[str, float]] = None,
     ) -> None:
-        """
-        Log a rejected signal for later analysis.
-
-        Args:
-            symbol: Symbol that was rejected
-            side: LONG or SHORT
-            rejection_stage: Which stage rejected it (validation, eligibility, etc.)
-            rejection_reason: Why it was rejected
-            scores: Optional dict of scores at rejection time
-        """
         signal = RejectedSignal(
             signal_id=f"{symbol}_{side}_{int(time.time())}",
             symbol=symbol,
@@ -223,89 +194,150 @@ class RejectedTradeLearner:
             rejection_reason=rejection_reason,
             scores=scores or {},
         )
-
         self._rejected_signals.append(signal)
-
-        # Keep only recent signals (last 1000)
         if len(self._rejected_signals) > 1000:
             self._rejected_signals = self._rejected_signals[-1000:]
-
         self._save_rejected_signals()
 
-    def track_outcome(
-        self,
-        symbol: str,
-        side: str,
-        realized_r: float,
-        pnl: float,
-    ) -> None:
-        """
-        Track the outcome of a previously rejected signal.
-
-        This is called when a signal that was previously rejected
-        later appears as a trade (from a different scan cycle).
-
-        Args:
-            symbol: Symbol that was rejected then traded
-            side: LONG or SHORT
-            realized_r: Actual R outcome
-            pnl: Actual PnL
-        """
-        # Find matching rejected signals (same symbol+side in last 24h)
+    def track_outcome(self, symbol: str, side: str, realized_r: float, pnl: float) -> None:
+        """Track an actual outcome when a previously rejected signal later trades."""
         cutoff = time.time() - 86400
         for signal in reversed(self._rejected_signals):
-            if (signal.symbol == symbol
-                and signal.side == side
-                and signal.timestamp > cutoff
-                and not signal.outcome_tracked):
-
+            if (signal.symbol == symbol and signal.side == side and signal.timestamp > cutoff
+                    and not signal.outcome_tracked):
                 signal.outcome_tracked = True
                 signal.outcome_r = realized_r
                 signal.outcome_pnl = pnl
                 signal.would_have_been_profitable = realized_r > 0
-
+                signal.outcome_source = "subsequent_executed_trade"
                 logger.debug(
                     "📊 REJECTION TRACKED: {} {} rejected at {} → outcome={:.2f}R ({})",
                     symbol, side, signal.rejection_stage, realized_r,
                     "PROFITABLE" if signal.would_have_been_profitable else "LOSS",
                 )
                 break
-
         self._save_rejected_signals()
 
-    # ═══════════════════════════════════════════════════════════════
-    # ANALYSIS
-    # ═══════════════════════════════════════════════════════════════
+    def attribute_counterfactual_outcome(
+        self,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        risk_per_unit: float,
+        bars: List[Dict[str, float]],
+        stop_price: Optional[float] = None,
+        target_price: Optional[float] = None,
+    ) -> None:
+        """Attribute a rejected signal using an explicitly supplied future market path.
+
+        The caller must provide bars that occur after the rejection timestamp. No market
+        data is generated or fetched here. MFE/MAE are measured from the supplied path.
+        If TP and SL are both touched in the same bar, the path is ambiguous and no
+        realized outcome is recorded, preventing an optimistic ordering assumption.
+        """
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and isfinite(float(v))
+                   for v in (entry_price, risk_per_unit)) or risk_per_unit <= 0:
+            raise ValueError("entry_price and risk_per_unit must be finite; risk_per_unit must be positive")
+        if not bars:
+            raise ValueError("bars must contain at least one future market observation")
+
+        cutoff = time.time() - 86400
+        signal = next((s for s in reversed(self._rejected_signals)
+                       if s.symbol == symbol and s.side == side and s.timestamp > cutoff
+                       and not s.outcome_tracked), None)
+        if signal is None:
+            return
+
+        normalized = []
+        previous_timestamp = None
+        for bar in bars:
+            try:
+                timestamp = float(bar["timestamp"])
+                high = float(bar["high"])
+                low = float(bar["low"])
+                close = float(bar["close"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(f"invalid market-path bar: {exc}") from exc
+            if not all(isfinite(v) for v in (timestamp, high, low, close)) or high < low:
+                raise ValueError("market-path bars must contain finite values with high >= low")
+            if previous_timestamp is not None and timestamp < previous_timestamp:
+                raise ValueError("market-path timestamps must be nondecreasing")
+            previous_timestamp = timestamp
+            normalized.append((timestamp, high, low, close))
+
+        side_upper = side.upper()
+        if side_upper not in {"LONG", "SHORT"}:
+            raise ValueError("side must be LONG or SHORT")
+
+        if side_upper == "LONG":
+            mfe_r = max((high - entry_price) / risk_per_unit for _, high, _, _ in normalized)
+            mae_r = max((entry_price - low) / risk_per_unit for _, _, low, _ in normalized)
+        else:
+            mfe_r = max((entry_price - low) / risk_per_unit for _, _, low, _ in normalized)
+            mae_r = max((high - entry_price) / risk_per_unit for _, high, _, _ in normalized)
+
+        exit_price = normalized[-1][3]
+        exit_reason = "HORIZON"
+        tp_hit = False
+        sl_hit = False
+        holding_bars = len(normalized)
+
+        for index, (_, high, low, close) in enumerate(normalized, start=1):
+            tp_touched = target_price is not None and (
+                high >= target_price if side_upper == "LONG" else low <= target_price
+            )
+            sl_touched = stop_price is not None and (
+                low <= stop_price if side_upper == "LONG" else high >= stop_price
+            )
+            if tp_touched and sl_touched:
+                exit_reason = "AMBIGUOUS_SAME_BAR"
+                holding_bars = index
+                self._save_rejected_signals()
+                return
+            if tp_touched:
+                exit_price = float(target_price)
+                exit_reason = "TP"
+                tp_hit = True
+                holding_bars = index
+                break
+            if sl_touched:
+                exit_price = float(stop_price)
+                exit_reason = "SL"
+                sl_hit = True
+                holding_bars = index
+                break
+
+        move = exit_price - entry_price if side_upper == "LONG" else entry_price - exit_price
+        outcome_r = move / risk_per_unit
+        signal.outcome_tracked = True
+        signal.outcome_r = outcome_r
+        signal.outcome_pnl = move
+        signal.would_have_been_profitable = outcome_r > 0
+        signal.mfe_r = mfe_r
+        signal.mae_r = mae_r
+        signal.holding_bars = holding_bars
+        signal.exit_reason = exit_reason
+        signal.tp_hit = tp_hit
+        signal.sl_hit = sl_hit
+        signal.outcome_source = "counterfactual_market_path"
+        self._save_rejected_signals()
 
     def analyze(self) -> RejectionLearningResult:
-        """
-        Analyze rejected signals and recommend threshold adjustments.
-
-        Returns:
-            RejectionLearningResult with analysis and recommendations
-        """
         self._ensure_loaded()
-
         result = RejectionLearningResult(timestamp=time.time())
         result.total_rejected = len(self._rejected_signals)
-
-        # Filter to signals with tracked outcomes
         tracked = [s for s in self._rejected_signals if s.outcome_tracked]
         result.total_outcomes_tracked = len(tracked)
-
         if not tracked:
             return result
 
-        # Count false rejections (rejected but would have been profitable)
         result.false_rejections = sum(1 for s in tracked if s.would_have_been_profitable)
         result.good_rejections = len(tracked) - result.false_rejections
         result.false_rejection_rate = result.false_rejections / max(1, len(tracked))
 
-        # ── By Stage Analysis ──
         by_stage: Dict[str, List[RejectedSignal]] = defaultdict(list)
         for s in tracked:
             by_stage[s.rejection_stage].append(s)
-
         for stage, signals in by_stage.items():
             false_rej = sum(1 for s in signals if s.would_have_been_profitable)
             result.by_stage[stage] = {
@@ -315,50 +347,30 @@ class RejectedTradeLearner:
                 "avg_outcome_r": sum(s.outcome_r for s in signals) / max(1, len(signals)),
             }
 
-        # ── Threshold Analysis ──
         result.threshold_analysis = self._analyze_thresholds(tracked)
-
-        # ── Recent Rejections ──
         result.recent_rejections = self._rejected_signals[-10:]
-
         return result
 
     def _analyze_thresholds(self, tracked: List[RejectedSignal]) -> ThresholdAnalysis:
-        """Analyze what thresholds would have been optimal."""
         analysis = ThresholdAnalysis()
-
         if not tracked:
             return analysis
 
-        # Calculate what different eligibility thresholds would have caught
         eligibility_scores = []
         for s in tracked:
             score = s.scores.get("eligibility_score", s.scores.get("execution_score", 0))
             if score > 0:
                 eligibility_scores.append((score, s.would_have_been_profitable, s.outcome_r))
-
         if not eligibility_scores:
             return analysis
 
-        # Find optimal threshold
-        best_threshold = 90  # Current default
+        best_threshold = 90
         best_improvement = 0
-
         for test_threshold in range(70, 100, 5):
-            # Signals that would have been accepted at this threshold
-            accepted = [(score, prof, r) for score, prof, r in eligibility_scores if score >= test_threshold]
             rejected = [(score, prof, r) for score, prof, r in eligibility_scores if score < test_threshold]
-
             if not rejected:
                 continue
-
-            # False rejections at this threshold
-            false_rej = sum(1 for _, prof, _ in rejected if prof)
-            false_rej_rate = false_rej / max(1, len(rejected))
-
-            # Improvement from accepting these signals
             improvement = sum(r for _, prof, r in rejected if prof)
-
             if improvement > best_improvement:
                 best_improvement = improvement
                 best_threshold = test_threshold
@@ -366,49 +378,30 @@ class RejectedTradeLearner:
         analysis.current_threshold = 90
         analysis.optimal_threshold = best_threshold
         analysis.potential_improvement_r = best_improvement
-
-        # False rejection rate at current threshold
         current_rejected = [(score, prof, r) for score, prof, r in eligibility_scores if score < 90]
         if current_rejected:
             analysis.false_rejection_rate = sum(1 for _, prof, _ in current_rejected if prof) / len(current_rejected)
 
-        # Recommendation
         if analysis.false_rejection_rate > FALSE_REJECTION_RATE_TARGET:
             analysis.recommendation = (
                 f"Lower eligibility threshold from 90 to {best_threshold}. "
                 f"False rejection rate {analysis.false_rejection_rate:.1%} exceeds "
-                f"target {FALSE_REJECTION_RATE_TARGET:.1%}. "
-                f"Potential improvement: {best_improvement:.2f}R"
+                f"target {FALSE_REJECTION_RATE_TARGET:.1%}. Potential improvement: {best_improvement:.2f}R"
             )
         elif analysis.false_rejection_rate < 0.05:
-            analysis.recommendation = (
-                "Thresholds are well-calibrated. False rejection rate is low."
-            )
+            analysis.recommendation = "Thresholds are well-calibrated. False rejection rate is low."
         else:
             analysis.recommendation = (
-                f"Thresholds are acceptable. False rejection rate {analysis.false_rejection_rate:.1%} "
-                f"is within target."
+                f"Thresholds are acceptable. False rejection rate {analysis.false_rejection_rate:.1%} is within target."
             )
-
         return analysis
 
-    # ═══════════════════════════════════════════════════════════════
-    # PUBLIC API
-    # ═══════════════════════════════════════════════════════════════
-
     def get_false_rejection_rate(self) -> float:
-        """Get current false rejection rate."""
-        result = self.analyze()
-        return result.false_rejection_rate
+        return self.analyze().false_rejection_rate
 
     def get_recommended_threshold(self) -> float:
-        """Get recommended eligibility threshold."""
         result = self.analyze()
-        if result.threshold_analysis:
-            return result.threshold_analysis.optimal_threshold
-        return 90  # Default
+        return result.threshold_analysis.optimal_threshold if result.threshold_analysis else 90
 
     def get_summary(self) -> Dict[str, Any]:
-        """Get complete rejection learning summary."""
-        result = self.analyze()
-        return result.to_dict()
+        return self.analyze().to_dict()
