@@ -38,9 +38,30 @@ class ResearchDecision:
     reasons: Tuple[str, ...]
 
 
+def _validate_periods(periods: list[Tuple[str, str]], reasons: list[str]) -> None:
+    previous_end = None
+    for period in periods:
+        if not isinstance(period, (tuple, list)) or len(period) != 2:
+            reasons.append("invalid_temporal_window")
+            return
+        start, end = period
+        if not isinstance(start, str) or not isinstance(end, str) or not start or not end:
+            reasons.append("invalid_temporal_window")
+            return
+        if start >= end:
+            reasons.append("invalid_temporal_window")
+            return
+        if previous_end is not None and previous_end > start:
+            reasons.append("overlapping_temporal_windows")
+            return
+        previous_end = end
+
+
 def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
     reasons = []
-    if e.completed_trades < MIN_COMPLETED_TRADES:
+    if not isinstance(e.completed_trades, int) or isinstance(e.completed_trades, bool) or e.completed_trades < 0:
+        reasons.append("invalid_completed_trade_count")
+    elif e.completed_trades < MIN_COMPLETED_TRADES:
         reasons.append("insufficient_completed_trades")
     if not e.cost_model:
         reasons.append("missing_cost_model")
@@ -52,11 +73,14 @@ def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
         reasons.append("missing_reproducibility_fingerprint")
     if e.bootstrap_seed is None:
         reasons.append("missing_bootstrap_seed")
-    if e.rejected_signals < 0:
+    if not isinstance(e.rejected_signals, int) or isinstance(e.rejected_signals, bool) or e.rejected_signals < 0:
         reasons.append("invalid_rejected_signal_count")
     if not e.rejected_outcomes_complete:
         reasons.append("missing_rejected_signal_outcomes")
-    if not e.regime_counts or sum(e.regime_counts.values()) <= 0:
+    if not e.regime_counts or not all(
+        isinstance(count, int) and not isinstance(count, bool) and count >= 0
+        for count in e.regime_counts.values()
+    ) or sum(e.regime_counts.values()) <= 0:
         reasons.append("missing_regime_coverage")
 
     if e.profit_factor is None or not isfinite(e.profit_factor):
@@ -74,9 +98,5 @@ def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
     elif e.max_drawdown_pct >= MAX_DRAWDOWN_PCT:
         reasons.append("max_drawdown_above_limit")
 
-    periods = [e.train_period, e.validation_period, e.test_period]
-    for earlier, later in zip(periods, periods[1:]):
-        if earlier[1] > later[0]:
-            reasons.append("overlapping_temporal_windows")
-            break
-    return ResearchDecision(approved=not reasons, reasons=tuple(reasons))
+    _validate_periods([e.train_period, e.validation_period, e.test_period], reasons)
+    return ResearchDecision(approved=not reasons, reasons=tuple(dict.fromkeys(reasons)))
