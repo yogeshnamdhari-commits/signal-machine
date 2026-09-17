@@ -48,6 +48,32 @@ def test_temporal_overlap_is_rejected():
     assert "overlapping_temporal_windows" in decision.reasons
 
 
+def test_invalid_temporal_window_is_rejected():
+    decision = evaluate_research_evidence(
+        _complete_evidence(test_period=("2025-07-01", "2025-06-01"))
+    )
+    assert not decision.approved
+    assert "invalid_temporal_window" in decision.reasons
+
+
+def test_malformed_temporal_window_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(train_period=("2025-01-01",)))
+    assert not decision.approved
+    assert "invalid_temporal_window" in decision.reasons
+
+
+def test_negative_completed_trade_count_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(completed_trades=-1))
+    assert not decision.approved
+    assert "invalid_completed_trade_count" in decision.reasons
+
+
+def test_invalid_regime_counts_are_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(regime_counts={"bull": -1, "bear": 2}))
+    assert not decision.approved
+    assert "missing_regime_coverage" in decision.reasons
+
+
 def test_negative_profit_factor_is_rejected():
     decision = evaluate_research_evidence(_complete_evidence(profit_factor=0.82))
     assert not decision.approved
