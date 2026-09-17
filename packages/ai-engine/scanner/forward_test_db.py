@@ -174,7 +174,7 @@ class ForwardTestDB:
                 delta, cvd, oi_delta, funding_rate, sweep_score, mss_score, fvg_score,
                 entry_reason, signal_status, mtf_alignment, checklist_score,
                 regime_confidence, volatility_score, quiet_market_blocked, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             sig.get("timestamp", time.time()),
             sig.get("symbol", ""),
@@ -219,7 +219,7 @@ class ForwardTestDB:
         cursor = db.execute("""
             INSERT INTO forward_trades (
                 signal_id, timestamp, symbol, side, entry_price, entry_time,
-                exit_price, exit_time, exit_reason, pnl, fees, net_pnl, funding,
+                exit_price, exit_time, exit_reason, pnl, fees, net_pnl, gross_pnl, funding,
                 stop_loss, take_profit, planned_rr, realized_r,
                 hold_minutes, mae_pct, mfe_pct, regime, session,
                 confidence_100, institutional_score, sweep_score, mss_score, fvg_score,
@@ -238,6 +238,7 @@ class ForwardTestDB:
             gross_pnl,
             fees,
             net_pnl,
+            gross_pnl,
             funding,
             trade.get("stop_loss", 0),
             trade.get("take_profit", 0),
