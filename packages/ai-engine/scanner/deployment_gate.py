@@ -13,6 +13,7 @@ If any fail: deployment_status = "DO NOT DEPLOY"
 from __future__ import annotations
 
 import sqlite3
+from math import isfinite
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -55,6 +56,16 @@ class DeploymentGate:
                     "SELECT COUNT(*) FROM forward_trades WHERE outcome != ''"
                 ).fetchone()[0]
 
+                if (
+                    not isinstance(sig_count, int)
+                    or isinstance(sig_count, bool)
+                    or sig_count < 0
+                    or not isinstance(closed_count, int)
+                    or isinstance(closed_count, bool)
+                    or closed_count < 0
+                ):
+                    return self._invalid_evidence("invalid forward-test counts")
+
                 criteria = {
                     "Forward Signals >= 500": sig_count >= self.MIN_FORWARD_SIGNALS,
                     "Forward Signals Count": sig_count,
@@ -83,13 +94,18 @@ class DeploymentGate:
                     "SELECT COALESCE(SUM(net_pnl), 0) FROM forward_trades WHERE outcome != ''"
                 ).fetchone()[0]
 
-                if not isinstance(total_wins, (int, float)) or not isinstance(total_losses, (int, float)):
-                    return self._invalid_evidence("non-numeric PnL aggregates")
-                if not isinstance(pnl, (int, float)):
-                    return self._invalid_evidence("non-numeric net PnL aggregate")
+                if not self._finite_number(total_wins) or not self._finite_number(total_losses):
+                    return self._invalid_evidence("non-finite PnL aggregates")
+                if not self._finite_number(pnl):
+                    return self._invalid_evidence("non-finite net PnL aggregate")
+                if total_wins < 0 or total_losses < 0:
+                    return self._invalid_evidence("negative PnL aggregate")
 
                 pf = total_wins / total_losses if total_losses > 0 else (99.9 if total_wins > 0 else 0)
                 expectancy = pnl / closed_count if closed_count else 0
+
+                if not self._finite_number(pf) or not self._finite_number(expectancy):
+                    return self._invalid_evidence("non-finite deployment metrics")
 
                 criteria["Forward PF > 1.20"] = pf > self.MIN_FORWARD_PF
                 criteria["Forward PF"] = round(pf, 2)
@@ -116,6 +132,10 @@ class DeploymentGate:
                 }
         except (sqlite3.DatabaseError, OSError) as exc:
             return self._invalid_evidence(f"invalid forward-test database: {exc}")
+
+    @staticmethod
+    def _finite_number(value: object) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value))
 
     def _invalid_evidence(self, reason: str) -> Dict:
         return {
