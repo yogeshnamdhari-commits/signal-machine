@@ -95,3 +95,11 @@ def test_live_certification_rejects_boolean_freshness_metadata(tmp_path, monkeyp
 
     with pytest.raises(LiveCertificationError, match="freshness metadata is missing"):
         verify_live_certification(path, now_ts=1500.0)
+
+
+def test_live_certification_rejects_boolean_verification_timestamp(tmp_path, monkeypatch):
+    path = _write_artifact(tmp_path)
+    monkeypatch.setenv("GITHUB_SHA", "commit-a")
+
+    with pytest.raises(LiveCertificationError, match="verification timestamp is invalid"):
+        verify_live_certification(path, now_ts=True)
