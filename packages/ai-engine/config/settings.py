@@ -280,6 +280,7 @@ class ProfitFilterConfig:
 @dataclass(frozen=True)
 class AppConfig:
     env: str = field(default_factory=lambda: _env("APP_ENV", "development"))
+    log_level: str = field(default_factory=lambda: _env("LOG_LEVEL", "INFO"))
     binance: BinanceConfig = field(default_factory=BinanceConfig)
     scanner: ScannerConfig = field(default_factory=ScannerConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
