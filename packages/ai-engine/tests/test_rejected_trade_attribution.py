@@ -12,6 +12,8 @@ def test_rejected_signal_counterfactual_attribution_records_path_metrics(tmp_pat
         rejection_reason="score below threshold",
         scores={"eligibility_score": 82},
     )
+    # Controlled test path: the first bar begins immediately after rejection.
+    learner._rejected_signals[0].timestamp = 99.0
 
     bars = [
         {"timestamp": 100.0, "high": 101.5, "low": 99.5, "close": 101.0},
@@ -34,7 +36,7 @@ def test_rejected_signal_counterfactual_attribution_records_path_metrics(tmp_pat
     assert signal.outcome_r == 2.0
     assert signal.mfe_r == 2.5
     assert signal.mae_r == 0.5
-    assert signal.holding_bars == 3
+    assert signal.holding_bars == 2
     assert signal.exit_reason == "TP"
     assert signal.tp_hit is True
     assert signal.sl_hit is False
