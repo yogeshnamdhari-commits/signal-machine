@@ -18,7 +18,12 @@ if str(_AI_ROOT) not in sys.path:
     sys.path.insert(0, str(_AI_ROOT))
 
 from dashboard.data_bridge import reader as bridge_reader
-from dashboard.live_sheet_contract import build_signal_display, display_value, freshness_state
+from dashboard.live_sheet_contract import (
+    build_signal_display,
+    display_value,
+    freshness_state,
+    live_observation_values,
+)
 
 st.set_page_config(
     page_title="DeltaTerminal — Canonical Live Data",
@@ -71,6 +76,7 @@ for source_row in market_data:
     row["timestamp"] = snapshot_ts
     symbol = str(row.get("symbol", "?"))
     display = build_signal_display(signal_lookup.get(symbol, {}), row)
+    observations = live_observation_values(row)
     fvg = display["fvg"]
     rows.append({
         "Symbol": symbol,
@@ -85,11 +91,14 @@ for source_row in market_data:
         "Net Delta": fmt(display_value(row, "net_delta"), "$"),
         "B/S Ratio": fmt(display_value(row, "buy_sell_ratio")),
         "B/S": evidence(display["b_s_ratio"]),
-        "CVD": evidence(display["cvd"]),
-        "Flow": evidence(display["flow"]),
-        "Ex Flow": evidence(display["exchange_flow"]),
+        "CVD 5m": fmt(observations["cvd_5m"], "$"),
+        "CVD Bias": evidence(display["cvd"]),
+        "Flow Strength": fmt(observations["flow_strength"]),
+        "Flow Bias": evidence(display["flow"]),
+        "Ex Flow": fmt(observations["exchange_flow"], "$"),
         "Vol Bias": evidence(display["volume"]),
-        "Imbalance": evidence(display["imbalance"]),
+        "Imbalance": fmt(observations["imbalance"]),
+        "Imb Bias": evidence(display["imbalance"]),
         "Liq Zone ↓": fmt(display_value(row, "long_liq_vol"), "$"),
         "Liq Zone ↑": fmt(display_value(row, "short_liq_vol"), "$"),
         "Liq Risk": str(display["liq_risk"] or "UNAVAILABLE").upper(),
@@ -118,12 +127,16 @@ semantics = [
     ("OI Δ%", "Change in open interest; use with price/OI regime rather than as a standalone trigger."),
     ("Funding", "Raw funding rate. Negative funding is long-supportive; positive funding is short-supportive; near zero is neutral."),
     ("Fund Bias", "Directional funding interpretation; contextual risk/positioning evidence, not a standalone trigger."),
-    ("Net Delta", "BUY = positive taker delta; SELL = negative taker delta; unavailable when no real trade tape exists."),
-    ("B/S Ratio", "BUY > 1.02; SELL < 0.98; NEUTRAL between those thresholds; unavailable without trade tape."),
-    ("CVD", "BUY = rising/positive taker-flow evidence; SELL = falling/negative; unavailable without real trades."),
-    ("Flow / Ex Flow", "BUY/SELL only from actual underlying trade-flow observations; missing source remains unavailable."),
+    ("Net Delta", "Raw taker delta from the real trade tape; unavailable when the trade tape is absent."),
+    ("B/S Ratio", "Raw taker buy/sell ratio; BUY > 1.02; SELL < 0.98; unavailable without trade tape."),
+    ("CVD 5m", "Raw 5-minute cumulative volume delta derived from actual trade observations; missing trade tape remains unavailable."),
+    ("CVD Bias", "Directional interpretation of CVD; derived from observed trade data and never used alone to create a trade signal."),
+    ("Flow Strength", "Raw flow-strength metric from the order-flow engine; unavailable when the trade tape is absent."),
+    ("Flow Bias", "Directional interpretation of order flow; contextual evidence only."),
+    ("Ex Flow", "Raw exchange-flow observation; unavailable when the underlying flow observation is absent."),
     ("Vol Bias", "Directional volume interpretation; it is not a substitute for order-flow evidence."),
-    ("Imbalance", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL; requires real L2 depth evidence."),
+    ("Imbalance", "Raw L2 order-book imbalance; requires real depth evidence."),
+    ("Imb Bias", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL; derived from the observed L2 imbalance."),
     ("Liq Zone ↓ / ↑", "Long/short liquidation-volume context; location/risk evidence, not standalone votes."),
     ("Liq Risk", "Risk classification only; UNAVAILABLE when no liquidation-cluster evidence exists."),
     ("Sweep", "BUY/SELL only when a qualifying sweep event exists; otherwise NOT_APPLICABLE."),
