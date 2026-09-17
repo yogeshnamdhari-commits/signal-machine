@@ -45,7 +45,13 @@ def verify_live_certification(
 
     issued_at = artifact.get("issued_at")
     expires_at = artifact.get("expires_at")
-    if not isinstance(issued_at, (int, float)) or not isinstance(expires_at, (int, float)):
+    numeric_freshness = (
+        isinstance(issued_at, (int, float))
+        and not isinstance(issued_at, bool)
+        and isinstance(expires_at, (int, float))
+        and not isinstance(expires_at, bool)
+    )
+    if not numeric_freshness:
         raise LiveCertificationError("Certification freshness metadata is missing")
     if not math.isfinite(float(issued_at)) or not math.isfinite(float(expires_at)):
         raise LiveCertificationError("Certification freshness metadata is invalid")
