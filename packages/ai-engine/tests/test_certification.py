@@ -78,3 +78,37 @@ def test_boolean_research_validated_without_decision_fails_closed():
 
     assert artifact.state is CertificationState.ENGINEERING_VALID
     assert "missing_research_decision" in artifact.failures
+
+
+def test_expired_evidence_manifest_cannot_certify_research():
+    decision = ResearchDecision(True, ())
+    artifact = generate_certification(
+        config={},
+        commit_sha="abc",
+        checks=("research",),
+        failures=(),
+        research_decision=decision,
+        research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=2_000.0,
+    )
+
+    assert artifact.state is CertificationState.ENGINEERING_VALID
+    assert "evidence_expired" in artifact.failures
+
+
+def test_future_evidence_manifest_cannot_certify_research():
+    decision = ResearchDecision(True, ())
+    artifact = generate_certification(
+        config={},
+        commit_sha="abc",
+        checks=("research",),
+        failures=(),
+        research_decision=decision,
+        research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=999.0,
+    )
+
+    assert artifact.state is CertificationState.ENGINEERING_VALID
+    assert "evidence_not_yet_valid" in artifact.failures
