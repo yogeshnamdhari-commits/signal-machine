@@ -25,6 +25,11 @@ class ResearchEvidenceManifestDecision:
     reasons: Tuple[str, ...]
 
 
+def _finite_timestamp(value: object) -> bool:
+    """Accept real finite numbers only; bool is intentionally rejected."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+
+
 def verify_evidence_manifest(
     manifest: EvidenceManifest,
     *,
@@ -39,8 +44,10 @@ def verify_evidence_manifest(
         reasons.append("evidence_config_mismatch")
     if not manifest.dataset_fingerprint:
         reasons.append("missing_dataset_fingerprint")
-    if not isfinite(manifest.issued_at) or not isfinite(manifest.expires_at):
+    if not _finite_timestamp(manifest.issued_at) or not _finite_timestamp(manifest.expires_at):
         reasons.append("invalid_evidence_window")
+    elif not _finite_timestamp(now_ts):
+        reasons.append("invalid_evidence_timestamp")
     elif manifest.expires_at <= manifest.issued_at:
         reasons.append("invalid_evidence_window")
     elif now_ts >= manifest.expires_at:
