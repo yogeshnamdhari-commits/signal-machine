@@ -62,6 +62,35 @@ def test_malformed_temporal_window_is_rejected():
     assert "invalid_temporal_window" in decision.reasons
 
 
+def test_invalid_calendar_date_is_rejected():
+    decision = evaluate_research_evidence(
+        _complete_evidence(train_period=("2025-02-30", "2025-05-01"))
+    )
+    assert not decision.approved
+    assert "invalid_temporal_window" in decision.reasons
+
+
+def test_timezone_naive_datetime_is_rejected():
+    decision = evaluate_research_evidence(
+        _complete_evidence(
+            train_period=("2025-01-01T00:00:00", "2025-05-01T00:00:00"),
+        )
+    )
+    assert not decision.approved
+    assert "invalid_temporal_window" in decision.reasons
+
+
+def test_timezone_aware_datetime_window_is_accepted():
+    decision = evaluate_research_evidence(
+        _complete_evidence(
+            train_period=("2025-01-01T00:00:00Z", "2025-05-01T00:00:00Z"),
+            validation_period=("2025-05-02T00:00:00+00:00", "2025-06-01T00:00:00+00:00"),
+            test_period=("2025-06-02T00:00:00+00:00", "2025-07-01T00:00:00+00:00"),
+        )
+    )
+    assert decision.approved
+
+
 def test_negative_completed_trade_count_is_rejected():
     decision = evaluate_research_evidence(_complete_evidence(completed_trades=-1))
     assert not decision.approved
