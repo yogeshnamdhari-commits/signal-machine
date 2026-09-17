@@ -40,13 +40,13 @@ class ResearchDecision:
 
 
 def _parse_period_endpoint(value: object):
-    """Parse ISO-8601 date/datetime values without permitting ambiguous timestamps."""
+    """Parse ISO-8601 endpoints into one comparable UTC representation."""
     if not isinstance(value, str) or not value:
         return None
 
     try:
         if len(value) == 10:
-            return date.fromisoformat(value)
+            return datetime.combine(date.fromisoformat(value), datetime.min.time(), tzinfo=timezone.utc)
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             return None
