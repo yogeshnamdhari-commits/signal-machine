@@ -74,6 +74,12 @@ def test_invalid_regime_counts_are_rejected():
     assert "missing_regime_coverage" in decision.reasons
 
 
+def test_regime_trade_count_mismatch_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(regime_counts={"bull": 80, "bear": 69}))
+    assert not decision.approved
+    assert "regime_trade_count_mismatch" in decision.reasons
+
+
 def test_negative_profit_factor_is_rejected():
     decision = evaluate_research_evidence(_complete_evidence(profit_factor=0.82))
     assert not decision.approved
