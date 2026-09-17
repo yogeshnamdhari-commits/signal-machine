@@ -77,11 +77,21 @@ def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
         reasons.append("invalid_rejected_signal_count")
     if not e.rejected_outcomes_complete:
         reasons.append("missing_rejected_signal_outcomes")
-    if not e.regime_counts or not all(
-        isinstance(count, int) and not isinstance(count, bool) and count >= 0
-        for count in e.regime_counts.values()
-    ) or sum(e.regime_counts.values()) <= 0:
+
+    regime_valid = (
+        bool(e.regime_counts)
+        and all(
+            isinstance(count, int) and not isinstance(count, bool) and count >= 0
+            for count in e.regime_counts.values()
+        )
+        and sum(e.regime_counts.values()) > 0
+    )
+    if not regime_valid:
         reasons.append("missing_regime_coverage")
+    elif isinstance(e.completed_trades, int) and not isinstance(e.completed_trades, bool):
+        regime_total = sum(e.regime_counts.values())
+        if regime_total != e.completed_trades:
+            reasons.append("regime_trade_count_mismatch")
 
     if e.profit_factor is None or not isfinite(e.profit_factor):
         reasons.append("missing_profit_factor")
