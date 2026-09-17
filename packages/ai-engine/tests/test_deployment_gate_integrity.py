@@ -47,4 +47,4 @@ def test_deployment_gate_rejects_economic_decomposition_mismatch(tmp_path):
     result = DeploymentGate(str(db_path)).evaluate()
 
     assert result["status"] == "DO NOT DEPLOY"
-    assert "economic decomposition" in result["reason"]
+    assert "economic decomposition" in result["reason"].lower()
