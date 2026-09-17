@@ -209,22 +209,25 @@ class ForwardTestDB:
         return row_id
 
     def record_trade(self, trade: Dict[str, Any]) -> int:
-        """Record a closed trade with fees and funding reflected in net PnL."""
+        """Record a closed trade with a fully persisted PnL decomposition."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
         gross_pnl = trade.get("pnl", 0)
         fees = trade.get("fees", 0)
         funding = trade.get("funding", 0)
-        net_pnl = gross_pnl - fees - funding
+        realized_pnl_raw = gross_pnl - fees - funding
+        realized_pnl_rounded = round(realized_pnl_raw, 2)
+        net_pnl = realized_pnl_raw
         outcome = "win" if net_pnl > 0 else "loss"
         cursor = db.execute("""
             INSERT INTO forward_trades (
                 signal_id, timestamp, symbol, side, entry_price, entry_time,
                 exit_price, exit_time, exit_reason, pnl, fees, net_pnl, gross_pnl, funding,
+                realized_pnl_raw, realized_pnl_rounded,
                 stop_loss, take_profit, planned_rr, realized_r,
                 hold_minutes, mae_pct, mfe_pct, regime, session,
                 confidence_100, institutional_score, sweep_score, mss_score, fvg_score,
                 delta, cvd, oi_delta, funding_rate, outcome
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade.get("signal_id"),
             trade.get("timestamp", time.time()),
@@ -240,6 +243,8 @@ class ForwardTestDB:
             net_pnl,
             gross_pnl,
             funding,
+            realized_pnl_raw,
+            realized_pnl_rounded,
             trade.get("stop_loss", 0),
             trade.get("take_profit", 0),
             trade.get("planned_rr", 0),
@@ -292,18 +297,14 @@ class ForwardTestDB:
         sig_count = db.execute("SELECT COUNT(*) FROM forward_signals").fetchone()[0]
         trade_count = db.execute("SELECT COUNT(*) FROM forward_trades WHERE outcome != ''").fetchone()[0]
 
-        # By regime
         regimes = dict(db.execute(
             "SELECT regime, COUNT(*) FROM forward_signals GROUP BY regime"
         ).fetchall())
 
-        # By session
         sessions = dict(db.execute(
             "SELECT session, COUNT(*) FROM forward_signals GROUP BY session"
         ).fetchall())
 
-        # Completeness
-        total_cols = 26  # Number of tracked columns in forward_signals
         non_null_cols = db.execute("""
             SELECT COUNT(*) FROM forward_signals
             WHERE confidence_100 > 0 AND regime != '' AND session != '' AND entry_price > 0
