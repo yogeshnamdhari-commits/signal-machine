@@ -26,19 +26,19 @@ class ForwardTestDB:
     Forward-test database for institutional production validation.
     All data is live-only — no backfill, no synthetic data.
     """
-    
+
     MIN_SIGNALS_FOR_PHASE4 = 500
     MIN_TRADES_FOR_PHASE5 = 100
-    
+
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = Path(db_path) if db_path else _DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
-    
+
     def _init_db(self) -> None:
         """Create forward-test tables."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
-        
+
         # Signals table — every signal scanned
         db.execute("""
             CREATE TABLE IF NOT EXISTS forward_signals (
@@ -77,7 +77,7 @@ class ForwardTestDB:
                 metadata TEXT DEFAULT '{}'
             )
         """)
-        
+
         # Trades table — every closed trade
         db.execute("""
             CREATE TABLE IF NOT EXISTS forward_trades (
@@ -132,7 +132,7 @@ class ForwardTestDB:
                 FOREIGN KEY (signal_id) REFERENCES forward_signals(id)
             )
         """)
-        
+
         # Indexes for fast validation queries
         db.execute("CREATE INDEX IF NOT EXISTS idx_fs_ts ON forward_signals(timestamp)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_fs_regime ON forward_signals(regime)")
@@ -163,7 +163,7 @@ class ForwardTestDB:
         db.commit()
         db.close()
         logger.info("ForwardTestDB initialized at {}", self.db_path)
-    
+
     def record_signal(self, sig: Dict[str, Any]) -> int:
         """Record a scanned signal (ALL signals, not just winners)."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
@@ -207,21 +207,24 @@ class ForwardTestDB:
         row_id = cursor.lastrowid
         db.close()
         return row_id
-    
+
     def record_trade(self, trade: Dict[str, Any]) -> int:
-        """Record a closed trade."""
+        """Record a closed trade with fees and funding reflected in net PnL."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
-        net_pnl = trade.get("pnl", 0) - trade.get("fees", 0)
+        gross_pnl = trade.get("pnl", 0)
+        fees = trade.get("fees", 0)
+        funding = trade.get("funding", 0)
+        net_pnl = gross_pnl - fees - funding
         outcome = "win" if net_pnl > 0 else "loss"
         cursor = db.execute("""
             INSERT INTO forward_trades (
                 signal_id, timestamp, symbol, side, entry_price, entry_time,
-                exit_price, exit_time, exit_reason, pnl, fees, net_pnl,
+                exit_price, exit_time, exit_reason, pnl, fees, net_pnl, funding,
                 stop_loss, take_profit, planned_rr, realized_r,
                 hold_minutes, mae_pct, mfe_pct, regime, session,
                 confidence_100, institutional_score, sweep_score, mss_score, fvg_score,
                 delta, cvd, oi_delta, funding_rate, outcome
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade.get("signal_id"),
             trade.get("timestamp", time.time()),
@@ -232,9 +235,10 @@ class ForwardTestDB:
             trade.get("exit_price", 0),
             trade.get("exit_time", 0),
             trade.get("exit_reason", ""),
-            trade.get("pnl", 0),
-            trade.get("fees", 0),
+            gross_pnl,
+            fees,
             net_pnl,
+            funding,
             trade.get("stop_loss", 0),
             trade.get("take_profit", 0),
             trade.get("planned_rr", 0),
@@ -259,53 +263,53 @@ class ForwardTestDB:
         row_id = cursor.lastrowid
         db.close()
         return row_id
-    
+
     def update_signal_status(self, signal_id: int, status: str) -> None:
         """Update signal status (pending → entered / expired)."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
         db.execute("UPDATE forward_signals SET signal_status=? WHERE id=?", (status, signal_id))
         db.commit()
         db.close()
-    
+
     def get_signal_count(self) -> int:
         """Total signals collected."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
         count = db.execute("SELECT COUNT(*) FROM forward_signals").fetchone()[0]
         db.close()
         return count
-    
+
     def get_trade_count(self) -> int:
         """Total closed trades."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
         count = db.execute("SELECT COUNT(*) FROM forward_trades").fetchone()[0]
         db.close()
         return count
-    
+
     def get_collection_status(self) -> Dict:
         """Check collection progress."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
         sig_count = db.execute("SELECT COUNT(*) FROM forward_signals").fetchone()[0]
         trade_count = db.execute("SELECT COUNT(*) FROM forward_trades WHERE outcome != ''").fetchone()[0]
-        
+
         # By regime
         regimes = dict(db.execute(
             "SELECT regime, COUNT(*) FROM forward_signals GROUP BY regime"
         ).fetchall())
-        
+
         # By session
         sessions = dict(db.execute(
             "SELECT session, COUNT(*) FROM forward_signals GROUP BY session"
         ).fetchall())
-        
+
         # Completeness
         total_cols = 26  # Number of tracked columns in forward_signals
         non_null_cols = db.execute("""
-            SELECT COUNT(*) FROM forward_signals 
+            SELECT COUNT(*) FROM forward_signals
             WHERE confidence_100 > 0 AND regime != '' AND session != '' AND entry_price > 0
         """).fetchone()[0]
-        
+
         db.close()
-        
+
         return {
             "signal_count": sig_count,
             "trade_count": trade_count,
@@ -315,7 +319,7 @@ class ForwardTestDB:
             "sessions": sessions,
             "data_completeness": round(non_null_cols / max(sig_count, 1) * 100, 1),
         }
-    
+
     def query(self, sql: str, params: tuple = ()) -> List[Dict]:
         """Execute a read query and return list of dicts."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
@@ -323,7 +327,7 @@ class ForwardTestDB:
         rows = db.execute(sql, params).fetchall()
         db.close()
         return [dict(r) for r in rows]
-    
+
     def query_scalar(self, sql: str, params: tuple = ()) -> Any:
         """Execute a query returning a single value."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
