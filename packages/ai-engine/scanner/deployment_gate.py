@@ -8,6 +8,7 @@ Rules (ALL must pass):
   4. Forward Expectancy > 0
   5. Forward Net PnL > 0
   6. Every closed trade has internally consistent economic decomposition
+     with explicitly observed fees, funding, and slippage inputs
 
 If any fail: deployment_status = "DO NOT DEPLOY"
 """
@@ -108,13 +109,14 @@ class DeploymentGate:
 
                 if not self._finite_number(pf) or not self._finite_number(expectancy):
                     return self._invalid_evidence("non-finite deployment metrics")
-                
-                if not self._economic_decomposition_is_consistent(db):
+
+                economic_ok, economic_reason = self._economic_decomposition_is_consistent(db)
+                if not economic_ok:
                     criteria["Economic decomposition consistent"] = False
                     passed = sum(1 for k, v in criteria.items() if v is True)
                     return {
                         "status": "DO NOT DEPLOY",
-                        "reason": "Failed: Economic decomposition consistency check",
+                        "reason": f"Failed: {economic_reason}",
                         "criteria": criteria,
                         "passed": passed,
                         "total": 6,
@@ -152,25 +154,28 @@ class DeploymentGate:
         return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value))
 
     @classmethod
-    def _economic_decomposition_is_consistent(cls, db: sqlite3.Connection) -> bool:
-        """Require every closed trade to satisfy net = gross - fees - funding - slippage."""
+    def _economic_decomposition_is_consistent(cls, db: sqlite3.Connection) -> tuple[bool, str]:
+        """Require observed costs plus net = gross - fees - funding - slippage for every closed trade."""
         columns = {row[1] for row in db.execute("PRAGMA table_info(forward_trades)").fetchall()}
-        required = {"pnl", "fees", "funding", "slippage", "net_pnl"}
-        if not required.issubset(columns):
-            return False
+        required = {"pnl", "fees", "funding", "slippage", "costs_observed", "net_pnl"}
+        missing = required - columns
+        if missing:
+            return False, f"Missing economic evidence columns: {', '.join(sorted(missing))}"
 
         rows = db.execute(
-            "SELECT pnl, fees, funding, slippage, net_pnl "
+            "SELECT pnl, fees, funding, slippage, costs_observed, net_pnl "
             "FROM forward_trades WHERE outcome != ''"
         ).fetchall()
-        for gross, fees, funding, slippage, net in rows:
+        for gross, fees, funding, slippage, costs_observed, net in rows:
+            if costs_observed != 1:
+                return False, "Execution-cost evidence incomplete: fees, funding, and slippage were not explicitly observed"
             values = (gross, fees, funding, slippage, net)
             if not all(cls._finite_number(value) for value in values):
-                return False
+                return False, "Economic decomposition contains non-finite values"
             expected = float(gross) - float(fees) - float(funding) - float(slippage)
             if abs(float(net) - expected) > _EPSILON:
-                return False
-        return True
+                return False, "Economic decomposition consistency check failed"
+        return True, ""
 
     def _invalid_evidence(self, reason: str) -> Dict:
         return {
