@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
 from math import isfinite
 from typing import Dict, Tuple
 
@@ -38,17 +39,32 @@ class ResearchDecision:
     reasons: Tuple[str, ...]
 
 
+def _parse_period_endpoint(value: object):
+    """Parse ISO-8601 date/datetime values without permitting ambiguous timestamps."""
+    if not isinstance(value, str) or not value:
+        return None
+
+    try:
+        if len(value) == 10:
+            return date.fromisoformat(value)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
 def _validate_periods(periods: list[Tuple[str, str]], reasons: list[str]) -> None:
     previous_end = None
     for period in periods:
         if not isinstance(period, (tuple, list)) or len(period) != 2:
             reasons.append("invalid_temporal_window")
             return
-        start, end = period
-        if not isinstance(start, str) or not isinstance(end, str) or not start or not end:
-            reasons.append("invalid_temporal_window")
-            return
-        if start >= end:
+        start_raw, end_raw = period
+        start = _parse_period_endpoint(start_raw)
+        end = _parse_period_endpoint(end_raw)
+        if start is None or end is None or start >= end:
             reasons.append("invalid_temporal_window")
             return
         if previous_end is not None and previous_end > start:
