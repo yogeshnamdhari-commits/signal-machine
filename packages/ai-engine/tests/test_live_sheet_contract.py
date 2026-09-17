@@ -1,4 +1,9 @@
-from dashboard.live_sheet_contract import build_signal_display, display_value, freshness_state
+from dashboard.live_sheet_contract import (
+    build_signal_display,
+    display_value,
+    freshness_state,
+    live_observation_values,
+)
 
 
 def test_fresh_snapshot_is_live():
@@ -55,3 +60,35 @@ def test_missing_oi_is_not_rendered_as_zero():
 def test_no_liquidation_clusters_do_not_render_low_risk_as_fact():
     row = {"cluster_count": 0, "long_liq_count": 0, "short_liq_count": 0, "liq_risk_level": "low"}
     assert display_value(row, "liq_risk_level") is None
+
+
+def test_raw_live_observations_are_exposed_separately_from_directional_biases():
+    row = {
+        "flow_total_trades": 25,
+        "cvd_5m": -1250.0,
+        "flow_strength": 0.42,
+        "exchange_flow": 250000.0,
+        "imbalance": -0.11,
+    }
+    observed = live_observation_values(row)
+    assert observed == {
+        "cvd_5m": -1250.0,
+        "flow_strength": 0.42,
+        "exchange_flow": 250000.0,
+        "imbalance": -0.11,
+    }
+
+
+def test_raw_live_observations_are_unavailable_without_trade_tape():
+    row = {
+        "flow_total_trades": 0,
+        "cvd_5m": -1250.0,
+        "flow_strength": 0.42,
+        "exchange_flow": 250000.0,
+        "imbalance": -0.11,
+    }
+    observed = live_observation_values(row)
+    assert observed["cvd_5m"] is None
+    assert observed["flow_strength"] is None
+    assert observed["exchange_flow"] is None
+    assert observed["imbalance"] == -0.11
