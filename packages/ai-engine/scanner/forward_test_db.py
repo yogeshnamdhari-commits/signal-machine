@@ -101,6 +101,7 @@ class ForwardTestDB:
                 gross_pnl REAL DEFAULT 0,
                 funding REAL DEFAULT 0,
                 slippage REAL DEFAULT 0,
+                costs_observed INTEGER DEFAULT 0,
                 realized_pnl_raw REAL DEFAULT 0,
                 realized_pnl_rounded REAL DEFAULT 0,
                 loss_classification TEXT DEFAULT '',
@@ -149,6 +150,8 @@ class ForwardTestDB:
         _ft_audit_cols = [
             "gross_pnl REAL DEFAULT 0",
             "funding REAL DEFAULT 0",
+            "slippage REAL DEFAULT 0",
+            "costs_observed INTEGER DEFAULT 0",
             "realized_pnl_raw REAL DEFAULT 0",
             "realized_pnl_rounded REAL DEFAULT 0",
             "loss_classification TEXT DEFAULT ''",
@@ -210,12 +213,13 @@ class ForwardTestDB:
         return row_id
 
     def record_trade(self, trade: Dict[str, Any]) -> int:
-        """Record a closed trade with fully persisted execution-cost decomposition."""
+        """Record a closed trade with explicit execution-cost observation provenance."""
         db = sqlite3.connect(str(self.db_path), timeout=10)
         gross_pnl = trade.get("pnl", 0)
         fees = trade.get("fees", 0)
         funding = trade.get("funding", 0)
         slippage = trade.get("slippage", 0)
+        costs_observed = int(all(key in trade for key in ("fees", "funding", "slippage")))
         realized_pnl_raw = gross_pnl - fees - funding - slippage
         realized_pnl_rounded = round(realized_pnl_raw, 2)
         net_pnl = realized_pnl_raw
@@ -224,18 +228,18 @@ class ForwardTestDB:
             INSERT INTO forward_trades (
                 signal_id, timestamp, symbol, side, entry_price, entry_time,
                 exit_price, exit_time, exit_reason, pnl, fees, net_pnl, gross_pnl, funding, slippage,
-                realized_pnl_raw, realized_pnl_rounded,
+                costs_observed, realized_pnl_raw, realized_pnl_rounded,
                 stop_loss, take_profit, planned_rr, realized_r,
                 hold_minutes, mae_pct, mfe_pct, regime, session,
                 confidence_100, institutional_score, sweep_score, mss_score, fvg_score,
                 delta, cvd, oi_delta, funding_rate, outcome
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             trade.get("signal_id"), trade.get("timestamp", time.time()), trade.get("symbol", ""),
             trade.get("side", ""), trade.get("entry_price", 0), trade.get("entry_time", 0),
             trade.get("exit_price", 0), trade.get("exit_time", 0), trade.get("exit_reason", ""),
             gross_pnl, fees, net_pnl, gross_pnl, funding, slippage,
-            realized_pnl_raw, realized_pnl_rounded,
+            costs_observed, realized_pnl_raw, realized_pnl_rounded,
             trade.get("stop_loss", 0), trade.get("take_profit", 0), trade.get("planned_rr", 0),
             trade.get("realized_r", 0), trade.get("hold_minutes", 0), trade.get("mae_pct", 0),
             trade.get("mfe_pct", 0), trade.get("regime", ""), trade.get("session", ""),
