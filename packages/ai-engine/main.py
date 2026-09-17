@@ -141,6 +141,28 @@ async def _acquire_engine_lock() -> bool:
 _engine_lock_fd = None
 
 
+def _install_engine_signal_handlers(loop, stop: asyncio.Event) -> bool:
+    """Install process signal handlers when supported by the current thread.
+
+    asyncio's signal wakeup-fd integration is only available in the main thread.
+    The combined dashboard/engine mode intentionally runs the engine on a daemon
+    thread, so a RuntimeError here must not prevent the engine from starting.
+    """
+    def _on_signal(sig):
+        logger.info("Signal {} received", sig.name)
+        stop.set()
+
+    installed = True
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _on_signal, sig)
+        except RuntimeError as exc:
+            installed = False
+            logger.warning("Signal handler unavailable outside main thread: {}", exc)
+            break
+    return installed
+
+
 def _release_engine_lock() -> None:
     import fcntl
 
@@ -209,12 +231,7 @@ async def _run_engine() -> None:
     stop = asyncio.Event()
     trade_sanitizer = asyncio.create_task(_sanitize_trade_buffers(engine))
 
-    def _on_signal(sig):
-        logger.info("Signal {} received", sig.name)
-        stop.set()
-
-    for s in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(s, _on_signal, s)
+    _install_engine_signal_handlers(loop, stop)
 
     try:
         await engine.start()
