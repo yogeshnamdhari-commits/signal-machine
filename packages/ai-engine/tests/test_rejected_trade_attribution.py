@@ -1,3 +1,5 @@
+import time
+
 from app_layer.rejected_trade_learner import RejectedTradeLearner
 
 
@@ -12,8 +14,8 @@ def test_rejected_signal_counterfactual_attribution_records_path_metrics(tmp_pat
         rejection_reason="score below threshold",
         scores={"eligibility_score": 82},
     )
-    # Controlled test path: the first bar begins immediately after rejection.
-    learner._rejected_signals[0].timestamp = 99.0
+    # Keep the synthetic test record inside the learner's 24-hour attribution window.
+    learner._rejected_signals[0].timestamp = time.time() - 1.0
 
     bars = [
         {"timestamp": 100.0, "high": 101.5, "low": 99.5, "close": 101.0},
