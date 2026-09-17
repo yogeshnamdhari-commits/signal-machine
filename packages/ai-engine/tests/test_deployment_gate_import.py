@@ -9,7 +9,7 @@ def test_deployment_gate_imports_and_missing_database_fails_closed(tmp_path: Pat
 
     assert result["status"] == "DO NOT DEPLOY"
     assert result["passed"] == 0
-    assert result["total"] == 5
+    assert result["total"] == 6
     assert "forward_test.db does not exist" in result["reason"]
 
 
@@ -21,7 +21,7 @@ def test_malformed_forward_database_fails_closed(tmp_path: Path):
 
     assert result["status"] == "DO NOT DEPLOY"
     assert result["passed"] == 0
-    assert result["total"] == 5
+    assert result["total"] == 6
     assert "invalid forward-test database" in result["reason"]
 
 
@@ -37,5 +37,5 @@ def test_non_finite_forward_pnl_fails_closed(tmp_path: Path):
 
     assert result["status"] == "DO NOT DEPLOY"
     assert result["passed"] == 0
-    assert result["total"] == 5
+    assert result["total"] == 6
     assert "non-finite PnL aggregates" in result["reason"]
