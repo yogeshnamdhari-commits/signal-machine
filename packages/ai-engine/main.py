@@ -159,6 +159,32 @@ def _release_engine_lock() -> None:
     logger.info("Engine lock released")
 
 
+async def _sanitize_trade_buffers(engine) -> None:
+    """Continuously remove synthetic prefetch/ticker trades from symbol_data.
+
+    Binance aggTrade events carry ``source=binance`` and REST backfills carry
+    ``_source=rest_trades``.  Prefetch placeholders have neither provenance
+    field and must never satisfy the engine's "have recent trades" checks.
+    """
+    from core.trade_tape import filter_real_trades
+
+    while not engine.is_running:
+        await asyncio.sleep(0.2)
+
+    while engine.is_running:
+        try:
+            for sd in engine.symbol_data.values():
+                trades = sd.get("trades", [])
+                if not trades:
+                    continue
+                real_trades = filter_real_trades(trades)
+                if len(real_trades) != len(trades):
+                    sd["trades"] = real_trades
+        except Exception as exc:
+            logger.debug("Trade-buffer sanitization error: {}", exc)
+        await asyncio.sleep(0.5)
+
+
 async def _run_engine() -> None:
     from core.engine import DeltaTerminalEngine
 
@@ -181,6 +207,7 @@ async def _run_engine() -> None:
     engine = DeltaTerminalEngine()
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
+    trade_sanitizer = asyncio.create_task(_sanitize_trade_buffers(engine))
 
     def _on_signal(sig):
         logger.info("Signal {} received", sig.name)
@@ -196,6 +223,11 @@ async def _run_engine() -> None:
         logger.error("Fatal: {}", exc)
     finally:
         await engine.stop()
+        trade_sanitizer.cancel()
+        try:
+            await trade_sanitizer
+        except asyncio.CancelledError:
+            pass
         _release_engine_lock()
 
 
