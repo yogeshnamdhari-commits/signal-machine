@@ -190,6 +190,10 @@ class PaperTrade:
     exit_slippage: float = 0.0
     total_slippage: float = 0.0
     fees: float = 0.0
+    funding_pnl: float = 0.0
+    funding_events: int = 0
+    last_funding_rate: float = 0.0
+    last_funding_time: int = 0
     drawdown: float = 0.0
     exit_reason: str = ""
     stop_loss: float = 0.0
@@ -221,6 +225,7 @@ class ExecutionQuality:
     total_gross_pnl: float = 0.0
     total_net_pnl: float = 0.0
     total_fees: float = 0.0
+    total_funding_pnl: float = 0.0
     total_slippage: float = 0.0
     sharpe_ratio: float = 0.0
     max_drawdown_pct: float = 0.0
@@ -372,6 +377,33 @@ class SimulatedPositionManager:
         self.positions[trade_id] = trade
         return trade
 
+    def apply_funding(
+        self,
+        trade_id: str,
+        funding_rate: float,
+        mark_price: float,
+        settlement_time: int,
+    ) -> float:
+        """Accrue one observed funding settlement to an open paper trade."""
+        trade = self.positions.get(trade_id)
+        if not trade or trade.status != "open":
+            return 0.0
+
+        settlement_time = int(settlement_time)
+        if settlement_time <= 0 or settlement_time <= trade.last_funding_time:
+            return 0.0
+        if mark_price <= 0:
+            raise ValueError("mark_price must be positive")
+
+        notional = float(mark_price) * float(trade.quantity)
+        funding_pnl = calculate_funding_pnl(trade.side, notional, funding_rate)
+
+        trade.funding_pnl = round(trade.funding_pnl + funding_pnl, 8)
+        trade.funding_events += 1
+        trade.last_funding_rate = float(funding_rate)
+        trade.last_funding_time = settlement_time
+        return funding_pnl
+
     def check_exit(self, trade: PaperTrade, current_price: float,
                    high: float = 0, low: float = 0) -> Tuple[bool, str]:
         """Check if a position should be closed based on SL/TP."""
@@ -411,7 +443,7 @@ class SimulatedPositionManager:
             gross_pnl = (trade.entry_price - fill_price) * trade.quantity * trade.leverage
 
         total_fees = trade.fees + exit_fees
-        net_pnl = gross_pnl - total_fees
+        net_pnl = gross_pnl - total_fees + trade.funding_pnl
         return_pct = (net_pnl / (trade.entry_price * trade.quantity)) * 100 if trade.entry_price * trade.quantity > 0 else 0
 
         # Update trade
@@ -567,6 +599,7 @@ class ExecutionQualityAnalyzer:
 
         # Total fees & slippage
         total_fees = sum(t.fees for t in trades)
+        total_funding_pnl = sum(t.funding_pnl for t in trades)
         total_slippage = sum(t.total_slippage * t.quantity for t in trades)
 
         # Sharpe ratio (annualized from per-trade returns)
@@ -596,6 +629,7 @@ class ExecutionQualityAnalyzer:
             total_gross_pnl=round(sum(t.gross_pnl for t in trades), 2),
             total_net_pnl=round(sum(t.net_pnl for t in trades), 2),
             total_fees=round(total_fees, 2),
+            total_funding_pnl=round(total_funding_pnl, 8),
             total_slippage=round(total_slippage, 6),
             sharpe_ratio=round(sharpe, 2),
             max_drawdown_pct=round(max_dd, 2),
@@ -809,6 +843,8 @@ class PaperTradingEngine:
         # Stop WebSocket
         await self.ws.stop()
 
+        self._settle_due_funding()
+
         # Close all open positions at market
         for trade_id in list(self.position_mgr.positions.keys()):
             pos = self.position_mgr.positions[trade_id]
@@ -902,6 +938,24 @@ class PaperTradingEngine:
                 await self.liquidity_map.process_orderbook(sym, data.get("bids", []), data.get("asks", []))
                 if sd["trades"]:
                     await self.absorption.process_trades(sym, sd["trades"][-20:], sd["orderbook"])
+
+            elif event == "funding":
+                if data.get("data_quality") != "REAL" or data.get("synthetic", False):
+                    return
+                rate = float(data.get("funding_rate", 0.0))
+                event_ts = float(data.get("timestamp", int(time.time() * 1000)))
+                await self.funding.process_funding(sym, rate, event_ts / 1000.0)
+                sd["funding"] = {
+                    "funding_rate": rate,
+                    "next_funding_time": int(data.get("next_funding_time", 0) or 0),
+                    "mark_price": float(data.get("mark_price", 0.0) or 0.0),
+                    "index_price": float(data.get("index_price", 0.0) or 0.0),
+                    "observed_at": int(event_ts),
+                    "source": data.get("source", "binance"),
+                    "feed": data.get("feed", "markPrice"),
+                    "data_quality": "REAL",
+                    "synthetic": False,
+                }
 
             elif event == "kline":
                 iv = data.get("interval", "5m")
@@ -1107,7 +1161,8 @@ class PaperTradingEngine:
     # ── Risk loop — exit checking ────────────────────────────────
 
     async def _risk_loop(self) -> None:
-        """Check exit conditions for all open positions."""
+        """Check funding settlements and exit conditions for open positions."""
+        self._settle_due_funding()
         for trade in self.position_mgr.get_open_positions():
             price = self._get_price(trade.symbol)
             if price is None:
@@ -1152,8 +1207,56 @@ class PaperTradingEngine:
 
     # ── Health monitoring loop ───────────────────────────────────
 
+    def _settle_due_funding(self) -> None:
+        """Apply only observed, real funding rates once their settlement time arrives."""
+        now_ms = int(time.time() * 1000)
+
+        for trade in self.position_mgr.get_open_positions():
+            obs = self.symbol_data.get(trade.symbol, {}).get("funding")
+            if not obs:
+                continue
+            if obs.get("data_quality") != "REAL" or obs.get("synthetic", False):
+                continue
+
+            settlement_ms = int(obs.get("next_funding_time", 0) or 0)
+            observed_at_ms = int(obs.get("observed_at", 0) or 0)
+            if settlement_ms <= 0 or settlement_ms > now_ms:
+                continue
+            if trade.entry_time * 1000 >= settlement_ms:
+                continue
+            if trade.last_funding_time >= settlement_ms:
+                continue
+            mark_price = float(obs.get("mark_price", 0.0) or 0.0)
+            if mark_price <= 0:
+                continue
+
+            funding_rate = float(obs.get("funding_rate", 0.0) or 0.0)
+            funding_pnl = self.position_mgr.apply_funding(
+                trade.id,
+                funding_rate=funding_rate,
+                mark_price=mark_price,
+                settlement_time=settlement_ms,
+            )
+            if funding_pnl != 0.0:
+                logger.info(
+                    "PAPER FUNDING: {} {} @ rate {:.6%} | Notional {:.2f} | Funding PnL {:.4f}",
+                    trade.side,
+                    trade.symbol,
+                    funding_rate,
+                    mark_price * trade.quantity,
+                    funding_pnl,
+                )
+            elif trade.last_funding_time == settlement_ms and observed_at_ms > 0:
+                logger.debug(
+                    "Funding settlement applied with observed_at={} for {} {}",
+                    observed_at_ms,
+                    trade.symbol,
+                    trade.id,
+                )
+
     async def _health_loop(self) -> None:
         """Periodic system health check."""
+
         try:
             import psutil
             proc = psutil.Process()
@@ -1194,7 +1297,12 @@ class PaperTradingEngine:
                         "entry_price": t.entry_price, "expected_entry": t.expected_entry,
                         "quantity": t.quantity, "leverage": t.leverage,
                         "stop_loss": t.stop_loss, "take_profit": t.take_profit,
-                        "fees": t.fees, "confidence": t.confidence,
+                        "fees": t.fees,
+                        "funding_pnl": t.funding_pnl,
+                        "funding_events": t.funding_events,
+                        "last_funding_rate": t.last_funding_rate,
+                        "last_funding_time": t.last_funding_time,
+                        "confidence": t.confidence,
                         "institutional_score": t.institutional_score,
                         "market_regime": t.market_regime,
                     }
@@ -1239,6 +1347,10 @@ class PaperTradingEngine:
                     stop_loss=pos_data.get("stop_loss", 0),
                     take_profit=pos_data.get("take_profit", 0),
                     fees=pos_data.get("fees", 0),
+                    funding_pnl=pos_data.get("funding_pnl", 0.0),
+                    funding_events=pos_data.get("funding_events", 0),
+                    last_funding_rate=pos_data.get("last_funding_rate", 0.0),
+                    last_funding_time=pos_data.get("last_funding_time", 0),
                     confidence=pos_data.get("confidence", 0),
                     institutional_score=pos_data.get("institutional_score", 0),
                     market_regime=pos_data.get("market_regime", ""),
@@ -1344,6 +1456,8 @@ class PaperTradingEngine:
     async def _generate_all_outputs(self) -> None:
         """Generate all reports, exports, and charts."""
         logger.info("Generating final outputs...")
+
+        self._settle_due_funding()
 
         # Close any remaining positions
         for tid in list(self.position_mgr.positions.keys()):
@@ -1539,7 +1653,8 @@ class PaperTradingEngine:
             "duration_min", "entry_price", "expected_entry", "exit_price",
             "expected_exit", "quantity", "leverage", "gross_pnl", "net_pnl",
             "return_pct", "entry_slippage", "exit_slippage", "total_slippage",
-            "fees", "drawdown", "exit_reason", "stop_loss", "take_profit",
+            "fees", "funding_pnl", "funding_events", "last_funding_rate",
+            "last_funding_time", "drawdown", "exit_reason", "stop_loss", "take_profit",
             "confidence", "institutional_score", "market_regime", "status",
         ]
         with open(TRADES_CSV, "w", newline="") as f:
