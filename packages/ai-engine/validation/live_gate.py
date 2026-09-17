@@ -58,6 +58,8 @@ def verify_live_certification(
     if float(expires_at) <= float(issued_at):
         raise LiveCertificationError("Certification freshness window is invalid")
 
+    if now_ts is not None and isinstance(now_ts, bool):
+        raise LiveCertificationError("Certification verification timestamp is invalid")
     current_ts = time.time() if now_ts is None else float(now_ts)
     if not math.isfinite(current_ts):
         raise LiveCertificationError("Certification verification timestamp is invalid")
