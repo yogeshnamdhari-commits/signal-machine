@@ -12,6 +12,11 @@ MIN_PROFIT_FACTOR = 1.20
 MIN_EXPECTANCY = 0.0
 MAX_DRAWDOWN_PCT = 12.0
 
+# Empty/placeholder labels are not evidence of an actually applied execution
+# cost, slippage, or funding model. Treat them as missing so certification
+# cannot be obtained by supplying a nominal string.
+_INVALID_EVIDENCE_LABELS = frozenset({"", "none", "n/a", "na", "unknown", "not modeled", "not_modelled"})
+
 
 @dataclass(frozen=True)
 class ResearchEvidence:
@@ -73,17 +78,22 @@ def _validate_periods(periods: list[Tuple[str, str]], reasons: list[str]) -> Non
         previous_end = end
 
 
+def _evidence_label_present(value: object) -> bool:
+    """Require a substantive execution-evidence label, not a placeholder."""
+    return isinstance(value, str) and value.strip().lower() not in _INVALID_EVIDENCE_LABELS
+
+
 def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
     reasons = []
     if not isinstance(e.completed_trades, int) or isinstance(e.completed_trades, bool) or e.completed_trades < 0:
         reasons.append("invalid_completed_trade_count")
     elif e.completed_trades < MIN_COMPLETED_TRADES:
         reasons.append("insufficient_completed_trades")
-    if not e.cost_model:
+    if not _evidence_label_present(e.cost_model):
         reasons.append("missing_cost_model")
-    if not e.slippage_model:
+    if not _evidence_label_present(e.slippage_model):
         reasons.append("missing_slippage_model")
-    if not e.funding_source:
+    if not _evidence_label_present(e.funding_source):
         reasons.append("missing_funding_source")
     if not e.code_commit or not e.config_fingerprint:
         reasons.append("missing_reproducibility_fingerprint")
