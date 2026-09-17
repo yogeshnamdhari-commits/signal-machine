@@ -102,6 +102,24 @@ def test_mixed_date_and_datetime_endpoints_are_comparable():
     assert decision.approved
 
 
+def test_placeholder_cost_model_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(cost_model="not modeled"))
+    assert not decision.approved
+    assert "missing_cost_model" in decision.reasons
+
+
+def test_placeholder_slippage_model_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(slippage_model="N/A"))
+    assert not decision.approved
+    assert "missing_slippage_model" in decision.reasons
+
+
+def test_placeholder_funding_source_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(funding_source="unknown"))
+    assert not decision.approved
+    assert "missing_funding_source" in decision.reasons
+
+
 def test_negative_completed_trade_count_is_rejected():
     decision = evaluate_research_evidence(_complete_evidence(completed_trades=-1))
     assert not decision.approved
