@@ -7,6 +7,7 @@ Rules (ALL must pass):
   3. Forward PF > 1.20
   4. Forward Expectancy > 0
   5. Forward Net PnL > 0
+  6. Every closed trade has internally consistent economic decomposition
 
 If any fail: deployment_status = "DO NOT DEPLOY"
 """
@@ -21,6 +22,7 @@ from loguru import logger
 
 
 _DB_PATH = Path(__file__).resolve().parent.parent / "data" / "forward_test.db"
+_EPSILON = 1e-9
 
 
 class DeploymentGate:
@@ -46,7 +48,7 @@ class DeploymentGate:
                 "reason": "forward_test.db does not exist",
                 "criteria": {k: "FAIL" for k in self._criterion_names()},
                 "passed": 0,
-                "total": 5,
+                "total": 6,
             }
 
         try:
@@ -79,7 +81,7 @@ class DeploymentGate:
                         "reason": "INSUFFICIENT LIVE EVIDENCE — 0 closed trades",
                         "criteria": criteria,
                         "passed": sum(1 for k, v in criteria.items() if v is True),
-                        "total": 5,
+                        "total": 6,
                     }
 
                 total_wins = db.execute(
@@ -106,6 +108,17 @@ class DeploymentGate:
 
                 if not self._finite_number(pf) or not self._finite_number(expectancy):
                     return self._invalid_evidence("non-finite deployment metrics")
+                
+                if not self._economic_decomposition_is_consistent(db):
+                    criteria["Economic decomposition consistent"] = False
+                    passed = sum(1 for k, v in criteria.items() if v is True)
+                    return {
+                        "status": "DO NOT DEPLOY",
+                        "reason": "Failed: Economic decomposition consistency check",
+                        "criteria": criteria,
+                        "passed": passed,
+                        "total": 6,
+                    }
 
                 criteria["Forward PF > 1.20"] = pf > self.MIN_FORWARD_PF
                 criteria["Forward PF"] = round(pf, 2)
@@ -113,9 +126,10 @@ class DeploymentGate:
                 criteria["Forward Expectancy"] = round(expectancy, 2)
                 criteria["Forward PnL > 0"] = pnl > self.MIN_FORWARD_PNL
                 criteria["Forward Net PnL"] = round(pnl, 2)
+                criteria["Economic decomposition consistent"] = True
 
                 passed = sum(1 for k, v in criteria.items() if v is True)
-                if passed == 5:
+                if passed == 6:
                     status = "DEPLOY"
                     reason = "All criteria met"
                 else:
@@ -128,7 +142,7 @@ class DeploymentGate:
                     "reason": reason,
                     "criteria": criteria,
                     "passed": passed,
-                    "total": 5,
+                    "total": 6,
                 }
         except (sqlite3.DatabaseError, OSError) as exc:
             return self._invalid_evidence(f"invalid forward-test database: {exc}")
@@ -137,13 +151,34 @@ class DeploymentGate:
     def _finite_number(value: object) -> bool:
         return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value))
 
+    @classmethod
+    def _economic_decomposition_is_consistent(cls, db: sqlite3.Connection) -> bool:
+        """Require every closed trade to satisfy net = gross - fees - funding - slippage."""
+        columns = {row[1] for row in db.execute("PRAGMA table_info(forward_trades)").fetchall()}
+        required = {"pnl", "fees", "funding", "slippage", "net_pnl"}
+        if not required.issubset(columns):
+            return False
+
+        rows = db.execute(
+            "SELECT pnl, fees, funding, slippage, net_pnl "
+            "FROM forward_trades WHERE outcome != ''"
+        ).fetchall()
+        for gross, fees, funding, slippage, net in rows:
+            values = (gross, fees, funding, slippage, net)
+            if not all(cls._finite_number(value) for value in values):
+                return False
+            expected = float(gross) - float(fees) - float(funding) - float(slippage)
+            if abs(float(net) - expected) > _EPSILON:
+                return False
+        return True
+
     def _invalid_evidence(self, reason: str) -> Dict:
         return {
             "status": "DO NOT DEPLOY",
             "reason": reason,
             "criteria": {k: "FAIL" for k in self._criterion_names()},
             "passed": 0,
-            "total": 5,
+            "total": 6,
         }
 
     def _criterion_names(self) -> list:
@@ -153,6 +188,7 @@ class DeploymentGate:
             "Forward PF > 1.20",
             "Forward Expectancy > 0",
             "Forward PnL > 0",
+            "Economic decomposition consistent",
         ]
 
     def log_status(self) -> None:
