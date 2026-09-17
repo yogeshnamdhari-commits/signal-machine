@@ -87,3 +87,11 @@ def test_live_certification_rejects_non_finite_verification_timestamp(tmp_path, 
 
     with pytest.raises(LiveCertificationError, match="verification timestamp is invalid"):
         verify_live_certification(path, now_ts=float("inf"))
+
+
+def test_live_certification_rejects_boolean_freshness_metadata(tmp_path, monkeypatch):
+    path = _write_artifact(tmp_path, issued_at=True, expires_at=2000.0)
+    monkeypatch.setenv("GITHUB_SHA", "commit-a")
+
+    with pytest.raises(LiveCertificationError, match="freshness metadata is missing"):
+        verify_live_certification(path, now_ts=1500.0)
