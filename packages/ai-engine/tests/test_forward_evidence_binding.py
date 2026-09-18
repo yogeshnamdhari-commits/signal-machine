@@ -33,11 +33,53 @@ def _write_report(tmp_path, **overrides):
         "total_slippage": 20.0,
         "max_drawdown_pct": 8.0,
         "bundle_roots": {
-            "C": "forward_sessions/session_C_evidence",
-            "D": "forward_sessions/session_D_evidence",
+            "C": "session_C_evidence",
+            "D": "session_D_evidence",
         },
     }
     report.update(overrides)
+    session_manifests = {}
+    evidence_manifests = {}
+    for session in ("C", "D"):
+        bundle_root = tmp_path / f"session_{session}_evidence"
+        bundle_root.mkdir()
+        for name, payload in {
+            "trades": b"id,signal_id\nT-1,S-1\n",
+            "signals": b"id\nS-1\n",
+            "summary": b"{}",
+        }.items():
+            filename = {
+                "trades": "paper_trading_trades.csv",
+                "signals": "paper_trading_signals.csv",
+                "summary": "summary.canonical.json",
+            }[name]
+            path = bundle_root / filename
+            path.write_bytes(payload)
+            evidence_manifests.setdefault(session, {})[name] = {
+                "path": str(path.relative_to(tmp_path)),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "bytes": len(payload),
+            }
+
+        artifact = {
+            "schema_version": 1,
+            "session": session,
+            "status": "COMPLETED",
+            "code_commit_sha": report["code_commit_sha"],
+            "parameter_hash": report["parameter_hash"],
+        }
+        artifact_path = tmp_path / f"session_{session}.json"
+        artifact_bytes = json.dumps(artifact, sort_keys=True).encode("utf-8")
+        artifact_path.write_bytes(artifact_bytes)
+        session_manifests[session] = {
+            "path": artifact_path.name,
+            "sha256": hashlib.sha256(artifact_bytes).hexdigest(),
+            "bytes": len(artifact_bytes),
+        }
+
+    report["session_artifacts"] = session_manifests
+    report["evidence_files"] = evidence_manifests
+    report["artifact_root"] = "."
     report["aggregate_sha256"] = hashlib.sha256(
         _canonical(report).encode("utf-8")
     ).hexdigest()
