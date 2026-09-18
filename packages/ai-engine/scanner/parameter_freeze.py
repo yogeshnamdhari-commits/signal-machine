@@ -134,10 +134,12 @@ def _snapshot_parameters() -> Dict[str, Any]:
 
 
 def _compute_hash(snapshot: Dict[str, Any]) -> str:
-    """Compute a stable hash of the parameter snapshot."""
+    """Compute the complete stable SHA-256 of the parameter snapshot."""
+    # Remove timestamp before hashing; retain the complete digest so the
+    # integrity binding has the full 256-bit collision resistance of SHA-256.
     s = {k: v for k, v in snapshot.items() if k != "timestamp"}
     canonical = json.dumps(s, sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class ParameterFreeze:
