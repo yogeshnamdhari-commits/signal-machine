@@ -66,3 +66,15 @@ def test_freeze_records_and_accepts_matching_commit(monkeypatch, tmp_path):
     assert frozen["code_commit_sha"] == "commit-123"
     assert checked["clean"] is True
     assert checked["code_commit_sha"] == "commit-123"
+
+
+def test_parameter_freeze_hash_uses_complete_sha256(monkeypatch, tmp_path):
+    freeze_path = tmp_path / "parameter_freeze.json"
+    monkeypatch.setattr(parameter_freeze, "_FREEZE_PATH", freeze_path)
+    monkeypatch.setattr(parameter_freeze, "_current_commit_sha", lambda: "commit-456")
+    monkeypatch.setattr(parameter_freeze, "_snapshot_parameters", lambda: {"ema": {"fast": 20}})
+
+    frozen = parameter_freeze.ParameterFreeze().freeze()
+
+    assert len(frozen["param_hash"]) == 64
+    assert frozen["param_hash"] == parameter_freeze._compute_hash({"ema": {"fast": 20}})
