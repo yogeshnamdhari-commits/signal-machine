@@ -33,7 +33,7 @@ class SignalRouter:
 
             if is_elite:
                 logger.info("🔥 ELITE SIGNAL DETECTED: {} {}", sig["symbol"], sig["type"])
-                await self.telegram.send_elite_alert(sig)
+                await self.telegram.send_signal_alert(sig)
                 await bus.publish("execution_signal", sig)
         except Exception as e:
             logger.error("Failed to route signal: {}", e)
