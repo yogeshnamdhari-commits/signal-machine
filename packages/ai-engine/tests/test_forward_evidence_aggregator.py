@@ -54,8 +54,8 @@ def _write_session(root: Path, session: str, start: float, end: float, trade_id:
 
     signals_path = evidence_dir / "paper_trading_signals.csv"
     signals_path.write_text(
-        "id,timestamp,symbol,side,entry_price,stop_loss,take_profit,status\\n"
-        f"sig-{session}-1,1000,BTCUSDT,LONG,100,99,102,generated\\n",
+        "id,timestamp,symbol,side,entry_price,stop_loss,take_profit,status\n"
+        f"sig-{session}-1,1000,BTCUSDT,LONG,100,99,102,generated\n",
         encoding="utf-8",
     )
     summary = {"total_trades": 1, "total_signals": 1}
