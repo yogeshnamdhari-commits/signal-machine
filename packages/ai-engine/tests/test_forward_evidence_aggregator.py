@@ -41,7 +41,7 @@ def _write_session(root: Path, session: str, start: float, end: float, trade_id:
             "side": "LONG",
             "entry_time": start + 1,
             "exit_time": end - 1,
-            "gross_pnl": pnl + 0.01,
+            "gross_pnl": pnl,
             "net_pnl": pnl,
             "quantity": 1,
             "fees": 0,
@@ -137,4 +137,69 @@ def test_aggregator_rejects_overlapping_sessions(tmp_path):
     _write_session(root, "D", 1999, 3000, "D-1", -2)
 
     with pytest.raises(ForwardEvidenceError, match="Session D must start after Session C completed"):
+        aggregate_forward_evidence(artifact_root=root)
+
+
+
+def test_aggregator_rejects_non_reconciled_net_pnl(tmp_path):
+    root = tmp_path / "forward_sessions"
+    root.mkdir()
+    _write_session(root, "C", 1000, 2000, "C-1", 10)
+    _write_session(root, "D", 2000, 3000, "D-1", -2)
+
+    trade_file = root / "session_C_evidence" / "paper_trading_trades.csv"
+    text_value = trade_file.read_text(encoding="utf-8")
+    lines = text_value.splitlines()
+    # Preserve the indexed hash mismatch separately; this test targets economics.
+    lines[-1] = lines[-1].replace(",10,1,0,0,0.01,closed", ",10.50,1,0,0,0.01,closed")
+    trade_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    artifact = json.loads((root / "session_C.json").read_text(encoding="utf-8"))
+    payload = trade_file.read_bytes()
+    artifact["evidence_bundle"]["artifacts"]["trades"]["sha256"] = _sha(payload)
+    artifact["evidence_bundle"]["artifacts"]["trades"]["bytes"] = len(payload)
+    artifact["provenance_sha256"] = _sha(
+        _canonical({k: v for k, v in artifact.items() if k != "provenance_sha256"}).encode("utf-8")
+    )
+    (root / "session_C.json").write_text(json.dumps(artifact), encoding="utf-8")
+
+    with pytest.raises(ForwardEvidenceError, match="economic decomposition failed"):
+        aggregate_forward_evidence(artifact_root=root)
+
+
+def test_aggregator_rejects_summary_bundle_mismatch(tmp_path):
+    root = tmp_path / "forward_sessions"
+    root.mkdir()
+    _write_session(root, "C", 1000, 2000, "C-1", 10)
+    _write_session(root, "D", 2000, 3000, "D-1", -2)
+
+    summary_file = root / "session_C_evidence" / "summary.canonical.json"
+    summary_file.write_text(_canonical({"total_trades": 999, "total_signals": 1}), encoding="utf-8")
+    artifact = json.loads((root / "session_C.json").read_text(encoding="utf-8"))
+    payload = summary_file.read_bytes()
+    artifact["evidence_bundle"]["artifacts"]["summary"]["sha256"] = _sha(payload)
+    artifact["evidence_bundle"]["artifacts"]["summary"]["bytes"] = len(payload)
+    artifact["provenance_sha256"] = _sha(
+        _canonical({k: v for k, v in artifact.items() if k != "provenance_sha256"}).encode("utf-8")
+    )
+    (root / "session_C.json").write_text(json.dumps(artifact), encoding="utf-8")
+
+    with pytest.raises(ForwardEvidenceError, match="bundled summary does not match"):
+        aggregate_forward_evidence(artifact_root=root)
+
+
+def test_aggregator_rejects_bundle_path_escape(tmp_path):
+    root = tmp_path / "forward_sessions"
+    root.mkdir()
+    _write_session(root, "C", 1000, 2000, "C-1", 10)
+    _write_session(root, "D", 2000, 3000, "D-1", -2)
+
+    artifact = json.loads((root / "session_C.json").read_text(encoding="utf-8"))
+    artifact["evidence_bundle"]["artifacts"]["trades"]["path"] = "../escape.csv"
+    artifact["provenance_sha256"] = _sha(
+        _canonical({k: v for k, v in artifact.items() if k != "provenance_sha256"}).encode("utf-8")
+    )
+    (root / "session_C.json").write_text(json.dumps(artifact), encoding="utf-8")
+
+    with pytest.raises(ForwardEvidenceError, match="escapes the data root"):
         aggregate_forward_evidence(artifact_root=root)
