@@ -22,7 +22,7 @@ def test_elite_persisted_signal_is_published_to_execution_bus(monkeypatch):
 
     monkeypatch.setattr(module.repo, "save_signal", save_signal)
     router = SignalRouter()
-    monkeypatch.setattr(router.telegram, "send_elite_alert", send_alert)
+    monkeypatch.setattr(router.telegram, "send_signal_alert", send_alert)
     monkeypatch.setattr(module.bus, "publish", publish)
 
     signal = {
