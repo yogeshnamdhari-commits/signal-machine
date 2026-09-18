@@ -419,7 +419,12 @@ class OrderManager:
             order.avg_price = exchange_order.avg_price
             order.cum_quote = exchange_order.cum_quote
 
-            if status == "FILLED" and old_state != OrderState.FILLED.value:
+            if status == "NEW" and old_state in (
+                OrderState.UNKNOWN.value,
+                OrderState.SUBMITTED.value,
+            ):
+                order.transition(OrderState.ACCEPTED.value, "Synced: accepted")
+            elif status == "FILLED" and old_state != OrderState.FILLED.value:
                 order.transition(OrderState.FILLED.value, "Synced: filled")
                 if self._on_fill_callback:
                     await self._on_fill_callback(order)
