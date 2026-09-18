@@ -383,8 +383,23 @@ class ExecutionEngine:
         if not routing or routing["exchange"] == "none":
             logger.error("SmartOrderRouter failed to find a valid venue for {}", symbol)
             return None
+
+        # Current forward certification is Binance-production-specific. Do not
+        # silently route a certified Binance strategy to another venue whose
+        # fees, liquidity, funding, contract rules, and execution behavior were
+        # not part of the validated evidence.
+        if routing["exchange"] != "binance":
+            logger.error(
+                "LIVE_EXECUTION_BLOCKED: certified production venue is Binance, router selected {}",
+                routing["exchange"],
+            )
+            await self.audit.signal_rejected(
+                signal_id,
+                f"certified_venue_mismatch: selected={routing['exchange']} expected=binance",
+            )
+            return None
             
-        exchange = self.exchanges[routing["exchange"]]
+        exchange = self.exchanges["binance"]
 
         # 3. Global Portfolio Risk Validation
         snapshot = await self.portfolio_risk.get_snapshot(self._equity)
