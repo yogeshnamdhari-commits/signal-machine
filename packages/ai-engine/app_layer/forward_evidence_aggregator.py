@@ -17,19 +17,9 @@ ECONOMIC_EPSILON = 1e-9
 
 
 REQUIRED_TRADE_FIELDS = {
-    "id",
-    "signal_id",
-    "symbol",
-    "side",
-    "entry_time",
-    "exit_time",
-    "gross_pnl",
-    "net_pnl",
-    "quantity",
-    "fees",
-    "funding_pnl",
-    "total_slippage",
-    "status",
+    "id", "signal_id", "symbol", "side", "entry_time", "exit_time",
+    "gross_pnl", "net_pnl", "quantity", "fees", "funding_pnl",
+    "total_slippage", "status",
 }
 
 
@@ -77,9 +67,7 @@ def _verify_session_artifact(path: Path, expected_session: str) -> Dict[str, Any
     if not isinstance(provenance_hash, str) or not provenance_hash:
         raise ForwardEvidenceError(f"Session {expected_session} provenance hash missing")
     expected_provenance_hash = _sha256_bytes(
-        _canonical_json(
-            {k: v for k, v in artifact.items() if k != "provenance_sha256"}
-        ).encode("utf-8")
+        _canonical_json({k: v for k, v in artifact.items() if k != "provenance_sha256"}).encode("utf-8")
     )
     if provenance_hash != expected_provenance_hash:
         raise ForwardEvidenceError(f"Session {expected_session} provenance hash mismatch")
@@ -96,11 +84,7 @@ def _verify_session_artifact(path: Path, expected_session: str) -> Dict[str, Any
     return artifact
 
 
-def _verify_bundle_files(
-    artifact: Dict[str, Any],
-    *,
-    data_root: Path,
-) -> Dict[str, Path]:
+def _verify_bundle_files(artifact: Dict[str, Any], *, data_root: Path) -> Dict[str, Path]:
     bundle = artifact["evidence_bundle"]
     indexed = bundle["artifacts"]
     bundle_root_rel = bundle.get("root")
@@ -111,13 +95,13 @@ def _verify_bundle_files(
         raise ForwardEvidenceError("Evidence bundle root must not be a symlink")
     bundle_root = raw_bundle_root.resolve()
     data_root_resolved = data_root.resolve()
+
     try:
         bundle_root.relative_to(data_root_resolved)
     except ValueError as exc:
         raise ForwardEvidenceError("Evidence bundle root escapes the data root") from exc
 
     resolved: Dict[str, Path] = {}
-
     for name, meta in indexed.items():
         if not isinstance(meta, dict):
             raise ForwardEvidenceError(f"Evidence bundle entry {name!r} is invalid")
@@ -132,49 +116,33 @@ def _verify_bundle_files(
         if raw_candidate.is_symlink():
             raise ForwardEvidenceError(f"Evidence path must not be a symlink: {rel}")
         candidate = raw_candidate.resolve()
-        data_root_resolved = data_root.resolve()
         try:
             candidate.relative_to(data_root_resolved)
-        except ValueError as exc:
-            raise ForwardEvidenceError(
-                f"Evidence path escapes the data root: {rel}"
-            ) from exc
-        try:
             candidate.relative_to(bundle_root)
         except ValueError as exc:
-            raise ForwardEvidenceError(
-                f"Evidence path is outside the declared bundle root: {rel}"
-            ) from exc
-        path = candidate
-        if not path.is_file():
-            raise ForwardEvidenceError(f"Evidence file missing: {path}")
-        payload = path.read_bytes()
+            raise ForwardEvidenceError(f"Evidence path is outside the declared bundle root: {rel}") from exc
+        if not candidate.is_file():
+            raise ForwardEvidenceError(f"Evidence file missing: {candidate}")
+        payload = candidate.read_bytes()
         if _sha256_bytes(payload) != expected_sha:
-            raise ForwardEvidenceError(f"Evidence file hash mismatch: {path}")
+            raise ForwardEvidenceError(f"Evidence file hash mismatch: {candidate}")
         if expected_bytes != len(payload):
-            raise ForwardEvidenceError(f"Evidence file size mismatch: {path}")
-        resolved[name] = path
+            raise ForwardEvidenceError(f"Evidence file size mismatch: {candidate}")
+        resolved[name] = candidate
 
     for required in ("trades", "signals", "summary"):
         if required not in resolved:
             raise ForwardEvidenceError(f"Evidence bundle is missing required {required!r} artifact")
-
     return resolved
 
 
 REQUIRED_SIGNAL_FIELDS = {
-    "id",
-    "timestamp",
-    "symbol",
-    "side",
-    "entry_price",
-    "stop_loss",
-    "take_profit",
-    "status",
+    "id", "timestamp", "symbol", "side", "entry_price", "stop_loss", "take_profit", "status",
 }
 
 
-def _read_signal_count(path: Path) -> int:
+def _read_signal_ids(path: Path) -> set[str]:
+    """Return validated signal IDs so every executed trade can be attributed to a signal."""
     try:
         with path.open("r", newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle)
@@ -188,33 +156,30 @@ def _read_signal_count(path: Path) -> int:
     except (OSError, csv.Error, UnicodeError) as exc:
         raise ForwardEvidenceError(f"Unable to read signal log {path}: {exc}") from exc
 
-    ids = []
+    ids: set[str] = set()
     for row in rows:
         signal_id = str(row.get("id", "")).strip()
         symbol = str(row.get("symbol", "")).strip()
         side = str(row.get("side", "")).strip().upper()
         if not signal_id or not symbol or side not in {"LONG", "SHORT"}:
             raise ForwardEvidenceError(f"Signal log {path} contains an invalid signal identity")
-        if str(row.get("status", "")).strip().lower() not in {
-            "generated", "filled", "expired", "rejected"
-        }:
+        if str(row.get("status", "")).strip().lower() not in {"generated", "filled", "expired", "rejected"}:
             raise ForwardEvidenceError(f"Signal log {path} contains an invalid signal status")
         for field in ("timestamp", "entry_price", "stop_loss", "take_profit"):
             try:
                 value = float(row.get(field, ""))
             except (TypeError, ValueError) as exc:
-                raise ForwardEvidenceError(
-                    f"Signal log {path} contains invalid {field}"
-                ) from exc
+                raise ForwardEvidenceError(f"Signal log {path} contains invalid {field}") from exc
             if not (value == value and abs(value) != float("inf")):
-                raise ForwardEvidenceError(
-                    f"Signal log {path} contains non-finite {field}"
-                )
-        ids.append(signal_id)
+                raise ForwardEvidenceError(f"Signal log {path} contains non-finite {field}")
+        if signal_id in ids:
+            raise ForwardEvidenceError(f"Signal log {path} contains duplicate signal ids")
+        ids.add(signal_id)
+    return ids
 
-    if len(set(ids)) != len(ids):
-        raise ForwardEvidenceError(f"Signal log {path} contains duplicate signal ids")
-    return len(rows)
+
+def _read_signal_count(path: Path) -> int:
+    return len(_read_signal_ids(path))
 
 
 def _read_canonical_summary(path: Path) -> Dict[str, Any]:
@@ -235,13 +200,10 @@ def _read_trades(path: Path) -> List[Dict[str, Any]]:
             fields = {str(name).strip() for name in (reader.fieldnames or []) if name}
             missing = REQUIRED_TRADE_FIELDS - fields
             if missing:
-                raise ForwardEvidenceError(
-                    f"Trade log {path} is missing fields: {', '.join(sorted(missing))}"
-                )
+                raise ForwardEvidenceError(f"Trade log {path} is missing fields: {', '.join(sorted(missing))}")
             rows = list(reader)
     except (OSError, csv.Error, UnicodeError) as exc:
         raise ForwardEvidenceError(f"Unable to read trade log {path}: {exc}") from exc
-
     for row in rows:
         if row.get("status", "").strip().lower() != "closed":
             raise ForwardEvidenceError(f"Trade log {path} contains non-closed trade row")
@@ -273,14 +235,12 @@ def _validate_trade_economics(rows: Iterable[Dict[str, Any]]) -> None:
         exit_time = _to_time(row, "exit_time", path)
         if exit_time < entry_time:
             raise ForwardEvidenceError("Trade exit time precedes entry time")
-
         gross = _to_float(row, "gross_pnl", path)
         net = _to_float(row, "net_pnl", path)
         fees = _to_float(row, "fees", path)
         funding = _to_float(row, "funding_pnl", path)
         slippage = _to_float(row, "total_slippage", path)
         quantity = _to_float(row, "quantity", path)
-
         if fees < 0 or quantity <= 0 or slippage < 0:
             raise ForwardEvidenceError("Trade economic inputs contain an invalid cost/quantity")
         if not str(row.get("id", "")).strip() or not str(row.get("signal_id", "")).strip():
@@ -289,9 +249,8 @@ def _validate_trade_economics(rows: Iterable[Dict[str, Any]]) -> None:
             raise ForwardEvidenceError("Trade log contains an invalid side")
         expected_net = round(gross - fees + funding, 2)
         if abs(net - expected_net) > ECONOMIC_EPSILON:
-            raise ForwardEvidenceError(
-                "Trade economic decomposition failed: net PnL does not reconcile"
-            )
+            raise ForwardEvidenceError("Trade economic decomposition failed: net PnL does not reconcile")
+
 
 def _max_drawdown(rows: Iterable[Dict[str, Any]]) -> float:
     equity = 10_000.0
@@ -305,16 +264,10 @@ def _max_drawdown(rows: Iterable[Dict[str, Any]]) -> float:
     return max_dd
 
 
-def aggregate_forward_evidence(
-    *,
-    artifact_root: Path,
-    output_path: Path | None = None,
-) -> Dict[str, Any]:
+def aggregate_forward_evidence(*, artifact_root: Path, output_path: Path | None = None) -> Dict[str, Any]:
     """Verify C/D bundles and return an integrity-bound aggregate report."""
-    c_path = artifact_root / "session_C.json"
-    d_path = artifact_root / "session_D.json"
-    c = _verify_session_artifact(c_path, "C")
-    d = _verify_session_artifact(d_path, "D")
+    c = _verify_session_artifact(artifact_root / "session_C.json", "C")
+    d = _verify_session_artifact(artifact_root / "session_D.json", "D")
 
     for artifact in (c, d):
         if artifact.get("data_source") != "BINANCE_FUTURES_PRODUCTION":
@@ -324,8 +277,7 @@ def aggregate_forward_evidence(
         if artifact.get("execution_mode") != "SIMULATION" or artifact.get("real_orders") is not False:
             raise ForwardEvidenceError("Forward evidence must be simulation-only")
 
-    identity_fields = ("code_commit_sha", "parameter_hash")
-    for field in identity_fields:
+    for field in ("code_commit_sha", "parameter_hash"):
         if c.get(field) != d.get(field):
             raise ForwardEvidenceError(f"C/D {field} mismatch")
 
@@ -336,7 +288,6 @@ def aggregate_forward_evidence(
 
     c_files = _verify_bundle_files(c, data_root=artifact_root.parent)
     d_files = _verify_bundle_files(d, data_root=artifact_root.parent)
-
     c_root = (artifact_root.parent / c["evidence_bundle"]["root"]).resolve()
     d_root = (artifact_root.parent / d["evidence_bundle"]["root"]).resolve()
     if c_root == d_root:
@@ -344,17 +295,15 @@ def aggregate_forward_evidence(
     if set(c_files.values()).intersection(d_files.values()):
         raise ForwardEvidenceError("Session C and D evidence bundles must not share files")
 
+    session_signal_ids: Dict[str, set[str]] = {}
     for artifact, label, files in ((c, "C", c_files), (d, "D", d_files)):
         bundled_summary = _read_canonical_summary(files["summary"])
         if _canonical_json(bundled_summary) != _canonical_json(artifact["summary"]):
-            raise ForwardEvidenceError(
-                f"Session {label} bundled summary does not match immutable session summary"
-            )
-        bundled_signal_count = _read_signal_count(files["signals"])
-        if bundled_signal_count != int(artifact["signal_count"]):
-            raise ForwardEvidenceError(
-                f"Session {label} signal count does not match its immutable signal log"
-            )
+            raise ForwardEvidenceError(f"Session {label} bundled summary does not match immutable session summary")
+        signal_ids = _read_signal_ids(files["signals"])
+        session_signal_ids[label] = signal_ids
+        if len(signal_ids) != int(artifact["signal_count"]):
+            raise ForwardEvidenceError(f"Session {label} signal count does not match its immutable signal log")
 
     c_rows = _read_trades(c_files["trades"])
     d_rows = _read_trades(d_files["trades"])
@@ -370,18 +319,17 @@ def aggregate_forward_evidence(
     for artifact, label, rows_for_session in ((c, "C", c_rows), (d, "D", d_rows)):
         expected = artifact["closed_trade_count"]
         if int(expected) != len(rows_for_session):
-            raise ForwardEvidenceError(
-                f"Session {label} closed-trade count does not match its immutable trade log"
-            )
+            raise ForwardEvidenceError(f"Session {label} closed-trade count does not match its immutable trade log")
+        for row in rows_for_session:
+            if str(row.get("signal_id", "")).strip() not in session_signal_ids[label]:
+                raise ForwardEvidenceError(
+                    f"Session {label} trade {row.get('id', '<unknown>')} references an unknown signal id"
+                )
 
     total_trades = len(rows)
     wins = sum(1 for row in rows if _to_float(row, "net_pnl", Path("<aggregate>")) > 0)
-    gross_profit = sum(
-        max(0.0, _to_float(row, "net_pnl", Path("<aggregate>"))) for row in rows
-    )
-    gross_loss = abs(
-        sum(min(0.0, _to_float(row, "net_pnl", Path("<aggregate>"))) for row in rows)
-    )
+    gross_profit = sum(max(0.0, _to_float(row, "net_pnl", Path("<aggregate>"))) for row in rows)
+    gross_loss = abs(sum(min(0.0, _to_float(row, "net_pnl", Path("<aggregate>"))) for row in rows))
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0.0)
     net_pnl = sum(_to_float(row, "net_pnl", Path("<aggregate>")) for row in rows)
 
@@ -401,32 +349,14 @@ def aggregate_forward_evidence(
         "total_gross_pnl": sum(_to_float(row, "gross_pnl", Path("<aggregate>")) for row in rows),
         "total_fees": sum(_to_float(row, "fees", Path("<aggregate>")) for row in rows),
         "total_funding_pnl": sum(_to_float(row, "funding_pnl", Path("<aggregate>")) for row in rows),
-        "total_slippage": sum(
-            _to_float(row, "total_slippage", Path("<aggregate>"))
-            * _to_float(row, "quantity", Path("<aggregate>"))
-            for row in rows
-        ),
+        "total_slippage": sum(_to_float(row, "total_slippage", Path("<aggregate>")) * _to_float(row, "quantity", Path("<aggregate>")) for row in rows),
         "max_drawdown_pct": _max_drawdown(rows),
         "session_c_trade_count": len(c_rows),
         "session_d_trade_count": len(d_rows),
-        "bundle_roots": {
-            "C": c["evidence_bundle"]["root"],
-            "D": d["evidence_bundle"]["root"],
-        },
+        "bundle_roots": {"C": c["evidence_bundle"]["root"], "D": d["evidence_bundle"]["root"]},
     }
-
     report["aggregate_sha256"] = _sha256_bytes(_canonical_json(report).encode("utf-8"))
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-
     return report
-
-
-if __name__ == "__main__":
-    root = Path(__file__).resolve().parent.parent / "data" / "reports" / "forward_sessions"
-    report = aggregate_forward_evidence(
-        artifact_root=root,
-        output_path=root / "forward_aggregate.json",
-    )
-    print(json.dumps(report, indent=2, sort_keys=True))
