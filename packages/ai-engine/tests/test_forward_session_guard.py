@@ -118,10 +118,10 @@ def test_forward_session_d_requires_completed_c(monkeypatch, tmp_path):
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
-    (tmp_path / "session_C.json").write_text(json.dumps(c_base), encoding="utf-8")
+    (artifact_root / "session_C.json").write_text(json.dumps(c_base), encoding="utf-8")
 
     d = guard.ForwardSessionGuard.prepare(
-        "D", production_data=True, artifact_root=tmp_path
+        "D", production_data=True, artifact_root=artifact_root
     )
     assert d["session"] == "D"
     assert d["code_commit_sha"] == "commit-1"
@@ -276,6 +276,8 @@ def test_session_d_rejects_completed_c_without_evidence_bundle(monkeypatch, tmp_
 
 def test_session_d_rejects_tampered_completed_c_bundle_file(monkeypatch, tmp_path):
     _fake_freeze(monkeypatch)
+    artifact_root = tmp_path / "forward_sessions"
+    artifact_root.mkdir()
     bundle = _materialize_bundle(tmp_path, "C")
     c = {
         "schema_version": 1,
@@ -297,15 +299,17 @@ def test_session_d_rejects_tampered_completed_c_bundle_file(monkeypatch, tmp_pat
     c["provenance_sha256"] = hashlib.sha256(
         json.dumps({k: v for k, v in c.items() if k != "provenance_sha256"}, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+    (artifact_root / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
     (tmp_path / "forward_sessions" / "session_C_evidence" / "paper_trading_trades.csv").write_bytes(b"tampered")
 
     with pytest.raises(guard.ForwardSessionError, match="hash mismatch"):
-        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=tmp_path)
+        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=artifact_root)
 
 
 def test_session_d_rejects_bundle_path_escape(monkeypatch, tmp_path):
     _fake_freeze(monkeypatch)
+    artifact_root = tmp_path / "forward_sessions"
+    artifact_root.mkdir()
     bundle = _materialize_bundle(tmp_path, "C")
     bundle["artifacts"]["trades"]["path"] = "../outside.csv"
     c = {
@@ -324,7 +328,7 @@ def test_session_d_rejects_bundle_path_escape(monkeypatch, tmp_path):
     c["provenance_sha256"] = hashlib.sha256(
         json.dumps({k: v for k, v in c.items() if k != "provenance_sha256"}, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+    (artifact_root / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
 
     with pytest.raises(guard.ForwardSessionError, match="escapes its declared bundle root"):
-        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=tmp_path)
+        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=artifact_root)
