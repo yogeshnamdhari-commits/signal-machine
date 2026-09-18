@@ -106,7 +106,10 @@ def _verify_bundle_files(
     bundle_root_rel = bundle.get("root")
     if not isinstance(bundle_root_rel, str) or not bundle_root_rel:
         raise ForwardEvidenceError("Evidence bundle root is missing")
-    bundle_root = (data_root / bundle_root_rel).resolve()
+    raw_bundle_root = data_root / bundle_root_rel
+    if raw_bundle_root.is_symlink():
+        raise ForwardEvidenceError("Evidence bundle root must not be a symlink")
+    bundle_root = raw_bundle_root.resolve()
     data_root_resolved = data_root.resolve()
     try:
         bundle_root.relative_to(data_root_resolved)
@@ -125,7 +128,10 @@ def _verify_bundle_files(
             raise ForwardEvidenceError(f"Evidence bundle entry {name!r} lacks path/hash")
         if not isinstance(expected_bytes, int) or expected_bytes < 0:
             raise ForwardEvidenceError(f"Evidence bundle entry {name!r} lacks a valid byte count")
-        candidate = (data_root / rel).resolve()
+        raw_candidate = data_root / rel
+        if raw_candidate.is_symlink():
+            raise ForwardEvidenceError(f"Evidence path must not be a symlink: {rel}")
+        candidate = raw_candidate.resolve()
         data_root_resolved = data_root.resolve()
         try:
             candidate.relative_to(data_root_resolved)
