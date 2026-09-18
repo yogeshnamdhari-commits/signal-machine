@@ -570,6 +570,7 @@ class OrderManager:
                 OrderState.SUBMITTED.value,
                 OrderState.ACCEPTED.value,
                 OrderState.PARTIALLY_FILLED.value,
+                OrderState.UNKNOWN.value,
             )
         ]
 
