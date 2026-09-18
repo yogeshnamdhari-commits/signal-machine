@@ -1564,7 +1564,10 @@ class PaperTradingEngine:
             raise ForwardSessionError("Cannot snapshot evidence without a valid C/D session")
 
         data_root = DATA_DIR.resolve()
-        bundle_root = (DATA_DIR / "forward_sessions" / f"session_{session}_evidence").resolve()
+        raw_bundle_root = DATA_DIR / "forward_sessions" / f"session_{session}_evidence"
+        if raw_bundle_root.is_symlink():
+            raise ForwardSessionError("Forward evidence bundle root must not be a symlink")
+        bundle_root = raw_bundle_root.resolve()
         try:
             bundle_root.relative_to(data_root)
         except ValueError as exc:
@@ -1614,7 +1617,7 @@ class PaperTradingEngine:
         bundle = metadata_for(bundle_root)
 
         if bundle_root.exists():
-            if not bundle_root.is_dir() or bundle_root.is_symlink():
+            if not bundle_root.is_dir():
                 raise ForwardSessionError("Forward evidence bundle root already exists but is not a safe directory")
             for name, metadata in bundle["artifacts"].items():
                 path = data_root / metadata["path"]
