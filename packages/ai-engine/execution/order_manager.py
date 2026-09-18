@@ -79,7 +79,9 @@ class OrderManager:
                 order.transition(OrderState.FILLED.value,"Fully filled")
                 if self._on_fill_callback: await self._on_fill_callback(order)
             elif status=="CANCELED": order.transition(OrderState.CANCELLED.value,"Cancelled by exchange")
-            elif status=="REJECTED": order.rejection_reason=f"Exchange rejected: {status}"; order.transition(OrderState.REJECTED.value,order.rejection_reason)
+            elif status=="REJECTED":
+                order.rejection_reason=f"Exchange rejected: {status}"; order.transition(OrderState.REJECTED.value,order.rejection_reason)
+                if self._on_reject_callback: await self._on_reject_callback(order)
             elif status=="EXPIRED": order.transition(OrderState.EXPIRED.value,"Order expired")
         except (RateLimitError,ExchangeError) as exc:
             # Any failure after a POST is potentially ambiguous. Reconcile by clientOrderId before terminal failure.
@@ -119,7 +121,9 @@ class OrderManager:
                 order.transition(OrderState.FILLED.value,"Synced: filled")
                 if self._on_fill_callback: await self._on_fill_callback(order)
             elif status=="CANCELED" and old_state!=OrderState.CANCELLED.value: order.transition(OrderState.CANCELLED.value,"Synced: cancelled")
-            elif status=="REJECTED" and old_state!=OrderState.REJECTED.value: order.rejection_reason="Synced: rejected"; order.transition(OrderState.REJECTED.value,order.rejection_reason)
+            elif status=="REJECTED" and old_state!=OrderState.REJECTED.value:
+                order.rejection_reason="Synced: rejected"; order.transition(OrderState.REJECTED.value,order.rejection_reason)
+                if self._on_reject_callback: await self._on_reject_callback(order)
             elif status=="EXPIRED" and old_state!=OrderState.EXPIRED.value: order.transition(OrderState.EXPIRED.value,"Synced: expired")
             elif status=="PARTIALLY_FILLED": order.transition(OrderState.PARTIALLY_FILLED.value,"Synced: partial")
             return order
