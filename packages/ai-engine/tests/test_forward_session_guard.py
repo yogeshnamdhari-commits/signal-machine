@@ -77,6 +77,7 @@ def test_forward_session_d_requires_completed_c(monkeypatch, tmp_path):
         "code_commit_sha": "commit-1",
         "parameter_hash": "param-1",
         "summary": {"total_trades": 7, "total_signals": 19},
+        "evidence_bundle": _bundle("C"),
         "summary_sha256": "",
         "evidence_bundle": _bundle("C"),
         "provenance_sha256": "",
@@ -148,6 +149,7 @@ def test_forward_session_d_rejects_tampered_completed_c(monkeypatch, tmp_path):
         "code_commit_sha": "commit-1",
         "parameter_hash": "param-1",
         "summary": {"total_trades": 7, "total_signals": 19},
+        "evidence_bundle": _bundle("C"),
         "summary_sha256": hashlib.sha256(
             json.dumps(
                 {"total_trades": 7, "total_signals": 19},
@@ -174,6 +176,7 @@ def test_forward_session_d_rejects_tampered_completed_c_summary(monkeypatch, tmp
         "code_commit_sha": "commit-1",
         "parameter_hash": "param-1",
         "summary": {"total_trades": 7, "total_signals": 19},
+        "evidence_bundle": _bundle("C"),
         "summary_sha256": hashlib.sha256(
             json.dumps(
                 {"total_trades": 6, "total_signals": 19},
