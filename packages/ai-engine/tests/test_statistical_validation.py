@@ -166,3 +166,39 @@ def test_missing_bootstrap_seed_is_rejected():
     decision = evaluate_research_evidence(_complete_evidence(bootstrap_seed=None))
     assert not decision.approved
     assert "missing_bootstrap_seed" in decision.reasons
+
+
+def test_non_finite_profit_factor_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(profit_factor=float("nan")))
+    assert not decision.approved
+    assert "missing_profit_factor" in decision.reasons
+
+
+def test_boolean_profit_factor_is_rejected_as_non_numeric():
+    decision = evaluate_research_evidence(_complete_evidence(profit_factor=True))
+    assert not decision.approved
+    assert "missing_profit_factor" in decision.reasons
+
+
+def test_non_finite_expectancy_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(expectancy=float("inf")))
+    assert not decision.approved
+    assert "missing_expectancy" in decision.reasons
+
+
+def test_boolean_expectancy_is_rejected_as_non_numeric():
+    decision = evaluate_research_evidence(_complete_evidence(expectancy=False))
+    assert not decision.approved
+    assert "missing_expectancy" in decision.reasons
+
+
+def test_negative_drawdown_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(max_drawdown_pct=-0.1))
+    assert not decision.approved
+    assert "invalid_max_drawdown" in decision.reasons
+
+
+def test_non_finite_drawdown_is_rejected():
+    decision = evaluate_research_evidence(_complete_evidence(max_drawdown_pct=float("inf")))
+    assert not decision.approved
+    assert "missing_max_drawdown" in decision.reasons
