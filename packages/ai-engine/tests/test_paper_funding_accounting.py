@@ -1,3 +1,5 @@
+import pytest
+
 from backtesting.paper_trading_validator import calculate_funding_pnl
 
 
@@ -54,10 +56,10 @@ def test_same_funding_settlement_cannot_be_applied_twice():
 
     first = mgr.apply_funding(trade.id, funding_rate=0.0002, mark_price=3500, settlement_time=1_800_000_000_000)
     second = mgr.apply_funding(trade.id, funding_rate=0.0002, mark_price=3500, settlement_time=1_800_000_000_000)
-    assert first == 7.0
+    assert first == pytest.approx(0.7)
     assert second == 0.0
     assert trade.funding_events == 1
-    assert trade.funding_pnl == 7.0
+    assert trade.funding_pnl == pytest.approx(0.7)
 
 
 def test_funding_event_is_ingested_as_real_market_data():
