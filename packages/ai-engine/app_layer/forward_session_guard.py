@@ -69,6 +69,39 @@ def _load_artifact(root: Path, session: str) -> Dict[str, Any] | None:
         raise ForwardSessionError(f"Invalid {session} session artifact: {exc}") from exc
 
 
+
+def _verify_completed_artifact(artifact: Dict[str, Any], session: str) -> None:
+    """Verify an immutable completed session artifact before it is reused."""
+    if artifact.get("schema_version") != FORWARD_SCHEMA_VERSION:
+        raise ForwardSessionError(f"Invalid {session} session schema version")
+    if artifact.get("session") != session:
+        raise ForwardSessionError(f"{session} session artifact has mismatched session identity")
+    if artifact.get("status") != "COMPLETED":
+        raise ForwardSessionError(f"{session} session artifact is not completed")
+
+    summary = artifact.get("summary")
+    if not isinstance(summary, dict):
+        raise ForwardSessionError(f"{session} session artifact is missing its final summary")
+
+    expected_summary_hash = hashlib.sha256(
+        _canonical_json(summary).encode("utf-8")
+    ).hexdigest()
+    if artifact.get("summary_sha256") != expected_summary_hash:
+        raise ForwardSessionError(f"{session} session summary integrity check failed")
+
+    stored_provenance_hash = artifact.get("provenance_sha256")
+    if not isinstance(stored_provenance_hash, str) or not stored_provenance_hash:
+        raise ForwardSessionError(f"{session} session provenance hash is missing")
+
+    expected_provenance_hash = hashlib.sha256(
+        _canonical_json(
+            {k: v for k, v in artifact.items() if k != "provenance_sha256"}
+        ).encode("utf-8")
+    ).hexdigest()
+    if stored_provenance_hash != expected_provenance_hash:
+        raise ForwardSessionError(f"{session} session provenance integrity check failed")
+
+
 def _validate_freeze() -> Dict[str, Any]:
     status = ParameterFreeze().check()
     if not status.get("frozen") or not status.get("clean"):
@@ -119,6 +152,7 @@ class ForwardSessionGuard:
                 raise ForwardSessionError(
                     "Session D requires a completed Session C artifact"
                 )
+            _verify_completed_artifact(session_c, "C")
             if session_c.get("code_commit_sha") != freeze["code_commit_sha"]:
                 raise ForwardSessionError(
                     "Session D blocked: Session C used a different source commit"
@@ -156,6 +190,7 @@ class ForwardSessionGuard:
         summary: Dict[str, Any],
         *,
         artifact_root: Path,
+        evidence_bundle: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         session = str(provenance.get("session", "")).upper()
         if session not in ALLOWED_SESSIONS:
@@ -173,6 +208,9 @@ class ForwardSessionGuard:
             raise ForwardSessionError("Forward session parameter hash changed before finalization")
 
         completed = _now()
+        if evidence_bundle is not None and not isinstance(evidence_bundle, dict):
+            raise ForwardSessionError("Forward evidence bundle metadata must be a dictionary")
+
         final = dict(artifact)
         final.update(
             {
@@ -181,6 +219,12 @@ class ForwardSessionGuard:
                 "ended_at_epoch": completed.timestamp(),
                 "closed_trade_count": int(summary.get("total_trades", 0)),
                 "signal_count": int(summary.get("total_signals", 0)),
+                # Preserve the exact final summary inside the immutable session
+                # artifact. The shared paper_trading_summary.json is overwritten
+                # by subsequent sessions, so the hash alone would otherwise be
+                # impossible to re-verify after Session D starts.
+                "summary": summary,
+                "evidence_bundle": dict(evidence_bundle or {}),
                 "summary_sha256": hashlib.sha256(
                     _canonical_json(summary).encode("utf-8")
                 ).hexdigest(),
