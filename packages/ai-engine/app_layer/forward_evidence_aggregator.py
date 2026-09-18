@@ -113,7 +113,15 @@ def _verify_bundle_files(
         expected_bytes = meta.get("bytes")
         if not isinstance(rel, str) or not isinstance(expected_sha, str):
             raise ForwardEvidenceError(f"Evidence bundle entry {name!r} lacks path/hash")
-        path = data_root / rel
+        candidate = (data_root / rel).resolve()
+        data_root_resolved = data_root.resolve()
+        try:
+            candidate.relative_to(data_root_resolved)
+        except ValueError as exc:
+            raise ForwardEvidenceError(
+                f"Evidence path escapes the data root: {rel}"
+            ) from exc
+        path = candidate
         if not path.is_file():
             raise ForwardEvidenceError(f"Evidence file missing: {path}")
         payload = path.read_bytes()
@@ -128,6 +136,28 @@ def _verify_bundle_files(
             raise ForwardEvidenceError(f"Evidence bundle is missing required {required!r} artifact")
 
     return resolved
+
+
+def _read_signal_count(path: Path) -> int:
+    try:
+        with path.open("r", newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames:
+                raise ForwardEvidenceError(f"Signal log {path} has no header")
+            return sum(1 for _ in reader)
+    except (OSError, csv.Error, UnicodeError) as exc:
+        raise ForwardEvidenceError(f"Unable to read signal log {path}: {exc}") from exc
+
+
+def _read_canonical_summary(path: Path) -> Dict[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ForwardEvidenceError(f"Unable to read summary artifact {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ForwardEvidenceError(f"Summary artifact {path} is not a JSON object")
+    return value
 
 
 def _read_trades(path: Path) -> List[Dict[str, Any]]:
@@ -185,7 +215,7 @@ def _validate_trade_economics(rows: Iterable[Dict[str, Any]]) -> None:
 
         if fees < 0 or quantity < 0 or slippage < 0:
             raise ForwardEvidenceError("Trade economic inputs contain a negative cost/quantity")
-        expected_net = gross - fees - funding - slippage * quantity
+        expected_net = gross - fees + funding
         if abs(net - expected_net) > ECONOMIC_EPSILON:
             raise ForwardEvidenceError(
                 "Trade economic decomposition failed: net PnL does not reconcile"
@@ -234,6 +264,19 @@ def aggregate_forward_evidence(
 
     c_files = _verify_bundle_files(c, data_root=artifact_root.parent)
     d_files = _verify_bundle_files(d, data_root=artifact_root.parent)
+
+    for artifact, label, files in ((c, "C", c_files), (d, "D", d_files)):
+        bundled_summary = _read_canonical_summary(files["summary"])
+        if _canonical_json(bundled_summary) != _canonical_json(artifact["summary"]):
+            raise ForwardEvidenceError(
+                f"Session {label} bundled summary does not match immutable session summary"
+            )
+        bundled_signal_count = _read_signal_count(files["signals"])
+        if bundled_signal_count != int(artifact["signal_count"]):
+            raise ForwardEvidenceError(
+                f"Session {label} signal count does not match its immutable signal log"
+            )
+
     c_rows = _read_trades(c_files["trades"])
     d_rows = _read_trades(d_files["trades"])
     rows = c_rows + d_rows
