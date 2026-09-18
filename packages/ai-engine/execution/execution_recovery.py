@@ -153,7 +153,8 @@ class ExecutionRecovery:
             # Step 4: Query exchange orders
             logger.info("Step 4/6: Querying exchange open orders...")
             try:
-                open_orders = await self._exchange.get_open_orders()
+                primary_exchange = self._exchanges.get("binance") or next(iter(self._exchanges.values()))
+                open_orders = await primary_exchange.get_open_orders()
                 logger.info("  Exchange has {} open orders", len(open_orders))
 
                 for eo in open_orders:
@@ -166,7 +167,7 @@ class ExecutionRecovery:
                         logger.warning("  Cancelling orphaned order: {} {} {}",
                                       eo.symbol, eo.side, eo.order_type)
                         try:
-                            await self._exchange.cancel_order(
+                            await primary_exchange.cancel_order(
                                 symbol=eo.symbol,
                                 order_id=eo.order_id,
                             )
@@ -189,7 +190,7 @@ class ExecutionRecovery:
             # Step 6: Get account balance
             logger.info("Step 6/6: Querying account balance...")
             try:
-                balance = await self._exchange.get_balance()
+                balance = await primary_exchange.get_balance()
                 result.account_balance = balance.get("balance", 0)
                 logger.info("  Account balance: ${:.2f}", result.account_balance)
             except Exception as exc:
