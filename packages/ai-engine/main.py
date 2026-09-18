@@ -316,6 +316,14 @@ def main() -> None:
         t.start()
         _run_dashboard()
     elif args.mode == "live":
+        from validation.live_gate import LiveCertificationError, verify_live_certification
+
+        try:
+            verify_live_certification()
+        except LiveCertificationError as exc:
+            logger.error("LIVE EXECUTION BLOCKED: {}", exc)
+            raise SystemExit(2)
+
         _run_live()
 
 
