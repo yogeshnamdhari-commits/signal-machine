@@ -190,6 +190,7 @@ class ForwardSessionGuard:
         summary: Dict[str, Any],
         *,
         artifact_root: Path,
+        evidence_bundle: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         session = str(provenance.get("session", "")).upper()
         if session not in ALLOWED_SESSIONS:
@@ -207,6 +208,9 @@ class ForwardSessionGuard:
             raise ForwardSessionError("Forward session parameter hash changed before finalization")
 
         completed = _now()
+        if evidence_bundle is not None and not isinstance(evidence_bundle, dict):
+            raise ForwardSessionError("Forward evidence bundle metadata must be a dictionary")
+
         final = dict(artifact)
         final.update(
             {
@@ -220,6 +224,7 @@ class ForwardSessionGuard:
                 # by subsequent sessions, so the hash alone would otherwise be
                 # impossible to re-verify after Session D starts.
                 "summary": summary,
+                "evidence_bundle": dict(evidence_bundle or {}),
                 "summary_sha256": hashlib.sha256(
                     _canonical_json(summary).encode("utf-8")
                 ).hexdigest(),
