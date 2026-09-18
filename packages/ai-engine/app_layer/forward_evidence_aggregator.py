@@ -162,15 +162,59 @@ def _verify_bundle_files(
     return resolved
 
 
+REQUIRED_SIGNAL_FIELDS = {
+    "id",
+    "timestamp",
+    "symbol",
+    "side",
+    "entry_price",
+    "stop_loss",
+    "take_profit",
+    "status",
+}
+
+
 def _read_signal_count(path: Path) -> int:
     try:
         with path.open("r", newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle)
-            if not reader.fieldnames:
-                raise ForwardEvidenceError(f"Signal log {path} has no header")
-            return sum(1 for _ in reader)
+            fields = {str(name).strip() for name in (reader.fieldnames or []) if name}
+            missing = REQUIRED_SIGNAL_FIELDS - fields
+            if missing:
+                raise ForwardEvidenceError(
+                    f"Signal log {path} is missing fields: {', '.join(sorted(missing))}"
+                )
+            rows = list(reader)
     except (OSError, csv.Error, UnicodeError) as exc:
         raise ForwardEvidenceError(f"Unable to read signal log {path}: {exc}") from exc
+
+    ids = []
+    for row in rows:
+        signal_id = str(row.get("id", "")).strip()
+        symbol = str(row.get("symbol", "")).strip()
+        side = str(row.get("side", "")).strip().upper()
+        if not signal_id or not symbol or side not in {"LONG", "SHORT"}:
+            raise ForwardEvidenceError(f"Signal log {path} contains an invalid signal identity")
+        if str(row.get("status", "")).strip().lower() not in {
+            "generated", "filled", "expired", "rejected"
+        }:
+            raise ForwardEvidenceError(f"Signal log {path} contains an invalid signal status")
+        for field in ("timestamp", "entry_price", "stop_loss", "take_profit"):
+            try:
+                value = float(row.get(field, ""))
+            except (TypeError, ValueError) as exc:
+                raise ForwardEvidenceError(
+                    f"Signal log {path} contains invalid {field}"
+                ) from exc
+            if not (value == value and abs(value) != float("inf")):
+                raise ForwardEvidenceError(
+                    f"Signal log {path} contains non-finite {field}"
+                )
+        ids.append(signal_id)
+
+    if len(set(ids)) != len(ids):
+        raise ForwardEvidenceError(f"Signal log {path} contains duplicate signal ids")
+    return len(rows)
 
 
 def _read_canonical_summary(path: Path) -> Dict[str, Any]:
