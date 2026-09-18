@@ -115,7 +115,8 @@ class ExecutionEngine:
         self._start_time = 0.0
         self._signal_count = 0
         self._trade_count = 0
-        self._equity = config.risk.max_position_pct * 500  # Default starting equity
+        self._equity = 0.0
+        self._equity_source = "unverified"
 
         # Connect callbacks
         self.order_manager.set_callbacks(
@@ -156,6 +157,9 @@ class ExecutionEngine:
         recovery_result = await self.recovery.recover()
         if recovery_result.account_balance > 0:
             self._equity = recovery_result.account_balance
+            self._equity_source = "exchange_recovery"
+        else:
+            self._equity_source = "unverified"
 
         # Start subsystems
         await self.reconciler.start()
@@ -250,11 +254,38 @@ class ExecutionEngine:
         # before any live order path can proceed. This protects callers that start
         # ExecutionEngine directly instead of going through `main --mode live`.
         try:
-            require_live_certification()
+            certification = require_live_certification()
         except LiveCertificationError as exc:
             logger.error("🚫 LIVE_EXECUTION_BLOCKED: {}", exc)
             if getattr(self, "audit", None) is not None:
                 await self.audit.signal_rejected(signal_id, f"live_certification_gate: {exc}")
+            return None
+
+        validated_performance = certification.get("validated_performance") or {}
+        try:
+            validated_win_rate = float(validated_performance["win_rate"])
+            validated_profit_factor = float(validated_performance["profit_factor"])
+            validated_expectancy = float(validated_performance["expectancy"])
+        except (KeyError, TypeError, ValueError):
+            logger.error("🚫 LIVE_EXECUTION_BLOCKED: certification lacks validated performance metrics")
+            await self.audit.signal_rejected(signal_id, "validated_performance_missing_or_invalid")
+            return None
+
+        import math as _math
+        if (
+            not all(_math.isfinite(v) for v in (
+                validated_win_rate, validated_profit_factor, validated_expectancy
+            ))
+            or not 0.0 <= validated_win_rate <= 1.0
+            or validated_profit_factor <= 0.0
+        ):
+            logger.error("🚫 LIVE_EXECUTION_BLOCKED: certification performance metrics are invalid")
+            await self.audit.signal_rejected(signal_id, "validated_performance_missing_or_invalid")
+            return None
+
+        if self._equity_source != "exchange_recovery" or self._equity <= 0:
+            logger.error("🚫 LIVE_EXECUTION_BLOCKED: no verified exchange account equity")
+            await self.audit.signal_rejected(signal_id, "account_equity_unverified")
             return None
 
         # ═══════════════════════════════════════════════════════════════
@@ -301,20 +332,31 @@ class ExecutionEngine:
             await self.audit.signal_rejected(signal_id, "duplicate_position")
             return None
 
-        # 1. Capital Allocation Decision
+        # 1. Capital Allocation Decision — only verified runtime inputs.
+        try:
+            signal_volatility = float(signal["volatility"])
+        except (KeyError, TypeError, ValueError):
+            signal_volatility = 0.0
+
+        if not _math.isfinite(signal_volatility) or signal_volatility <= 0:
+            logger.error("🚫 LIVE_EXECUTION_BLOCKED: signal volatility is missing/unverified")
+            await self.audit.signal_rejected(signal_id, "signal_volatility_missing_or_invalid")
+            return None
+
         alloc_req = AllocationRequest(
             symbol=symbol,
-            exchange="binance", # Initial context, router will refine
-            signal_score=confidence * 100, # Assuming confidence is 0-1
+            exchange="binance",
+            signal_score=confidence * 100,
             confidence=confidence,
-            volatility=0.02, # To be supplied by scanner/signal
+            volatility=signal_volatility,
             market_regime=regime or "range",
-            portfolio_equity=self._equity, # Current total equity
-            win_rate=0.55, # From historical database
-            profit_factor=1.5,
-            is_arbitrage=False # This is a regular signal, not arbitrage
+            portfolio_equity=self._equity,
+            win_rate=validated_win_rate,
+            profit_factor=validated_profit_factor,
+            expectancy=validated_expectancy,
+            is_arbitrage=False,
         )
-        
+
         allocation = await self.allocator.allocate(alloc_req)
         
         if allocation.capital_usd <= 0:
