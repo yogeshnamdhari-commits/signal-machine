@@ -123,6 +123,8 @@ def _verify_bundle_files(
         expected_bytes = meta.get("bytes")
         if not isinstance(rel, str) or not isinstance(expected_sha, str):
             raise ForwardEvidenceError(f"Evidence bundle entry {name!r} lacks path/hash")
+        if not isinstance(expected_bytes, int) or expected_bytes < 0:
+            raise ForwardEvidenceError(f"Evidence bundle entry {name!r} lacks a valid byte count")
         candidate = (data_root / rel).resolve()
         data_root_resolved = data_root.resolve()
         try:
@@ -143,7 +145,7 @@ def _verify_bundle_files(
         payload = path.read_bytes()
         if _sha256_bytes(payload) != expected_sha:
             raise ForwardEvidenceError(f"Evidence file hash mismatch: {path}")
-        if isinstance(expected_bytes, int) and expected_bytes != len(payload):
+        if expected_bytes != len(payload):
             raise ForwardEvidenceError(f"Evidence file size mismatch: {path}")
         resolved[name] = path
 
@@ -229,9 +231,13 @@ def _validate_trade_economics(rows: Iterable[Dict[str, Any]]) -> None:
         slippage = _to_float(row, "total_slippage", path)
         quantity = _to_float(row, "quantity", path)
 
-        if fees < 0 or quantity < 0 or slippage < 0:
-            raise ForwardEvidenceError("Trade economic inputs contain a negative cost/quantity")
-        expected_net = gross - fees + funding
+        if fees < 0 or quantity <= 0 or slippage < 0:
+            raise ForwardEvidenceError("Trade economic inputs contain an invalid cost/quantity")
+        if not str(row.get("id", "")).strip() or not str(row.get("signal_id", "")).strip():
+            raise ForwardEvidenceError("Trade log contains an empty trade or signal id")
+        if str(row.get("side", "")).strip().upper() not in {"LONG", "SHORT"}:
+            raise ForwardEvidenceError("Trade log contains an invalid side")
+        expected_net = round(gross - fees + funding, 2)
         if abs(net - expected_net) > ECONOMIC_EPSILON:
             raise ForwardEvidenceError(
                 "Trade economic decomposition failed: net PnL does not reconcile"
@@ -280,6 +286,13 @@ def aggregate_forward_evidence(
 
     c_files = _verify_bundle_files(c, data_root=artifact_root.parent)
     d_files = _verify_bundle_files(d, data_root=artifact_root.parent)
+
+    c_root = (artifact_root.parent / c["evidence_bundle"]["root"]).resolve()
+    d_root = (artifact_root.parent / d["evidence_bundle"]["root"]).resolve()
+    if c_root == d_root:
+        raise ForwardEvidenceError("Session C and D must use distinct evidence bundle roots")
+    if set(c_files.values()).intersection(d_files.values()):
+        raise ForwardEvidenceError("Session C and D evidence bundles must not share files")
 
     for artifact, label, files in ((c, "C", c_files), (d, "D", d_files)):
         bundled_summary = _read_canonical_summary(files["summary"])
