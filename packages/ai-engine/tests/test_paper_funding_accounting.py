@@ -126,3 +126,47 @@ def test_due_funding_uses_recorded_settlement_schedule_once():
     assert trade.funding_events == 1
     assert trade.last_funding_time == settlement_ms
     assert trade.funding_pnl == -6.5
+
+
+def test_rolling_next_funding_time_does_not_drop_prior_due_interval():
+    import asyncio
+    from unittest.mock import patch
+    from backtesting.paper_trading_validator import PaperSignal, PaperTradingEngine
+
+    engine = PaperTradingEngine()
+    engine.active_symbols.add("BTCUSDT")
+    sig = PaperSignal(
+        id="SIG-FUND-004", timestamp=1700000000.0, symbol="BTCUSDT",
+        side="LONG", entry_price=65000, stop_loss=64000, take_profit=67000,
+        confidence=0.8, institutional_score=80, market_regime="trending_up",
+    )
+    trade = engine.position_mgr.open_position(sig, 65000, 1.0, 1)
+
+    first_settlement = 1_800_000_000_000
+    second_settlement = first_settlement + 28_800_000
+
+    first_event = {
+        "symbol": "BTCUSDT", "mark_price": 65000.0, "index_price": 64990.0,
+        "funding_rate": 0.0001, "next_funding_time": first_settlement,
+        "timestamp": first_settlement - 1_000, "source": "binance",
+        "feed": "markPrice", "data_quality": "REAL",
+    }
+    second_event = {
+        **first_event,
+        "funding_rate": 0.0002,
+        "next_funding_time": second_settlement,
+        "timestamp": second_settlement - 1_000,
+    }
+
+    asyncio.run(engine._on_market_data("funding", first_event))
+    asyncio.run(engine._on_market_data("funding", second_event))
+
+    with patch(
+        "backtesting.paper_trading_validator.time.time",
+        return_value=(first_settlement / 1000.0) + 1,
+    ):
+        engine._settle_due_funding()
+
+    assert trade.funding_events == 1
+    assert trade.last_funding_time == first_settlement
+    assert trade.funding_pnl == -6.5
