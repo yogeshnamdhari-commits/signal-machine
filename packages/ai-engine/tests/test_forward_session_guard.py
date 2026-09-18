@@ -35,6 +35,33 @@ def _fake_freeze(monkeypatch, commit="commit-1", param_hash="param-1"):
     )
 
 
+def _materialize_bundle(tmp_path, session="C"):
+    bundle_root = tmp_path / "forward_sessions" / f"session_{session}_evidence"
+    bundle_root.mkdir(parents=True)
+    payloads = {
+        "trades": b"id,signal_id,symbol\nT-1,S-1,BTCUSDT\n",
+        "signals": b"id,symbol\nS-1,BTCUSDT\n",
+        "summary": b"{\"total_signals\":19,\"total_trades\":7}",
+    }
+    artifacts = {}
+    for name, payload in payloads.items():
+        filename = {
+            "trades": "paper_trading_trades.csv",
+            "signals": "paper_trading_signals.csv",
+            "summary": "summary.canonical.json",
+        }[name]
+        path = bundle_root / filename
+        path.write_bytes(payload)
+        artifacts[name] = {
+            "path": str(path.relative_to(tmp_path)),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "bytes": len(payload),
+        }
+    bundle = _bundle(session)
+    bundle["artifacts"] = artifacts
+    return bundle
+
+
 def test_forward_session_c_requires_production_and_freeze(monkeypatch, tmp_path):
     _fake_freeze(monkeypatch)
     with pytest.raises(guard.ForwardSessionError):
@@ -77,9 +104,8 @@ def test_forward_session_d_requires_completed_c(monkeypatch, tmp_path):
         "code_commit_sha": "commit-1",
         "parameter_hash": "param-1",
         "summary": {"total_trades": 7, "total_signals": 19},
-        "evidence_bundle": _bundle("C"),
+        "evidence_bundle": _materialize_bundle(tmp_path, "C"),
         "summary_sha256": "",
-        "evidence_bundle": _bundle("C"),
         "provenance_sha256": "",
     }
     c_base["summary_sha256"] = hashlib.sha256(
@@ -245,4 +271,60 @@ def test_session_d_rejects_completed_c_without_evidence_bundle(monkeypatch, tmp_
     (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
 
     with pytest.raises(guard.ForwardSessionError, match="evidence bundle metadata is missing"):
+        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=tmp_path)
+
+
+def test_session_d_rejects_tampered_completed_c_bundle_file(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    bundle = _materialize_bundle(tmp_path, "C")
+    c = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "summary": {"total_trades": 7, "total_signals": 19},
+        "evidence_bundle": bundle,
+        "summary_sha256": hashlib.sha256(
+            json.dumps(
+                {"total_trades": 7, "total_signals": 19},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "",
+    }
+    c["provenance_sha256"] = hashlib.sha256(
+        json.dumps({k: v for k, v in c.items() if k != "provenance_sha256"}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+    (tmp_path / "forward_sessions" / "session_C_evidence" / "paper_trading_trades.csv").write_bytes(b"tampered")
+
+    with pytest.raises(guard.ForwardSessionError, match="hash mismatch"):
+        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=tmp_path)
+
+
+def test_session_d_rejects_bundle_path_escape(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    bundle = _materialize_bundle(tmp_path, "C")
+    bundle["artifacts"]["trades"]["path"] = "../outside.csv"
+    c = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "summary": {"total_trades": 7, "total_signals": 19},
+        "evidence_bundle": bundle,
+        "summary_sha256": hashlib.sha256(
+            json.dumps({"total_trades": 7, "total_signals": 19}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "",
+    }
+    c["provenance_sha256"] = hashlib.sha256(
+        json.dumps({k: v for k, v in c.items() if k != "provenance_sha256"}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+
+    with pytest.raises(guard.ForwardSessionError, match="escapes its declared bundle root"):
         guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=tmp_path)
