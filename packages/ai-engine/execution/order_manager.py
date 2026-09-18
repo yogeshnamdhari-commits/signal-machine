@@ -45,6 +45,7 @@ class OrderState(str, Enum):
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
     FAILED = "FAILED"                 # Submission failed
+    UNKNOWN = "UNKNOWN"               # Submission outcome cannot yet be established
 
 
 class OrderPurpose(str, Enum):
@@ -326,6 +327,54 @@ class OrderManager:
 
         except ExchangeError as exc:
             err_msg = str(exc)
+            # A timeout/5xx after POST can leave the exchange execution status unknown.
+            # Reconcile by clientOrderId before declaring the submission failed.
+            if order.state == OrderState.SUBMITTED.value and not order.exchange_order_id:
+                try:
+                    reconciled = await self._exchange.get_order(
+                        symbol=order.symbol,
+                        client_order_id=order.client_order_id,
+                    )
+                    order.exchange_order_id = reconciled.order_id
+                    self._by_exchange[reconciled.order_id] = order.order_id
+                    order.executed_qty = reconciled.executed_qty
+                    order.avg_price = reconciled.avg_price
+                    order.cum_quote = reconciled.cum_quote
+                    if reconciled.status == "FILLED":
+                        order.transition(OrderState.FILLED.value, "Reconciled after ambiguous submission")
+                        if self._on_fill_callback:
+                            await self._on_fill_callback(order)
+                        return
+                    if reconciled.status == "PARTIALLY_FILLED":
+                        order.transition(OrderState.PARTIALLY_FILLED.value, "Reconciled partial fill after ambiguous submission")
+                        return
+                    if reconciled.status == "NEW":
+                        order.transition(OrderState.ACCEPTED.value, "Reconciled accepted order after ambiguous submission")
+                        return
+                    if reconciled.status == "CANCELED":
+                        order.transition(OrderState.CANCELLED.value, "Reconciled cancellation after ambiguous submission")
+                        return
+                    if reconciled.status == "REJECTED":
+                        order.rejection_reason = "Reconciled rejection after ambiguous submission"
+                        order.transition(OrderState.REJECTED.value, order.rejection_reason)
+                        if self._on_reject_callback:
+                            await self._on_reject_callback(order)
+                        return
+                    if reconciled.status == "EXPIRED":
+                        order.transition(OrderState.EXPIRED.value, "Reconciled expiry after ambiguous submission")
+                        return
+                except ExchangeError as reconcile_exc:
+                    lower = str(reconcile_exc).lower()
+                    if "order does not exist" not in lower and "-2013" not in lower:
+                        order.failure_reason = f"Submission outcome unknown; reconciliation unavailable: {reconcile_exc}"
+                        order.transition(OrderState.UNKNOWN.value, order.failure_reason)
+                        logger.critical("Order outcome UNKNOWN after ambiguous submission: {} — {}", order.order_id[:8], reconcile_exc)
+                        return
+                except Exception as reconcile_exc:
+                    order.failure_reason = f"Submission outcome unknown; reconciliation failed: {reconcile_exc}"
+                    order.transition(OrderState.UNKNOWN.value, order.failure_reason)
+                    logger.critical("Order outcome UNKNOWN after ambiguous submission: {} — {}", order.order_id[:8], reconcile_exc)
+                    return
             if "-2021" in err_msg or "Order would immediately trigger" in err_msg:
                 order.rejection_reason = err_msg
                 order.transition(OrderState.REJECTED.value, err_msg)
@@ -344,16 +393,24 @@ class OrderManager:
     # ── Order Status Sync ────────────────────────────────────────
 
     async def sync_order(self, order_id: str) -> Optional[OrderRecord]:
-        """Sync order status from exchange."""
+        """Sync order status from exchange, including UNKNOWN submissions."""
         order = self._orders.get(order_id)
-        if not order or not order.exchange_order_id:
+        if not order:
             return order
 
         try:
-            exchange_order = await self._exchange.get_order(
-                symbol=order.symbol,
-                order_id=order.exchange_order_id,
-            )
+            if order.exchange_order_id:
+                exchange_order = await self._exchange.get_order(
+                    symbol=order.symbol,
+                    order_id=order.exchange_order_id,
+                )
+            elif order.state == OrderState.UNKNOWN.value:
+                exchange_order = await self._exchange.get_order(
+                    symbol=order.symbol,
+                    client_order_id=order.client_order_id,
+                )
+            else:
+                return order
 
             old_state = order.state
             status = exchange_order.status
