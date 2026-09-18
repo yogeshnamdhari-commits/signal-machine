@@ -83,6 +83,11 @@ def _evidence_label_present(value: object) -> bool:
     return isinstance(value, str) and value.strip().lower() not in _INVALID_EVIDENCE_LABELS
 
 
+def _finite_number(value: object) -> bool:
+    """Require a real finite numeric value; booleans are not statistics."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(float(value))
+
+
 def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
     reasons = []
     if not isinstance(e.completed_trades, int) or isinstance(e.completed_trades, bool) or e.completed_trades < 0:
@@ -119,18 +124,20 @@ def evaluate_research_evidence(e: ResearchEvidence) -> ResearchDecision:
         if regime_total != e.completed_trades:
             reasons.append("regime_trade_count_mismatch")
 
-    if e.profit_factor is None or not isfinite(e.profit_factor):
+    if not _finite_number(e.profit_factor):
         reasons.append("missing_profit_factor")
     elif e.profit_factor < MIN_PROFIT_FACTOR:
         reasons.append("profit_factor_below_minimum")
 
-    if e.expectancy is None or not isfinite(e.expectancy):
+    if not _finite_number(e.expectancy):
         reasons.append("missing_expectancy")
     elif e.expectancy <= MIN_EXPECTANCY:
         reasons.append("expectancy_not_positive")
 
-    if e.max_drawdown_pct is None or not isfinite(e.max_drawdown_pct):
+    if not _finite_number(e.max_drawdown_pct):
         reasons.append("missing_max_drawdown")
+    elif e.max_drawdown_pct < 0:
+        reasons.append("invalid_max_drawdown")
     elif e.max_drawdown_pct >= MAX_DRAWDOWN_PCT:
         reasons.append("max_drawdown_above_limit")
 
