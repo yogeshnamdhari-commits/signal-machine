@@ -24,6 +24,11 @@ def main() -> None:
                         help="Use Binance testnet data (default)")
     parser.add_argument("--production", action="store_true",
                         help="Use Binance production data (live market)")
+    parser.add_argument(
+        "--forward-session",
+        choices=("C", "D"),
+        help="Controlled forward-evidence session; requires --production and a clean parameter freeze",
+    )
     parser.add_argument("--test", action="store_true",
                         help="Run validation tests only")
     parser.add_argument("--quick", action="store_true",
@@ -33,12 +38,17 @@ def main() -> None:
     ai_root = Path(__file__).parent
 
     if args.test:
+        if args.forward_session:
+            raise SystemExit("--forward-session cannot be combined with --test")
         print("Running Phase 3 validation tests...")
         result = subprocess.run(
             [sys.executable, str(ai_root / "validate_paper_trading.py")],
             cwd=str(ai_root),
         )
         sys.exit(result.returncode)
+
+    if args.forward_session and not args.production:
+        raise SystemExit("--forward-session requires --production so forward evidence uses live market data")
 
     # Set environment
     if args.production:
@@ -60,7 +70,11 @@ def main() -> None:
 
     # Run the paper trading engine
     result = subprocess.run(
-        [sys.executable, str(ai_root / "backtesting" / "paper_trading_validator.py")],
+        [
+            sys.executable,
+            str(ai_root / "backtesting" / "paper_trading_validator.py"),
+            *([ "--forward-session", args.forward_session ] if args.forward_session else []),
+        ],
         cwd=str(ai_root),
         env={**os.environ, "BINANCE_TESTNET": "false" if args.production else "true"},
     )

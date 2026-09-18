@@ -73,6 +73,7 @@ from scanner.ai_scorer import AIConfidenceScorer
 from execution.risk_engine import RiskEngine
 from scanner.position_sizing import PositionSizingEngine
 from scanner.entry_confirmation import EntryConfirmationEngine
+from app_layer.forward_session_guard import ForwardSessionGuard
 
 # ── Constants ────────────────────────────────────────────────────
 STARTING_EQUITY = 10_000.0
@@ -379,6 +380,7 @@ class PaperTradingSummary:
     criteria: Dict = field(default_factory=dict)
     overall_result: str = "PENDING"
     recommendation: str = "NOT READY"
+    forward_provenance: Dict = field(default_factory=dict)
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -740,7 +742,7 @@ class PaperTradingEngine:
     NO REAL ORDERS. NO REAL CAPITAL.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, forward_provenance: Optional[Dict[str, Any]] = None) -> None:
         # ── Core config ──────────────────────────────────────────
         self.starting_equity = STARTING_EQUITY
         self.current_equity = STARTING_EQUITY
@@ -801,6 +803,7 @@ class PaperTradingEngine:
         self._daily_signal_count: int = 0
         self._daily_trade_opened: int = 0
         self._daily_trade_closed: int = 0
+        self._forward_provenance: Dict[str, Any] = dict(forward_provenance or {})
 
         # ── Signal cooldowns ─────────────────────────────────────
         self._signal_cooldowns: Dict[str, float] = {}
@@ -1576,6 +1579,17 @@ class PaperTradingEngine:
         self._export_weekly_csv()
         self._export_summary_json(summary)
 
+        if self._forward_provenance.get("session"):
+            try:
+                ForwardSessionGuard.finalize(
+                    self._forward_provenance,
+                    summary.to_dict(),
+                    artifact_root=DATA_DIR / "forward_sessions",
+                )
+            except Exception as exc:
+                logger.error("Forward session finalization failed: {}", exc)
+                raise
+
         # Generate charts
         self._generate_charts()
 
@@ -1669,6 +1683,7 @@ class PaperTradingEngine:
             criteria=criteria,
             overall_result="PASS" if all_pass else "FAIL",
             recommendation=recommendation,
+            forward_provenance=dict(self._forward_provenance),
         )
 
     @staticmethod
@@ -2101,9 +2116,17 @@ class PaperTradingEngine:
 # STANDALONE RUNNER
 # ══════════════════════════════════════════════════════════════════
 
-async def run_paper_trading_validation() -> None:
+async def run_paper_trading_validation(forward_session: Optional[str] = None) -> None:
     """Run the paper trading validation engine."""
-    engine = PaperTradingEngine()
+    forward_provenance: Optional[Dict[str, Any]] = None
+    if forward_session:
+        forward_provenance = ForwardSessionGuard.prepare(
+            forward_session,
+            production_data=os.environ.get("BINANCE_TESTNET", "true").lower() != "true",
+            artifact_root=DATA_DIR / "forward_sessions",
+        )
+
+    engine = PaperTradingEngine(forward_provenance=forward_provenance)
 
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -2143,6 +2166,11 @@ def main() -> None:
                         help="Use Binance testnet (default: True)")
     parser.add_argument("--production", action="store_true",
                         help="Use Binance production data")
+    parser.add_argument(
+        "--forward-session",
+        choices=("C", "D"),
+        help="Collect a controlled forward-evidence session (requires production data and a clean parameter freeze)",
+    )
     args = parser.parse_args()
 
     if args.production:
@@ -2175,9 +2203,12 @@ def main() -> None:
     logger.info("PAPER_TRADING = TRUE")
     logger.info("EXECUTION_MODE = SIMULATION")
     logger.info("ORDER_MODE = NO_REAL_ORDERS")
+    if args.forward_session:
+        logger.info("FORWARD_SESSION = {}", args.forward_session)
+        logger.info("FORWARD_EVIDENCE = production market data + simulated execution")
     logger.info("=" * 60)
 
-    asyncio.run(run_paper_trading_validation())
+    asyncio.run(run_paper_trading_validation(args.forward_session))
 
 
 if __name__ == "__main__":
