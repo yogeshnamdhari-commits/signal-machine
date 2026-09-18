@@ -27,6 +27,7 @@ import signal
 import sys
 import time
 import traceback
+import tempfile
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1549,6 +1550,106 @@ class PaperTradingEngine:
             risk_per_unit = abs(pos.entry_price - pos.stop_loss)
             total_risk += risk_per_unit * pos.quantity * pos.leverage
         return total_risk
+
+    def _snapshot_forward_evidence_bundle(self, summary: PaperTradingSummary) -> Dict[str, Any]:
+        """Create or verify an immutable per-session evidence snapshot.
+
+        Session C/D evidence must survive later overwrites of the shared report
+        files. The bundle is content-addressed by SHA-256 and is never replaced
+        once created. A retry is allowed only when the source exports are
+        byte-for-byte identical to the existing immutable snapshot.
+        """
+        session = str(self._forward_provenance.get("session", "")).upper()
+        if session not in {"C", "D"}:
+            raise ForwardSessionError("Cannot snapshot evidence without a valid C/D session")
+
+        data_root = DATA_DIR.resolve()
+        bundle_root = (DATA_DIR / "forward_sessions" / f"session_{session}_evidence").resolve()
+        try:
+            bundle_root.relative_to(data_root)
+        except ValueError as exc:
+            raise ForwardSessionError("Forward evidence bundle path escapes the data root") from exc
+
+        summary_payload = summary.to_dict() if hasattr(summary, "to_dict") else dict(summary)
+        summary_bytes = json.dumps(
+            summary_payload, sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
+
+        source_files = {
+            "trades": TRADES_CSV,
+            "signals": SIGNALS_CSV,
+            "summary": None,
+        }
+        payloads: Dict[str, bytes] = {}
+        for name, path in source_files.items():
+            if path is None:
+                payloads[name] = summary_bytes
+                continue
+            source = Path(path)
+            if not source.is_file():
+                raise ForwardSessionError(f"Forward evidence source is missing: {source}")
+            payloads[name] = source.read_bytes()
+
+        def metadata_for(root: Path) -> Dict[str, Any]:
+            artifacts: Dict[str, Any] = {}
+            for name, payload in payloads.items():
+                filename = {
+                    "trades": "paper_trading_trades.csv",
+                    "signals": "paper_trading_signals.csv",
+                    "summary": "summary.canonical.json",
+                }[name]
+                path = root / filename
+                artifacts[name] = {
+                    "path": str(path.relative_to(data_root)),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "bytes": len(payload),
+                }
+            return {
+                "schema_version": 1,
+                "session": session,
+                "root": str(root.relative_to(data_root)),
+                "artifacts": artifacts,
+            }
+
+        bundle = metadata_for(bundle_root)
+
+        if bundle_root.exists():
+            if not bundle_root.is_dir() or bundle_root.is_symlink():
+                raise ForwardSessionError("Forward evidence bundle root already exists but is not a safe directory")
+            for name, metadata in bundle["artifacts"].items():
+                path = data_root / metadata["path"]
+                if not path.is_file():
+                    raise ForwardSessionError(f"Existing forward evidence artifact is missing: {path}")
+                existing = path.read_bytes()
+                if hashlib.sha256(existing).hexdigest() != metadata["sha256"] or len(existing) != metadata["bytes"]:
+                    raise ForwardSessionError(
+                        f"Existing immutable forward evidence differs for {name}; refusing overwrite"
+                    )
+            return bundle
+
+        bundle_root.parent.mkdir(parents=True, exist_ok=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix=f".{bundle_root.name}.", dir=bundle_root.parent))
+        try:
+            for name, payload in payloads.items():
+                filename = {
+                    "trades": "paper_trading_trades.csv",
+                    "signals": "paper_trading_signals.csv",
+                    "summary": "summary.canonical.json",
+                }[name]
+                target = temp_dir / filename
+                with target.open("wb") as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            os.replace(temp_dir, bundle_root)
+            return bundle
+        except FileExistsError as exc:
+            raise ForwardSessionError("Forward evidence bundle appeared concurrently; refusing overwrite") from exc
+        finally:
+            if temp_dir.exists():
+                for child in temp_dir.iterdir():
+                    child.unlink(missing_ok=True)
+                temp_dir.rmdir()
 
     # ── Final output generation ──────────────────────────────────
 
