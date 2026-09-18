@@ -101,5 +101,8 @@ def test_finalize_records_observation_counts_and_summary_hash(monkeypatch, tmp_p
     assert final["closed_trade_count"] == 7
     assert final["signal_count"] == 19
     assert len(final["summary_sha256"]) == 64
+    assert final["summary"] == summary
     saved = json.loads((tmp_path / "session_C.json").read_text(encoding="utf-8"))
     assert saved["provenance_sha256"] == final["provenance_sha256"]
+    assert saved["summary"] == summary
+    assert saved["summary_sha256"] == final["summary_sha256"]
