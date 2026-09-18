@@ -324,3 +324,28 @@ def test_aggregator_rejects_symlinked_bundle_root(tmp_path):
 
     with pytest.raises(ForwardEvidenceError, match="must not be a symlink"):
         aggregate_forward_evidence(artifact_root=root)
+
+
+def test_paper_engine_rejects_symlinked_bundle_root(tmp_path, monkeypatch):
+    data_root = tmp_path / "reports"
+    data_root.mkdir()
+    trades = data_root / "paper_trading_trades.csv"
+    signals = data_root / "paper_trading_signals.csv"
+    trades.write_bytes(b"id,signal_id,symbol\nT-1,S-1,BTCUSDT\n")
+    signals.write_bytes(b"id,symbol\nS-1,BTCUSDT\n")
+
+    monkeypatch.setattr(ptv, "DATA_DIR", data_root)
+    monkeypatch.setattr(ptv, "TRADES_CSV", trades)
+    monkeypatch.setattr(ptv, "SIGNALS_CSV", signals)
+
+    bundle_parent = data_root / "forward_sessions"
+    bundle_parent.mkdir()
+    real_root = bundle_parent / "session_C_evidence_real"
+    real_root.mkdir()
+    (bundle_parent / "session_C_evidence").symlink_to(real_root, target_is_directory=True)
+
+    engine = ptv.PaperTradingEngine.__new__(ptv.PaperTradingEngine)
+    engine._forward_provenance = {"session": "C"}
+
+    with pytest.raises(ptv.ForwardSessionError, match="bundle root must not be a symlink"):
+        engine._snapshot_forward_evidence_bundle({"total_trades": 1, "total_signals": 1})
