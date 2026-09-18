@@ -4,6 +4,7 @@ import pytest
 
 from config import config
 from config.schema import config_fingerprint
+import validation.live_gate as live_gate
 from validation.live_gate import LiveCertificationError, verify_live_certification
 
 
@@ -22,17 +23,39 @@ def _write_artifact(tmp_path, **overrides):
     return path
 
 
+def test_live_certification_accepts_only_actual_source_commit(tmp_path, monkeypatch):
+    path = _write_artifact(tmp_path)
+    monkeypatch.setattr(live_gate, "_current_source_commit", lambda: "commit-a")
+    monkeypatch.setenv("GITHUB_SHA", "attacker-controlled-value")
+    monkeypatch.setenv("LIVE_CERT_COMMIT", "attacker-controlled-value")
+
+    artifact = verify_live_certification(path, now_ts=1500.0)
+    assert artifact["commit_sha"] == "commit-a"
+
+
 def test_live_certification_rejects_source_commit_mismatch(tmp_path, monkeypatch):
     path = _write_artifact(tmp_path)
-    monkeypatch.setenv("GITHUB_SHA", "commit-b")
+    monkeypatch.setattr(live_gate, "_current_source_commit", lambda: "commit-b")
 
     with pytest.raises(LiveCertificationError, match="Certification commit does not match"):
         verify_live_certification(path, now_ts=1500.0)
 
 
+def test_live_certification_rejects_unresolvable_source_commit(tmp_path, monkeypatch):
+    path = _write_artifact(tmp_path)
+
+    def _missing_commit():
+        raise LiveCertificationError("Unable to resolve the running source commit")
+
+    monkeypatch.setattr(live_gate, "_current_source_commit", _missing_commit)
+
+    with pytest.raises(LiveCertificationError, match="Unable to resolve the running source commit"):
+        verify_live_certification(path, now_ts=1500.0)
+
+
 def test_live_certification_rejects_embedded_failures(tmp_path, monkeypatch):
     path = _write_artifact(tmp_path, failures=["missing_forward_evidence"])
-    monkeypatch.setenv("GITHUB_SHA", "commit-a")
+    monkeypatch.setattr(live_gate, "_current_source_commit", lambda: "commit-a")
 
     with pytest.raises(LiveCertificationError, match="contains failures"):
         verify_live_certification(path, now_ts=1500.0)
