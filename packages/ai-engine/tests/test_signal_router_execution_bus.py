@@ -1,12 +1,10 @@
 import asyncio
 
-import pytest
 
 from scanner.signal_router import SignalRouter
 
 
-@pytest.mark.asyncio
-async def test_elite_persisted_signal_is_published_to_execution_bus(monkeypatch):
+def test_elite_persisted_signal_is_published_to_execution_bus(monkeypatch):
     import scanner.signal_router as module
 
     saved = []
@@ -23,7 +21,6 @@ async def test_elite_persisted_signal_is_published_to_execution_bus(monkeypatch)
         published.append((topic, sig.copy()))
 
     monkeypatch.setattr(module.repo, "save_signal", save_signal)
-    monkeypatch.setattr(module.SignalRouter.__init__, "__defaults__", None, raising=False)
     router = SignalRouter()
     monkeypatch.setattr(router.telegram, "send_elite_alert", send_alert)
     monkeypatch.setattr(module.bus, "publish", publish)
@@ -40,15 +37,14 @@ async def test_elite_persisted_signal_is_published_to_execution_bus(monkeypatch)
         "take_profit": 67000,
     }
 
-    await router.route_signal(signal)
+    asyncio.run(router.route_signal(signal))
 
     assert saved and saved[0][1] is True
     assert published and published[0][0] == "execution_signal"
     assert published[0][1]["id"] == 123
 
 
-@pytest.mark.asyncio
-async def test_non_elite_signal_is_not_published_to_execution_bus(monkeypatch):
+def test_non_elite_signal_is_not_published_to_execution_bus(monkeypatch):
     import scanner.signal_router as module
 
     published = []
@@ -72,6 +68,6 @@ async def test_non_elite_signal_is_not_published_to_execution_bus(monkeypatch):
         "institutional_score": 90,
     }
 
-    await router.route_signal(signal)
+    asyncio.run(router.route_signal(signal))
 
     assert published == []
