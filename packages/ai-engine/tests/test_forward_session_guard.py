@@ -92,6 +92,8 @@ def test_forward_session_rejects_dirty_freeze(monkeypatch, tmp_path):
 
 def test_forward_session_d_requires_completed_c(monkeypatch, tmp_path):
     _fake_freeze(monkeypatch)
+    artifact_root = tmp_path / "forward_sessions"
+    artifact_root.mkdir()
     with pytest.raises(guard.ForwardSessionError, match="completed Session C"):
         guard.ForwardSessionGuard.prepare(
             "D", production_data=True, artifact_root=tmp_path
