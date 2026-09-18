@@ -89,6 +89,17 @@ def _verify_completed_artifact(artifact: Dict[str, Any], session: str) -> None:
     if artifact.get("summary_sha256") != expected_summary_hash:
         raise ForwardSessionError(f"{session} session summary integrity check failed")
 
+    evidence_bundle = artifact.get("evidence_bundle")
+    if not isinstance(evidence_bundle, dict):
+        raise ForwardSessionError(f"{session} session evidence bundle metadata is missing")
+    if evidence_bundle.get("session") != session:
+        raise ForwardSessionError(f"{session} session evidence bundle identity mismatch")
+    if evidence_bundle.get("schema_version") != 1:
+        raise ForwardSessionError(f"{session} session evidence bundle schema is invalid")
+    artifacts = evidence_bundle.get("artifacts")
+    if not isinstance(artifacts, dict) or not {"trades", "signals", "summary"}.issubset(artifacts):
+        raise ForwardSessionError(f"{session} session evidence bundle is incomplete")
+
     stored_provenance_hash = artifact.get("provenance_sha256")
     if not isinstance(stored_provenance_hash, str) or not stored_provenance_hash:
         raise ForwardSessionError(f"{session} session provenance hash is missing")
@@ -208,8 +219,20 @@ class ForwardSessionGuard:
             raise ForwardSessionError("Forward session parameter hash changed before finalization")
 
         completed = _now()
-        if evidence_bundle is not None and not isinstance(evidence_bundle, dict):
-            raise ForwardSessionError("Forward evidence bundle metadata must be a dictionary")
+        if not isinstance(evidence_bundle, dict) or not evidence_bundle:
+            raise ForwardSessionError(
+                "Forward session finalization requires an immutable evidence bundle"
+            )
+        if evidence_bundle.get("session") != session:
+            raise ForwardSessionError("Forward evidence bundle session identity mismatch")
+        if evidence_bundle.get("schema_version") != 1:
+            raise ForwardSessionError("Forward evidence bundle schema is invalid")
+        bundle_artifacts = evidence_bundle.get("artifacts")
+        if (
+            not isinstance(bundle_artifacts, dict)
+            or not {"trades", "signals", "summary"}.issubset(bundle_artifacts)
+        ):
+            raise ForwardSessionError("Forward evidence bundle is incomplete")
 
         final = dict(artifact)
         final.update(
