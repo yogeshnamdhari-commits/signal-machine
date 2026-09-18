@@ -73,7 +73,7 @@ from scanner.ai_scorer import AIConfidenceScorer
 from execution.risk_engine import RiskEngine
 from scanner.position_sizing import PositionSizingEngine
 from scanner.entry_confirmation import EntryConfirmationEngine
-from app_layer.forward_session_guard import ForwardSessionGuard
+from app_layer.forward_session_guard import ForwardSessionGuard, ForwardSessionError
 
 # ── Constants ────────────────────────────────────────────────────
 STARTING_EQUITY = 10_000.0
@@ -1581,10 +1581,12 @@ class PaperTradingEngine:
 
         if self._forward_provenance.get("session"):
             try:
+                evidence_bundle = self._snapshot_forward_evidence_bundle(summary)
                 ForwardSessionGuard.finalize(
                     self._forward_provenance,
                     summary.to_dict(),
                     artifact_root=DATA_DIR / "forward_sessions",
+                    evidence_bundle=evidence_bundle,
                 )
             except Exception as exc:
                 logger.error("Forward session finalization failed: {}", exc)
