@@ -93,7 +93,8 @@ async def run_live() -> None:
         await signal_engine.start()
         started_signal_engine = True
 
-        await signal_engine.ws.wait_until_stopped()
+        while signal_engine.is_running:
+            await asyncio.sleep(1.0)
     finally:
         if started_signal_engine:
             await signal_engine.stop()
