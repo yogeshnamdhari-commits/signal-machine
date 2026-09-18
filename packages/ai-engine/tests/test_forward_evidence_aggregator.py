@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+import backtesting.paper_trading_validator as ptv
+
 from app_layer.forward_evidence_aggregator import (
     ForwardEvidenceError,
     aggregate_forward_evidence,
@@ -203,3 +205,39 @@ def test_aggregator_rejects_bundle_path_escape(tmp_path):
 
     with pytest.raises(ForwardEvidenceError, match="escapes the data root"):
         aggregate_forward_evidence(artifact_root=root)
+
+
+def test_paper_engine_snapshots_immutable_forward_bundle(tmp_path, monkeypatch):
+    data_root = tmp_path / "reports"
+    data_root.mkdir()
+    trades = data_root / "paper_trading_trades.csv"
+    signals = data_root / "paper_trading_signals.csv"
+    trades.write_bytes(b"id,signal_id,symbol\nT-1,S-1,BTCUSDT\n")
+    signals.write_bytes(b"id,symbol\nS-1,BTCUSDT\n")
+
+    monkeypatch.setattr(ptv, "DATA_DIR", data_root)
+    monkeypatch.setattr(ptv, "TRADES_CSV", trades)
+    monkeypatch.setattr(ptv, "SIGNALS_CSV", signals)
+
+    engine = ptv.PaperTradingEngine.__new__(ptv.PaperTradingEngine)
+    engine._forward_provenance = {"session": "C"}
+    summary = {"total_trades": 1, "total_signals": 1, "net_profit": 12.34}
+
+    bundle = engine._snapshot_forward_evidence_bundle(summary)
+    bundle_root = data_root / "forward_sessions" / "session_C_evidence"
+
+    assert bundle["schema_version"] == 1
+    assert bundle["session"] == "C"
+    assert bundle["root"] == "forward_sessions/session_C_evidence"
+    assert (bundle_root / "paper_trading_trades.csv").read_bytes() == trades.read_bytes()
+    assert (bundle_root / "paper_trading_signals.csv").read_bytes() == signals.read_bytes()
+    assert json.loads((bundle_root / "summary.canonical.json").read_text()) == summary
+
+    # Re-running with identical source exports is idempotent.
+    assert engine._snapshot_forward_evidence_bundle(summary) == bundle
+
+    # Once snapshotted, changing the mutable shared export must never overwrite
+    # the immutable session evidence.
+    trades.write_bytes(b"id,signal_id,symbol\nT-2,S-2,ETHUSDT\n")
+    with pytest.raises(Exception, match="immutable forward evidence differs"):
+        engine._snapshot_forward_evidence_bundle(summary)
