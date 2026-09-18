@@ -22,6 +22,7 @@ REQUIRED_TRADE_FIELDS = {
     "exit_time",
     "gross_pnl",
     "net_pnl",
+    "quantity",
     "fees",
     "funding_pnl",
     "total_slippage",
@@ -250,7 +251,11 @@ def aggregate_forward_evidence(
         "total_gross_pnl": sum(_to_float(row, "gross_pnl", Path("<aggregate>")) for row in rows),
         "total_fees": sum(_to_float(row, "fees", Path("<aggregate>")) for row in rows),
         "total_funding_pnl": sum(_to_float(row, "funding_pnl", Path("<aggregate>")) for row in rows),
-        "total_slippage": sum(_to_float(row, "total_slippage", Path("<aggregate>")) for row in rows),
+        "total_slippage": sum(
+            _to_float(row, "total_slippage", Path("<aggregate>"))
+            * _to_float(row, "quantity", Path("<aggregate>"))
+            for row in rows
+        ),
         "max_drawdown_pct": _max_drawdown(rows),
         "session_c_trade_count": len(c_rows),
         "session_d_trade_count": len(d_rows),
