@@ -181,6 +181,11 @@ class ForwardSessionGuard:
                 "ended_at_epoch": completed.timestamp(),
                 "closed_trade_count": int(summary.get("total_trades", 0)),
                 "signal_count": int(summary.get("total_signals", 0)),
+                # Preserve the exact final summary inside the immutable session
+                # artifact. The shared paper_trading_summary.json is overwritten
+                # by subsequent sessions, so the hash alone would otherwise be
+                # impossible to re-verify after Session D starts.
+                "summary": summary,
                 "summary_sha256": hashlib.sha256(
                     _canonical_json(summary).encode("utf-8")
                 ).hexdigest(),
