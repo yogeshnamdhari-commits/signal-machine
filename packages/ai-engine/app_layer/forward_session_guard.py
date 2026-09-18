@@ -70,7 +70,12 @@ def _load_artifact(root: Path, session: str) -> Dict[str, Any] | None:
 
 
 
-def _verify_completed_artifact(artifact: Dict[str, Any], session: str) -> None:
+def _verify_completed_artifact(
+    artifact: Dict[str, Any],
+    session: str,
+    *,
+    data_root: Path | None = None,
+) -> None:
     """Verify an immutable completed session artifact before it is reused."""
     if artifact.get("schema_version") != FORWARD_SCHEMA_VERSION:
         raise ForwardSessionError(f"Invalid {session} session schema version")
@@ -112,6 +117,59 @@ def _verify_completed_artifact(artifact: Dict[str, Any], session: str) -> None:
     if stored_provenance_hash != expected_provenance_hash:
         raise ForwardSessionError(f"{session} session provenance integrity check failed")
 
+    if data_root is not None:
+        _verify_evidence_bundle_files(artifact, data_root=data_root)
+
+
+def _verify_evidence_bundle_files(artifact: Dict[str, Any], *, data_root: Path) -> None:
+    """Verify the immutable bundle paths, hashes, and byte counts before reuse."""
+    bundle = artifact.get("evidence_bundle")
+    if not isinstance(bundle, dict):
+        raise ForwardSessionError("Session evidence bundle metadata is missing")
+
+    root_rel = bundle.get("root")
+    indexed = bundle.get("artifacts")
+    if not isinstance(root_rel, str) or not root_rel:
+        raise ForwardSessionError("Session evidence bundle root is missing")
+    if not isinstance(indexed, dict):
+        raise ForwardSessionError("Session evidence bundle index is missing")
+
+    data_root = data_root.resolve()
+    bundle_root = (data_root / root_rel).resolve()
+    try:
+        bundle_root.relative_to(data_root)
+    except ValueError as exc:
+        raise ForwardSessionError("Session evidence bundle root escapes the data root") from exc
+    if not bundle_root.is_dir() or bundle_root.is_symlink():
+        raise ForwardSessionError("Session evidence bundle root is not a safe directory")
+
+    for required in ("trades", "signals", "summary"):
+        meta = indexed.get(required)
+        if not isinstance(meta, dict):
+            raise ForwardSessionError(f"Session evidence bundle is missing {required!r} metadata")
+        rel = meta.get("path")
+        expected_sha = meta.get("sha256")
+        expected_bytes = meta.get("bytes")
+        if not isinstance(rel, str) or not isinstance(expected_sha, str):
+            raise ForwardSessionError(f"Session evidence {required!r} path/hash is invalid")
+        if not isinstance(expected_bytes, int) or expected_bytes < 0:
+            raise ForwardSessionError(f"Session evidence {required!r} byte count is invalid")
+
+        path = (data_root / rel).resolve()
+        try:
+            path.relative_to(data_root)
+            path.relative_to(bundle_root)
+        except ValueError as exc:
+            raise ForwardSessionError(
+                f"Session evidence {required!r} path escapes its declared bundle root"
+            ) from exc
+        if path.is_symlink() or not path.is_file():
+            raise ForwardSessionError(f"Session evidence {required!r} is not a safe file")
+        payload = path.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != expected_sha:
+            raise ForwardSessionError(f"Session evidence {required!r} hash mismatch")
+        if len(payload) != expected_bytes:
+            raise ForwardSessionError(f"Session evidence {required!r} byte count mismatch")
 
 def _validate_freeze() -> Dict[str, Any]:
     status = ParameterFreeze().check()
@@ -163,7 +221,11 @@ class ForwardSessionGuard:
                 raise ForwardSessionError(
                     "Session D requires a completed Session C artifact"
                 )
-            _verify_completed_artifact(session_c, "C")
+            _verify_completed_artifact(
+                session_c,
+                "C",
+                data_root=artifact_root.parent,
+            )
             if session_c.get("code_commit_sha") != freeze["code_commit_sha"]:
                 raise ForwardSessionError(
                     "Session D blocked: Session C used a different source commit"
