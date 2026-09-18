@@ -300,3 +300,27 @@ def test_aggregator_allows_cent_rounded_net_reconciliation(tmp_path):
 
     report = aggregate_forward_evidence(artifact_root=root)
     assert report["total_closed_trades"] == 2
+
+
+def test_aggregator_rejects_symlinked_bundle_root(tmp_path):
+    root = tmp_path / "forward_sessions"
+    root.mkdir()
+    _write_session(root, "C", 1000, 2000, "C-1", 10)
+    _write_session(root, "D", 2000, 3000, "D-1", -2)
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    c_bundle = root / "session_C_evidence"
+    c_real = root / "session_C_evidence_real"
+    c_bundle.rename(c_real)
+    c_bundle.symlink_to(c_real, target_is_directory=True)
+
+    artifact = json.loads((root / "session_C.json").read_text(encoding="utf-8"))
+    artifact["evidence_bundle"]["root"] = str(c_bundle.relative_to(root.parent))
+    artifact["provenance_sha256"] = _sha(
+        _canonical({k: v for k, v in artifact.items() if k != "provenance_sha256"}).encode("utf-8")
+    )
+    (root / "session_C.json").write_text(json.dumps(artifact), encoding="utf-8")
+
+    with pytest.raises(ForwardEvidenceError, match="must not be a symlink"):
+        aggregate_forward_evidence(artifact_root=root)
