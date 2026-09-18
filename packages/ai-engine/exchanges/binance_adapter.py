@@ -45,11 +45,15 @@ class BinanceAdapter(BaseExchange):
         self._adapter = ExchangeAdapter()
 
     async def connect(self) -> None:
-        """Connect to Binance Futures."""
+        """Connect to Binance Futures and load authoritative trading filters."""
         try:
             await self._adapter.sync_time()
+            # Binance exchangeInfo publishes tick/step/min-notional rules. Cache
+            # them before the adapter can be used for any live order path so
+            # quantity/price formatting never falls back to guessed defaults.
+            await self._adapter.load_symbol_filters()
             self._connected = True
-            logger.info("[binance] Connected to Binance Futures")
+            logger.info("[binance] Connected to Binance Futures with exchangeInfo filters loaded")
         except Exception as exc:
             logger.error("[binance] Connection failed: {}", exc)
             self._connected = False
