@@ -135,7 +135,10 @@ def _verify_evidence_bundle_files(artifact: Dict[str, Any], *, data_root: Path) 
         raise ForwardSessionError("Session evidence bundle index is missing")
 
     data_root = data_root.resolve()
-    bundle_root = (data_root / root_rel).resolve()
+    raw_bundle_root = data_root / root_rel
+    if raw_bundle_root.is_symlink():
+        raise ForwardSessionError("Session evidence bundle root must not be a symlink")
+    bundle_root = raw_bundle_root.resolve()
     try:
         bundle_root.relative_to(data_root)
     except ValueError as exc:
@@ -155,7 +158,10 @@ def _verify_evidence_bundle_files(artifact: Dict[str, Any], *, data_root: Path) 
         if not isinstance(expected_bytes, int) or expected_bytes < 0:
             raise ForwardSessionError(f"Session evidence {required!r} byte count is invalid")
 
-        path = (data_root / rel).resolve()
+        raw_path = data_root / rel
+        if raw_path.is_symlink():
+            raise ForwardSessionError(f"Session evidence {required!r} must not be a symlink")
+        path = raw_path.resolve()
         try:
             path.relative_to(data_root)
             path.relative_to(bundle_root)
