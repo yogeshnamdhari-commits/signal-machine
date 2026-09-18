@@ -571,13 +571,13 @@ class ExchangeAdapter:
     _symbol_info_cache: Dict[str, Dict] = {}
 
     def _get_symbol_filters(self, symbol: str) -> Dict:
-        """Get cached symbol filters for quantity/price precision."""
-        return self._symbol_info_cache.get(symbol, {
-            "tick_size": 0.01,
-            "step_size": 0.001,
-            "min_qty": 0.001,
-            "min_notional": 5.0,
-        })
+        """Return exchange-published symbol filters; never guess order precision."""
+        filters = self._symbol_info_cache.get(symbol)
+        if not filters:
+            raise ExchangeError(
+                f"Symbol filters unavailable for {symbol}; refusing to format a live order"
+            )
+        return filters
 
     def _format_price(self, symbol: str, price: float) -> str:
         """Format price according to symbol's tick size."""
@@ -595,11 +595,17 @@ class ExchangeAdapter:
         rounded = round(qty - (qty % step), precision) if step > 0 else qty
         return f"{rounded:.{precision}f}"
 
-    async def load_symbol_filters(self, symbols: List[str]) -> None:
-        """Load and cache symbol trading filters."""
+    async def load_symbol_filters(self, symbols: Optional[List[str]] = None) -> None:
+        """Load and cache exchange-published symbol trading filters.
+
+        None loads every symbol in the exchangeInfo payload; passing a list
+        limits caching to those symbols. An empty or omitted list never causes
+        the adapter to invent precision defaults.
+        """
         result = await self._request("GET", "/fapi/v1/exchangeInfo", {}, signed=False)
+        requested = set(symbols or [])
         for s in result.get("symbols", []):
-            if s["symbol"] in symbols:
+            if requested and s["symbol"] not in requested:
                 filters = {}
                 for f in s.get("filters", []):
                     if f["filterType"] == "PRICE_FILTER":
