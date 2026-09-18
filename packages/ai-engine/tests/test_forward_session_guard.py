@@ -476,3 +476,49 @@ def test_session_d_rejects_legacy_c_exports_outside_session_window(monkeypatch, 
 
     with pytest.raises(guard.ForwardSessionError, match="timestamp is outside"):
         guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=artifact_root)
+
+
+def test_finalize_session_d_materializes_c_d_aggregate(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    artifact_root = tmp_path / "forward_sessions"
+    artifact_root.mkdir()
+    c_bundle = _materialize_bundle(tmp_path, "C")
+    c_summary = {"total_trades": 7, "total_signals": 19}
+    c = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "summary": c_summary,
+        "evidence_bundle": c_bundle,
+        "summary_sha256": hashlib.sha256(
+            json.dumps(c_summary, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "",
+    }
+    c["provenance_sha256"] = hashlib.sha256(
+        json.dumps({k: v for k, v in c.items() if k != "provenance_sha256"}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    (artifact_root / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+
+    provenance = guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=artifact_root)
+    d_bundle = _materialize_bundle(tmp_path, "D")
+    calls = []
+
+    import app_layer.forward_evidence_aggregator as aggregator
+
+    def fake_aggregate(*, artifact_root, output_path):
+        calls.append((artifact_root, output_path))
+        return {"status": "EVIDENCE_VALID"}
+
+    monkeypatch.setattr(aggregator, "aggregate_forward_evidence", fake_aggregate)
+    final = guard.ForwardSessionGuard.finalize(
+        provenance,
+        c_summary,
+        artifact_root=artifact_root,
+        evidence_bundle=d_bundle,
+    )
+
+    assert final["status"] == "COMPLETED"
+    assert calls == [(artifact_root, artifact_root / "forward_aggregate.json")]
