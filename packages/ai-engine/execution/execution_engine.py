@@ -155,11 +155,19 @@ class ExecutionEngine:
 
         # Recovery
         recovery_result = await self.recovery.recover()
-        if recovery_result.account_balance > 0:
-            self._equity = recovery_result.account_balance
-            self._equity_source = "exchange_recovery"
-        else:
-            self._equity_source = "unverified"
+        if not recovery_result.success:
+            logger.error(
+                "🚫 EXECUTION ENGINE HALTED: exchange recovery failed: {}",
+                "; ".join(recovery_result.errors),
+            )
+            self._running = False
+            raise RuntimeError("exchange recovery failed; refusing to enter execution-ready state")
+        if recovery_result.account_balance <= 0:
+            logger.error("🚫 EXECUTION ENGINE HALTED: verified exchange equity is unavailable")
+            self._running = False
+            raise RuntimeError("exchange account equity unavailable; refusing live execution")
+        self._equity = recovery_result.account_balance
+        self._equity_source = "exchange_recovery"
 
         # Start subsystems
         await self.reconciler.start()
