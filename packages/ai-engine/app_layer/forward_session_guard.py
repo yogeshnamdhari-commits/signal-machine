@@ -212,6 +212,17 @@ def _upgrade_legacy_completed_session_c(
         if path.is_symlink() or not path.is_file():
             raise ForwardSessionError(f"Legacy Session C evidence source is not a safe file: {path}")
 
+    started_at_epoch = float(artifact.get("started_at_epoch", 0) or 0)
+    ended_at_epoch = float(artifact.get("ended_at_epoch", 0) or 0)
+    if started_at_epoch <= 0 or ended_at_epoch < started_at_epoch:
+        raise ForwardSessionError("Legacy Session C has invalid observation timestamps")
+    for path in (summary_path, trades_path, signals_path):
+        modified_at = path.stat().st_mtime
+        if modified_at < started_at_epoch or modified_at > ended_at_epoch + 5.0:
+            raise ForwardSessionError(
+                f"Legacy Session C evidence source timestamp is outside the Session C window: {path}"
+            )
+
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
