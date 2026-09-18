@@ -28,7 +28,7 @@ def _trusted_commit(monkeypatch, value="commit-a"):
 
 
 def test_live_certification_rejects_source_commit_mismatch(tmp_path, monkeypatch):
-    path = _write_artifact()
+    path = _write_artifact(tmp_path)
     _trusted_commit(monkeypatch, "commit-b")
     monkeypatch.setenv("GITHUB_SHA", "commit-a")
 
@@ -37,7 +37,7 @@ def test_live_certification_rejects_source_commit_mismatch(tmp_path, monkeypatch
 
 
 def test_live_certification_ignores_caller_supplied_commit_env(tmp_path, monkeypatch):
-    path = _write_artifact()
+    path = _write_artifact(tmp_path)
     _trusted_commit(monkeypatch, "commit-a")
     monkeypatch.setenv("GITHUB_SHA", "attacker-controlled")
     monkeypatch.setenv("LIVE_CERT_COMMIT", "attacker-controlled")
@@ -47,7 +47,7 @@ def test_live_certification_ignores_caller_supplied_commit_env(tmp_path, monkeyp
 
 
 def test_live_certification_rejects_unavailable_source_commit(tmp_path, monkeypatch):
-    path = _write_artifact()
+    path = _write_artifact(tmp_path)
     _trusted_commit(monkeypatch, "")
 
     with pytest.raises(LiveCertificationError, match="source commit is unavailable"):
