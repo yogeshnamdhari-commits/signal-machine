@@ -241,3 +241,62 @@ def test_paper_engine_snapshots_immutable_forward_bundle(tmp_path, monkeypatch):
     trades.write_bytes(b"id,signal_id,symbol\nT-2,S-2,ETHUSDT\n")
     with pytest.raises(Exception, match="immutable forward evidence differs"):
         engine._snapshot_forward_evidence_bundle(summary)
+
+
+def test_aggregator_rejects_shared_c_d_bundle_root(tmp_path):
+    root = tmp_path / "forward_sessions"
+    root.mkdir()
+    _write_session(root, "C", 1000, 2000, "C-1", 10)
+    _write_session(root, "D", 2000, 3000, "D-1", -2)
+
+    c_artifact = json.loads((root / "session_C.json").read_text(encoding="utf-8"))
+    d_artifact = json.loads((root / "session_D.json").read_text(encoding="utf-8"))
+    d_artifact["evidence_bundle"] = json.loads(json.dumps(c_artifact["evidence_bundle"]))
+    d_artifact["evidence_bundle"]["session"] = "D"
+    d_artifact["provenance_sha256"] = _sha(
+        _canonical({k: v for k, v in d_artifact.items() if k != "provenance_sha256"}).encode("utf-8")
+    )
+    (root / "session_D.json").write_text(json.dumps(d_artifact), encoding="utf-8")
+
+    with pytest.raises(ForwardEvidenceError, match="distinct evidence bundle roots"):
+        aggregate_forward_evidence(artifact_root=root)
+
+
+def test_aggregator_requires_bundle_byte_count(tmp_path):
+    root = tmp_path / "forward_sessions"
+    root.mkdir()
+    _write_session(root, "C", 1000, 2000, "C-1", 10)
+    _write_session(root, "D", 2000, 3000, "D-1", -2)
+
+    artifact = json.loads((root / "session_C.json").read_text(encoding="utf-8"))
+    del artifact["evidence_bundle"]["artifacts"]["trades"]["bytes"]
+    artifact["provenance_sha256"] = _sha(
+        _canonical({k: v for k, v in artifact.items() if k != "provenance_sha256"}).encode("utf-8")
+    )
+    (root / "session_C.json").write_text(json.dumps(artifact), encoding="utf-8")
+
+    with pytest.raises(ForwardEvidenceError, match="byte count"):
+        aggregate_forward_evidence(artifact_root=root)
+
+
+def test_aggregator_allows_cent_rounded_net_reconciliation(tmp_path):
+    root = tmp_path / "forward_sessions"
+    root.mkdir()
+    _write_session(root, "C", 1000, 2000, "C-1", 123.45)
+    _write_session(root, "D", 2000, 3000, "D-1", -2)
+
+    trade_file = root / "session_C_evidence" / "paper_trading_trades.csv"
+    lines = trade_file.read_text(encoding="utf-8").splitlines()
+    lines[-1] = lines[-1].replace(",123.45,123.45,1,0,0,0.01,closed", ",123.45,123.44,1,0.01,0,0.01,closed")
+    trade_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    artifact = json.loads((root / "session_C.json").read_text(encoding="utf-8"))
+    payload = trade_file.read_bytes()
+    artifact["evidence_bundle"]["artifacts"]["trades"]["sha256"] = _sha(payload)
+    artifact["evidence_bundle"]["artifacts"]["trades"]["bytes"] = len(payload)
+    artifact["provenance_sha256"] = _sha(
+        _canonical({k: v for k, v in artifact.items() if k != "provenance_sha256"}).encode("utf-8")
+    )
+    (root / "session_C.json").write_text(json.dumps(artifact), encoding="utf-8")
+
+    report = aggregate_forward_evidence(artifact_root=root)
+    assert report["total_closed_trades"] == 2
