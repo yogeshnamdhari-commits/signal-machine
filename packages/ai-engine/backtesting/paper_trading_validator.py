@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import json
 import os
 import signal
@@ -137,6 +138,64 @@ DAILY_CSV = DATA_DIR / "paper_trading_daily.csv"
 WEEKLY_CSV = DATA_DIR / "paper_trading_weekly.csv"
 SUMMARY_JSON = DATA_DIR / "paper_trading_summary.json"
 FIGURES_DIR = DATA_DIR / "figures"
+BACKTEST_TRADE_LOG = DATA_DIR / "trade_log.csv"
+
+
+def load_backtest_baseline(path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Load and calculate a source-bound backtest baseline.
+
+    The paper engine never uses hard-coded historical performance values.
+    Baseline metrics are derived from the exact trade log supplied by the
+    caller and accompanied by its SHA-256 and row count.
+    """
+    source = Path(path) if path is not None else BACKTEST_TRADE_LOG
+    try:
+        raw = source.read_bytes()
+        source_sha256 = hashlib.sha256(raw).hexdigest()
+        rows: list[float] = []
+        with source.open("r", newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = {str(name).strip() for name in (reader.fieldnames or []) if name}
+            pnl_field = "pnl" if "pnl" in fieldnames else "net_pnl" if "net_pnl" in fieldnames else None
+            if pnl_field is None:
+                return None
+            for row in reader:
+                try:
+                    pnl = float(row.get(pnl_field))
+                except (TypeError, ValueError):
+                    return None
+                if not np.isfinite(pnl):
+                    return None
+                rows.append(pnl)
+
+        if not rows:
+            return None
+
+        gross_profit = sum(p for p in rows if p > 0)
+        gross_loss = abs(sum(p for p in rows if p < 0))
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
+        win_rate = sum(1 for p in rows if p > 0) / len(rows)
+
+        equity = [10_000.0]
+        for pnl in rows:
+            equity.append(equity[-1] + pnl)
+        peak = equity[0]
+        max_dd = 0.0
+        for value in equity:
+            peak = max(peak, value)
+            if peak > 0:
+                max_dd = max(max_dd, (peak - value) / peak * 100)
+
+        return {
+            "source": str(source),
+            "source_sha256": source_sha256,
+            "trade_count": len(rows),
+            "profit_factor": profit_factor,
+            "win_rate": win_rate,
+            "max_drawdown_pct": max_dd,
+        }
+    except (OSError, csv.Error, UnicodeError):
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1540,14 +1599,34 @@ class PaperTradingEngine:
                 slippages.append(entry_bps + exit_bps)
         avg_slippage = np.mean(slippages) if slippages else 0
 
-        # Performance drift (compare to backtest baselines from Phase 1/2)
-        backtest_pf = 1.60  # From trade_log.csv
-        backtest_wr = 0.515
-        backtest_dd = 8.72  # From Monte Carlo worst DD
+        # Performance drift is source-bound. If the exact backtest trade log is
+        # unavailable or malformed, do not invent a historical benchmark.
+        baseline = load_backtest_baseline()
+        if baseline is None:
+            performance_drift = {
+                "status": "UNAVAILABLE",
+                "reason": "source-bound backtest trade log missing or malformed",
+                "source": str(BACKTEST_TRADE_LOG),
+            }
+        else:
+            backtest_pf = float(baseline["profit_factor"])
+            backtest_wr = float(baseline["win_rate"])
+            backtest_dd = float(baseline["max_drawdown_pct"])
 
-        drift_pf = ((backtest_pf - quality.profit_factor) / backtest_pf * 100) if backtest_pf > 0 else 0
-        drift_wr = ((backtest_wr - quality.win_rate) / backtest_wr * 100) if backtest_wr > 0 else 0
-        drift_dd = ((backtest_dd - quality.max_drawdown_pct) / backtest_dd * 100) if backtest_dd > 0 else 0
+            drift_pf = ((backtest_pf - quality.profit_factor) / backtest_pf * 100) if backtest_pf > 0 and np.isfinite(backtest_pf) else 0.0
+            drift_wr = ((backtest_wr - quality.win_rate) / backtest_wr * 100) if backtest_wr > 0 else 0.0
+            drift_dd = ((backtest_dd - quality.max_drawdown_pct) / backtest_dd * 100) if backtest_dd > 0 else 0.0
+
+            performance_drift = {
+                "status": "AVAILABLE",
+                "source": baseline["source"],
+                "source_sha256": baseline["source_sha256"],
+                "trade_count": baseline["trade_count"],
+                "pf_drift_pct": round(drift_pf, 1),
+                "wr_drift_pct": round(drift_wr, 1),
+                "dd_drift_pct": round(drift_dd, 1),
+                "interpretation": self._interpret_drift(max(abs(drift_pf), abs(drift_wr), abs(drift_dd))),
+            }
 
         # Success criteria
         health = self.health_monitor.get_snapshot()
@@ -1586,12 +1665,7 @@ class PaperTradingEngine:
             api_errors=health.api_errors,
             reconnects=health.reconnect_events,
             uptime_pct=health.uptime_pct,
-            performance_drift={
-                "pf_drift_pct": round(drift_pf, 1),
-                "wr_drift_pct": round(drift_wr, 1),
-                "dd_drift_pct": round(drift_dd, 1),
-                "interpretation": self._interpret_drift(max(abs(drift_pf), abs(drift_wr), abs(drift_dd))),
-            },
+            performance_drift=performance_drift,
             criteria=criteria,
             overall_result="PASS" if all_pass else "FAIL",
             recommendation=recommendation,
