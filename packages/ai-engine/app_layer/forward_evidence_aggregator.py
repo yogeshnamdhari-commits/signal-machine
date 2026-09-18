@@ -269,7 +269,11 @@ def _max_drawdown(rows: Iterable[Dict[str, Any]]) -> float:
     return max_dd
 
 
-def aggregate_forward_evidence(*, artifact_root: Path, output_path: Path | None = None) -> Dict[str, Any]:
+def aggregate_forward_evidence(
+    *,
+    artifact_root: Path,
+    output_path: Path | None = None,
+) -> Dict[str, Any]:
     """Verify C/D bundles and return an integrity-bound aggregate report."""
     c = _verify_session_artifact(artifact_root / "session_C.json", "C")
     d = _verify_session_artifact(artifact_root / "session_D.json", "D")
@@ -345,6 +349,7 @@ def aggregate_forward_evidence(*, artifact_root: Path, output_path: Path | None 
         "sessions": ["C", "D"],
         "code_commit_sha": c["code_commit_sha"],
         "parameter_hash": c["parameter_hash"],
+        "artifact_root": ".",
         "total_signals": int(c["signal_count"]) + int(d["signal_count"]),
         "total_closed_trades": total_trades,
         "win_rate": wins / total_trades if total_trades else 0.0,
@@ -360,8 +365,31 @@ def aggregate_forward_evidence(*, artifact_root: Path, output_path: Path | None 
         "session_d_trade_count": len(d_rows),
         "bundle_roots": {"C": c["evidence_bundle"]["root"], "D": d["evidence_bundle"]["root"]},
     }
+    session_manifests = {}
+    evidence_manifests = {}
+    for artifact, label, files, artifact_path in (
+        (c, "C", c_files, artifact_root / "session_C.json"),
+        (d, "D", d_files, artifact_root / "session_D.json"),
+    ):
+        artifact_payload = artifact_path.read_bytes()
+        session_manifests[label] = {
+            "path": artifact_path.name,
+            "sha256": _sha256_bytes(artifact_payload),
+            "bytes": len(artifact_payload),
+        }
+        evidence_manifests[label] = {
+            name: {
+                "path": str(path.relative_to(artifact_root)),
+                "sha256": _sha256_bytes(path.read_bytes()),
+                "bytes": path.stat().st_size,
+            }
+            for name, path in files.items()
+        }
+
+    report["session_artifacts"] = session_manifests
+    report["evidence_files"] = evidence_manifests
     report["aggregate_sha256"] = _sha256_bytes(_canonical_json(report).encode("utf-8"))
-    if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    target = output_path or (artifact_root / "forward_aggregate.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     return report
