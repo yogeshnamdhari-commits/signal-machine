@@ -161,10 +161,15 @@ def _read_signal_ids(path: Path) -> set[str]:
         signal_id = str(row.get("id", "")).strip()
         symbol = str(row.get("symbol", "")).strip()
         side = str(row.get("side", "")).strip().upper()
+        status = str(row.get("status", "")).strip().lower()
         if not signal_id or not symbol or side not in {"LONG", "SHORT"}:
             raise ForwardEvidenceError(f"Signal log {path} contains an invalid signal identity")
-        if str(row.get("status", "")).strip().lower() not in {"generated", "filled", "expired", "rejected"}:
+        if status not in {"generated", "filled", "expired", "rejected"}:
             raise ForwardEvidenceError(f"Signal log {path} contains an invalid signal status")
+        if status == "rejected" and not str(row.get("rejection_reason", "")).strip():
+            raise ForwardEvidenceError(
+                f"Signal log {path} contains a rejected signal without a rejection reason"
+            )
         for field in ("timestamp", "entry_price", "stop_loss", "take_profit"):
             try:
                 value = float(row.get(field, ""))
