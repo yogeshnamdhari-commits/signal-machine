@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import math
-import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -13,6 +13,28 @@ from config.schema import config_fingerprint
 
 class LiveCertificationError(RuntimeError):
     pass
+
+
+def _current_source_commit() -> str:
+    """Resolve the actual checked-out repository HEAD; fail closed if unavailable."""
+    repo_root = Path(__file__).resolve().parents[3]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_root),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LiveCertificationError(
+            f"Unable to resolve the running source commit: {exc}"
+        ) from exc
+    commit = result.stdout.strip()
+    if not commit:
+        raise LiveCertificationError("Unable to resolve the running source commit")
+    return commit
 
 
 def verify_live_certification(
@@ -35,8 +57,8 @@ def verify_live_certification(
     if artifact.get("configuration_fingerprint") != config_fingerprint(config):
         raise LiveCertificationError("Certification configuration fingerprint does not match runtime configuration")
 
-    expected_commit = os.getenv("GITHUB_SHA") or os.getenv("LIVE_CERT_COMMIT")
-    if expected_commit and artifact.get("commit_sha") != expected_commit:
+    expected_commit = _current_source_commit()
+    if artifact.get("commit_sha") != expected_commit:
         raise LiveCertificationError("Certification commit does not match the running source commit")
 
     failures = artifact.get("failures") or []
