@@ -45,7 +45,8 @@ def _write_forward_evidence(tmp_path, commit="commit-a"):
     return path, hashlib.sha256(payload).hexdigest()
 
 def _write_artifact(tmp_path, **overrides):
-    _, evidence_sha = _write_forward_evidence(tmp_path)
+    evidence_path, evidence_sha = _write_forward_evidence(tmp_path)
+    live_gate.DEFAULT_FORWARD_EVIDENCE_PATH = evidence_path
     artifact = {
         "state": "LIVE_ELIGIBLE",
         "commit_sha": "commit-a",
