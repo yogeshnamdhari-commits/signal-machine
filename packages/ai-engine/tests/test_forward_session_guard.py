@@ -367,3 +367,61 @@ def test_session_d_rejects_symlinked_bundle_root(monkeypatch, tmp_path):
 
     with pytest.raises(guard.ForwardSessionError, match="must not be a symlink"):
         guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=artifact_root)
+
+
+def test_session_d_upgrades_legacy_completed_c_without_rerun(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    artifact_root = tmp_path / "forward_sessions"
+    artifact_root.mkdir()
+    summary = {"total_trades": 1, "total_signals": 1}
+    (tmp_path / "paper_trading_summary.json").write_text(
+        json.dumps(summary), encoding="utf-8"
+    )
+    (tmp_path / "paper_trading_trades.csv").write_text(
+        "id,signal_id,symbol,side,entry_time,exit_time,gross_pnl,net_pnl,quantity,fees,funding_pnl,total_slippage,status\n"
+        "T-1,S-1,BTCUSDT,LONG,1001,1999,10,10,1,0,0,0.01,closed\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "paper_trading_signals.csv").write_text(
+        "id,timestamp,symbol,side,entry_price,stop_loss,take_profit,status\n"
+        "S-1,1000,BTCUSDT,LONG,100,99,102,generated\n",
+        encoding="utf-8",
+    )
+
+    legacy = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "ended_at_epoch": 2000,
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "data_source": "BINANCE_FUTURES_PRODUCTION",
+        "market_data_mode": "PRODUCTION",
+        "execution_mode": "SIMULATION",
+        "real_orders": False,
+        "closed_trade_count": 1,
+        "signal_count": 1,
+        "summary_sha256": hashlib.sha256(
+            json.dumps(summary, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "",
+    }
+    legacy["provenance_sha256"] = hashlib.sha256(
+        json.dumps({k: v for k, v in legacy.items() if k != "provenance_sha256"},
+                   sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    legacy_path = artifact_root / "session_C.json"
+    legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+    original_bytes = legacy_path.read_bytes()
+
+    d = guard.ForwardSessionGuard.prepare(
+        "D", production_data=True, artifact_root=artifact_root
+    )
+
+    upgraded = json.loads(legacy_path.read_text(encoding="utf-8"))
+    assert d["session"] == "D"
+    assert upgraded["summary"] == summary
+    assert "evidence_bundle" in upgraded
+    assert upgraded["legacy_upgrade"]["source_artifact_sha256"] == hashlib.sha256(original_bytes).hexdigest()
+    assert (artifact_root / "session_C.legacy.json").read_bytes() == original_bytes
+    assert (tmp_path / "forward_sessions" / "session_C_evidence" / "paper_trading_trades.csv").exists()
