@@ -11,6 +11,7 @@ artifacts are immutable once completed and are never silently overwritten.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import os
@@ -177,6 +178,131 @@ def _verify_evidence_bundle_files(artifact: Dict[str, Any], *, data_root: Path) 
         if len(payload) != expected_bytes:
             raise ForwardSessionError(f"Session evidence {required!r} byte count mismatch")
 
+def _upgrade_legacy_completed_session_c(
+    artifact_root: Path,
+    artifact: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Upgrade a pre-bundle completed C artifact without rerunning Session C.
+
+    The legacy artifact is preserved byte-for-byte as session_C.legacy.json.
+    Upgrade proceeds only when the original provenance hash is valid and the
+    currently exported summary/trade/signal files reconcile exactly with the
+    legacy artifact counts and summary hash.
+    """
+    if artifact.get("session") != "C" or artifact.get("status") != "COMPLETED":
+        raise ForwardSessionError("Only a completed Session C can use legacy migration")
+    if isinstance(artifact.get("summary"), dict) or isinstance(artifact.get("evidence_bundle"), dict):
+        return artifact
+
+    artifact_path = _artifact_path(artifact_root, "C")
+    original_bytes = artifact_path.read_bytes()
+    expected_provenance = hashlib.sha256(
+        _canonical_json(
+            {k: v for k, v in artifact.items() if k != "provenance_sha256"}
+        ).encode("utf-8")
+    ).hexdigest()
+    if artifact.get("provenance_sha256") != expected_provenance:
+        raise ForwardSessionError("Legacy Session C provenance integrity check failed")
+
+    data_root = artifact_root.parent
+    summary_path = data_root / "paper_trading_summary.json"
+    trades_path = data_root / "paper_trading_trades.csv"
+    signals_path = data_root / "paper_trading_signals.csv"
+    for path in (summary_path, trades_path, signals_path):
+        if path.is_symlink() or not path.is_file():
+            raise ForwardSessionError(f"Legacy Session C evidence source is not a safe file: {path}")
+
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ForwardSessionError("Legacy Session C summary export is unreadable") from exc
+    if not isinstance(summary, dict):
+        raise ForwardSessionError("Legacy Session C summary export is invalid")
+
+    expected_summary_hash = hashlib.sha256(
+        _canonical_json(summary).encode("utf-8")
+    ).hexdigest()
+    if artifact.get("summary_sha256") != expected_summary_hash:
+        raise ForwardSessionError("Legacy Session C summary hash does not match its export")
+
+    expected_trades = int(artifact.get("closed_trade_count", -1))
+    expected_signals = int(artifact.get("signal_count", -1))
+    if int(summary.get("total_trades", -1)) != expected_trades:
+        raise ForwardSessionError("Legacy Session C trade count does not match its summary")
+    if int(summary.get("total_signals", -1)) != expected_signals:
+        raise ForwardSessionError("Legacy Session C signal count does not match its summary")
+
+    with trades_path.open("r", newline="", encoding="utf-8-sig") as handle:
+        trade_rows = list(csv.DictReader(handle))
+    with signals_path.open("r", newline="", encoding="utf-8-sig") as handle:
+        signal_rows = list(csv.DictReader(handle))
+    if len(trade_rows) != expected_trades or len(signal_rows) != expected_signals:
+        raise ForwardSessionError("Legacy Session C exported row counts do not match its artifact")
+
+    if any(str(row.get("status", "")).strip().lower() != "closed" for row in trade_rows):
+        raise ForwardSessionError("Legacy Session C trade export contains non-closed rows")
+
+    bundle_root = data_root / "forward_sessions" / "session_C_evidence"
+    if bundle_root.exists():
+        raise ForwardSessionError(
+            "Legacy Session C bundle root already exists; refusing ambiguous migration"
+        )
+    bundle_root.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_dir = Path(tempfile.mkdtemp(prefix=".session_C_evidence.", dir=bundle_root.parent))
+    payload_sources = {
+        "trades": (trades_path, "paper_trading_trades.csv"),
+        "signals": (signals_path, "paper_trading_signals.csv"),
+        "summary": (summary_path, "summary.canonical.json"),
+    }
+    artifacts: Dict[str, Any] = {}
+    try:
+        for name, (source, filename) in payload_sources.items():
+            payload = source.read_bytes()
+            target = temp_dir / filename
+            target.write_bytes(payload)
+            artifacts[name] = {
+                "path": str((bundle_root / filename).relative_to(data_root)),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "bytes": len(payload),
+            }
+        os.replace(temp_dir, bundle_root)
+    finally:
+        if temp_dir.exists():
+            for child in temp_dir.iterdir():
+                child.unlink(missing_ok=True)
+            temp_dir.rmdir()
+
+    legacy_path = artifact_root / "session_C.legacy.json"
+    if legacy_path.exists():
+        if legacy_path.read_bytes() != original_bytes:
+            raise ForwardSessionError("Legacy Session C backup already exists with different bytes")
+    else:
+        legacy_path.write_bytes(original_bytes)
+
+    upgraded = dict(artifact)
+    upgraded.update(
+        {
+            "summary": summary,
+            "evidence_bundle": {
+                "schema_version": 1,
+                "session": "C",
+                "root": str(bundle_root.relative_to(data_root)),
+                "artifacts": artifacts,
+            },
+            "legacy_upgrade": {
+                "method": "legacy_completed_C_bundle_upgrade",
+                "source_artifact_sha256": hashlib.sha256(original_bytes).hexdigest(),
+                "source_artifact": str(legacy_path.relative_to(artifact_root)),
+            },
+        }
+    )
+    upgraded["provenance_sha256"] = hashlib.sha256(
+        _canonical_json({k: v for k, v in upgraded.items() if k != "provenance_sha256"}).encode("utf-8")
+    ).hexdigest()
+    _atomic_write(artifact_path, upgraded)
+    return upgraded
+
 def _validate_freeze() -> Dict[str, Any]:
     status = ParameterFreeze().check()
     if not status.get("frozen") or not status.get("clean"):
@@ -227,6 +353,10 @@ class ForwardSessionGuard:
                 raise ForwardSessionError(
                     "Session D requires a completed Session C artifact"
                 )
+            if not isinstance(session_c.get("summary"), dict) or not isinstance(
+                session_c.get("evidence_bundle"), dict
+            ):
+                session_c = _upgrade_legacy_completed_session_c(artifact_root, session_c)
             _verify_completed_artifact(
                 session_c,
                 "C",
