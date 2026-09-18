@@ -277,18 +277,16 @@ def _run_api() -> None:
     uvicorn.run("main:app", host=config.dashboard.host, port=8000, reload=False)
 
 
-def _run_live() -> int:
-    """Never start live execution without a current matching certification artifact."""
-    from validation.live_gate import LiveCertificationError, verify_live_certification
+def _run_live() -> None:
+    """Start the coordinated live signal/execution process after hard preflight gates."""
+    from execution.live_runner import LiveTradingConfigurationError, run_live
+    from validation.live_gate import LiveCertificationError
 
     try:
-        artifact = verify_live_certification()
-    except LiveCertificationError as exc:
+        asyncio.run(run_live())
+    except (LiveCertificationError, LiveTradingConfigurationError) as exc:
         logger.error("LIVE EXECUTION BLOCKED: {}", exc)
-        return 2
-
-    logger.info("LIVE CERTIFICATION VERIFIED: state={}, commit={}", artifact.get("state"), artifact.get("commit_sha"))
-    return 0
+        raise SystemExit(2)
 
 
 def main() -> None:
@@ -318,7 +316,7 @@ def main() -> None:
         t.start()
         _run_dashboard()
     elif args.mode == "live":
-        raise SystemExit(_run_live())
+        _run_live()
 
 
 if __name__ == "__main__":
