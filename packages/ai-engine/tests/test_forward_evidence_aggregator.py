@@ -55,7 +55,7 @@ def _write_session(root: Path, session: str, start: float, end: float, trade_id:
     signals_path = evidence_dir / "paper_trading_signals.csv"
     signals_path.write_text(
         "id,timestamp,symbol,side,entry_price,stop_loss,take_profit,status\\n"
-        "sig-1,1000,BTCUSDT,LONG,100,99,102,generated\\n",
+        f"sig-{session}-1,1000,BTCUSDT,LONG,100,99,102,generated\\n",
         encoding="utf-8",
     )
     summary = {"total_trades": 1, "total_signals": 1}
@@ -207,7 +207,7 @@ def test_aggregator_rejects_bundle_path_escape(tmp_path):
     )
     (root / "session_C.json").write_text(json.dumps(artifact), encoding="utf-8")
 
-    with pytest.raises(ForwardEvidenceError, match="escapes the data root"):
+    with pytest.raises(ForwardEvidenceError, match="outside the declared bundle root"):
         aggregate_forward_evidence(artifact_root=root)
 
 
