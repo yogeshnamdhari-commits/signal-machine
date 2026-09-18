@@ -107,6 +107,73 @@ def verify_forward_evidence_report(
     if not isinstance(report.get("parameter_hash"), str) or not report["parameter_hash"]:
         raise ForwardEvidenceBindingError("Forward evidence parameter hash is missing")
 
+    session_manifests = report.get("session_artifacts")
+    evidence_manifests = report.get("evidence_files")
+    if not isinstance(session_manifests, dict) or not isinstance(evidence_manifests, dict):
+        raise ForwardEvidenceBindingError("Forward evidence artifact manifests are missing")
+
+    def verify_file(rel_path: object, expected_sha: object, expected_bytes: object, *, label: str) -> Path:
+        if not isinstance(rel_path, str) or Path(rel_path).is_absolute():
+            raise ForwardEvidenceBindingError(f"{label} path is invalid")
+        if not isinstance(expected_sha, str) or len(expected_sha) != 64:
+            raise ForwardEvidenceBindingError(f"{label} hash is invalid")
+        if not isinstance(expected_bytes, int) or expected_bytes < 0:
+            raise ForwardEvidenceBindingError(f"{label} byte count is invalid")
+        target = (report_path.parent / rel_path).resolve()
+        try:
+            target.relative_to(report_path.parent.resolve())
+        except ValueError as exc:
+            raise ForwardEvidenceBindingError(f"{label} path escapes the aggregate root") from exc
+        if target.is_symlink() or not target.is_file():
+            raise ForwardEvidenceBindingError(f"{label} file is missing or unsafe")
+        blob = target.read_bytes()
+        if _sha256_bytes(blob) != expected_sha:
+            raise ForwardEvidenceBindingError(f"{label} hash mismatch")
+        if len(blob) != expected_bytes:
+            raise ForwardEvidenceBindingError(f"{label} byte count mismatch")
+        return target
+
+    for session in ("C", "D"):
+        meta = session_manifests.get(session)
+        if not isinstance(meta, dict):
+            raise ForwardEvidenceBindingError(f"Session {session} artifact manifest is missing")
+        artifact_path = verify_file(
+            meta.get("path"),
+            meta.get("sha256"),
+            meta.get("bytes"),
+            label=f"Session {session} artifact",
+        )
+        try:
+            session_artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ForwardEvidenceBindingError(
+                f"Session {session} artifact is unreadable"
+            ) from exc
+        if (
+            session_artifact.get("schema_version") != 1
+            or session_artifact.get("session") != session
+            or session_artifact.get("status") != "COMPLETED"
+            or session_artifact.get("code_commit_sha") != expected_commit
+            or session_artifact.get("parameter_hash") != report["parameter_hash"]
+        ):
+            raise ForwardEvidenceBindingError(f"Session {session} artifact provenance does not match aggregate")
+
+        session_files = evidence_manifests.get(session)
+        if not isinstance(session_files, dict):
+            raise ForwardEvidenceBindingError(f"Session {session} evidence manifest is missing")
+        for name in ("trades", "signals", "summary"):
+            meta_file = session_files.get(name)
+            if not isinstance(meta_file, dict):
+                raise ForwardEvidenceBindingError(
+                    f"Session {session} {name} evidence manifest is missing"
+                )
+            verify_file(
+                meta_file.get("path"),
+                meta_file.get("sha256"),
+                meta_file.get("bytes"),
+                label=f"Session {session} {name} evidence",
+            )
+
     return {
         **report,
         "_file_sha256": _sha256_bytes(payload),
