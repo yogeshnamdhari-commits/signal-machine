@@ -8,6 +8,19 @@ import pytest
 from app_layer import forward_session_guard as guard
 
 
+def _bundle(session="C"):
+    return {
+        "schema_version": 1,
+        "session": session,
+        "root": f"forward_sessions/session_{session}_evidence",
+        "artifacts": {
+            "trades": {"path": f"forward_sessions/session_{session}_evidence/paper_trading_trades.csv", "sha256": "a" * 64, "bytes": 1},
+            "signals": {"path": f"forward_sessions/session_{session}_evidence/paper_trading_signals.csv", "sha256": "b" * 64, "bytes": 1},
+            "summary": {"path": f"forward_sessions/session_{session}_evidence/summary.canonical.json", "sha256": "c" * 64, "bytes": 1},
+        },
+    }
+
+
 def _fake_freeze(monkeypatch, commit="commit-1", param_hash="param-1"):
     monkeypatch.setattr(
         guard.ParameterFreeze,
@@ -65,6 +78,7 @@ def test_forward_session_d_requires_completed_c(monkeypatch, tmp_path):
         "parameter_hash": "param-1",
         "summary": {"total_trades": 7, "total_signals": 19},
         "summary_sha256": "",
+        "evidence_bundle": _bundle("C"),
         "provenance_sha256": "",
     }
     c_base["summary_sha256"] = hashlib.sha256(
@@ -109,7 +123,10 @@ def test_finalize_records_observation_counts_and_summary_hash(monkeypatch, tmp_p
     )
     summary = {"total_trades": 7, "total_signals": 19}
     final = guard.ForwardSessionGuard.finalize(
-        provenance, summary, artifact_root=tmp_path
+        provenance,
+        summary,
+        artifact_root=tmp_path,
+        evidence_bundle=_bundle("C"),
     )
     assert final["status"] == "COMPLETED"
     assert final["closed_trade_count"] == 7
@@ -179,3 +196,50 @@ def test_forward_session_d_rejects_tampered_completed_c_summary(monkeypatch, tmp
         guard.ForwardSessionGuard.prepare(
             "D", production_data=True, artifact_root=tmp_path
         )
+
+
+
+def test_finalize_requires_evidence_bundle(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    provenance = guard.ForwardSessionGuard.prepare(
+        "C", production_data=True, artifact_root=tmp_path
+    )
+
+    with pytest.raises(guard.ForwardSessionError, match="requires an immutable evidence bundle"):
+        guard.ForwardSessionGuard.finalize(
+            provenance,
+            {"total_trades": 1, "total_signals": 1},
+            artifact_root=tmp_path,
+            evidence_bundle=None,
+        )
+
+
+def test_session_d_rejects_completed_c_without_evidence_bundle(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    c = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "summary": {"total_trades": 1, "total_signals": 1},
+        "summary_sha256": hashlib.sha256(
+            json.dumps(
+                {"total_trades": 1, "total_signals": 1},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "",
+    }
+    c["provenance_sha256"] = hashlib.sha256(
+        json.dumps(
+            {k: v for k, v in c.items() if k != "provenance_sha256"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+
+    with pytest.raises(guard.ForwardSessionError, match="evidence bundle metadata is missing"):
+        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=tmp_path)
