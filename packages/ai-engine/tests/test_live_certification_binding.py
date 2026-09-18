@@ -66,7 +66,7 @@ def test_live_certification_rejects_missing_freshness_metadata(tmp_path, monkeyp
     artifact = json.loads(path.read_text(encoding="utf-8"))
     artifact.pop("issued_at")
     path.write_text(json.dumps(artifact), encoding="utf-8")
-    monkeypatch.setenv("GITHUB_SHA", "commit-a")
+    monkeypatch.setattr(live_gate, "_current_source_commit", lambda: "commit-a")
 
     with pytest.raises(LiveCertificationError, match="freshness metadata is missing"):
         verify_live_certification(path, now_ts=1500.0)
