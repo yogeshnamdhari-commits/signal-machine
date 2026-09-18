@@ -334,3 +334,36 @@ def test_session_d_rejects_bundle_path_escape(monkeypatch, tmp_path):
 
     with pytest.raises(guard.ForwardSessionError, match="escapes its declared bundle root"):
         guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=artifact_root)
+
+
+def test_session_d_rejects_symlinked_bundle_root(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    artifact_root = tmp_path / "forward_sessions"
+    artifact_root.mkdir()
+    bundle = _materialize_bundle(tmp_path, "C")
+    real_root = tmp_path / "forward_sessions" / "session_C_evidence_real"
+    symlink_root = tmp_path / "forward_sessions" / "session_C_evidence"
+    (tmp_path / "forward_sessions" / "session_C_evidence").rename(real_root)
+    symlink_root.symlink_to(real_root, target_is_directory=True)
+    bundle["root"] = str(symlink_root.relative_to(tmp_path))
+
+    c = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "summary": {"total_trades": 7, "total_signals": 19},
+        "evidence_bundle": bundle,
+        "summary_sha256": hashlib.sha256(
+            json.dumps({"total_trades": 7, "total_signals": 19}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "",
+    }
+    c["provenance_sha256"] = hashlib.sha256(
+        json.dumps({k: v for k, v in c.items() if k != "provenance_sha256"}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    (artifact_root / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+
+    with pytest.raises(guard.ForwardSessionError, match="must not be a symlink"):
+        guard.ForwardSessionGuard.prepare("D", production_data=True, artifact_root=artifact_root)
