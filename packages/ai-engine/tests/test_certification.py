@@ -30,10 +30,54 @@ def _forward_evidence_file(tmp_path, commit="abc"):
         "max_drawdown_pct": 8.0,
         "session_c_trade_count": 50,
         "session_d_trade_count": 50,
-        "bundle_roots": {"C": "forward_sessions/session_C_evidence", "D": "forward_sessions/session_D_evidence"},
+        "bundle_roots": {"C": "session_C_evidence", "D": "session_D_evidence"},
     }
-    canonical = json.dumps(report, sort_keys=True, separators=(",", ":"), default=str)
-    report["aggregate_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    session_manifests = {}
+    evidence_manifests = {}
+    for session in ("C", "D"):
+        bundle_root = tmp_path / f"session_{session}_evidence"
+        bundle_root.mkdir(exist_ok=True)
+        evidence_manifests[session] = {}
+        for name, payload in {
+            "trades": b"id,signal_id\nT-1,S-1\n",
+            "signals": b"id\nS-1\n",
+            "summary": b"{}",
+        }.items():
+            filename = {
+                "trades": "paper_trading_trades.csv",
+                "signals": "paper_trading_signals.csv",
+                "summary": "summary.canonical.json",
+            }[name]
+            path = bundle_root / filename
+            path.write_bytes(payload)
+            evidence_manifests[session][name] = {
+                "path": str(path.relative_to(tmp_path)),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "bytes": len(payload),
+            }
+
+        artifact = {
+            "schema_version": 1,
+            "session": session,
+            "status": "COMPLETED",
+            "code_commit_sha": commit,
+            "parameter_hash": "param-1",
+        }
+        artifact_path = tmp_path / f"session_{session}.json"
+        artifact_payload = json.dumps(artifact, sort_keys=True).encode("utf-8")
+        artifact_path.write_bytes(artifact_payload)
+        session_manifests[session] = {
+            "path": artifact_path.name,
+            "sha256": hashlib.sha256(artifact_payload).hexdigest(),
+            "bytes": len(artifact_payload),
+        }
+
+    report["session_artifacts"] = session_manifests
+    report["evidence_files"] = evidence_manifests
+    report["artifact_root"] = "."
+    report["aggregate_sha256"] = hashlib.sha256(
+        json.dumps(report, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
     path = tmp_path / "forward_aggregate.json"
     payload = json.dumps(report, sort_keys=True, indent=2).encode("utf-8")
     path.write_bytes(payload)
