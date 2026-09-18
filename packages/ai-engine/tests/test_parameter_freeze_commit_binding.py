@@ -78,3 +78,28 @@ def test_parameter_freeze_hash_uses_complete_sha256(monkeypatch, tmp_path):
 
     assert len(frozen["param_hash"]) == 64
     assert frozen["param_hash"] == parameter_freeze._compute_hash({"ema": {"fast": 20}})
+
+
+
+def test_current_commit_uses_git_head_outside_ci(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("GITHUB_SHA", "attacker-controlled")
+    fake = type("Result", (), {"stdout": "real-git-head\n"})()
+    monkeypatch.setattr(parameter_freeze.subprocess, "run", lambda *args, **kwargs: fake)
+    assert parameter_freeze._current_commit_sha() == "real-git-head"
+
+
+def test_current_commit_requires_ci_sha_to_match_git_head(monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_SHA", "wrong-sha")
+    fake = type("Result", (), {"stdout": "real-git-head\n"})()
+    monkeypatch.setattr(parameter_freeze.subprocess, "run", lambda *args, **kwargs: fake)
+    assert parameter_freeze._current_commit_sha() == ""
+
+
+def test_current_commit_accepts_matching_ci_sha(monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_SHA", "real-git-head")
+    fake = type("Result", (), {"stdout": "real-git-head\n"})()
+    monkeypatch.setattr(parameter_freeze.subprocess, "run", lambda *args, **kwargs: fake)
+    assert parameter_freeze._current_commit_sha() == "real-git-head"

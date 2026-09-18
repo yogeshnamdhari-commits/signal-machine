@@ -27,14 +27,13 @@ _FREEZE_PATH = _AI_ROOT / "data" / "parameter_freeze.json"
 
 
 def _current_commit_sha() -> str:
-    """Return the authoritative source commit, or an empty string if unavailable.
+    """Return the checked-out source commit, or empty string if unavailable.
 
-    CI provides GITHUB_SHA. Outside CI, resolve the checked-out repository HEAD.
-    No guessed/fallback commit is permitted because the freeze must fail closed.
+    In GitHub Actions, GITHUB_SHA is accepted only when it exactly matches the
+    checked-out repository HEAD. Outside CI, only the local Git HEAD is trusted.
+    This prevents a caller-controlled environment variable from becoming the
+    provenance authority.
     """
-    github_sha = os.environ.get("GITHUB_SHA", "").strip()
-    if github_sha:
-        return github_sha
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -44,9 +43,15 @@ def _current_commit_sha() -> str:
             text=True,
             timeout=5,
         )
-        return result.stdout.strip()
+        git_sha = result.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
+
+    if os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true":
+        github_sha = os.environ.get("GITHUB_SHA", "").strip()
+        if not github_sha or github_sha != git_sha:
+            return ""
+    return git_sha
 
 
 def _snapshot_parameters() -> Dict[str, Any]:
