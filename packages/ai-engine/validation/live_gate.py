@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import math
-import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -13,6 +13,23 @@ from config.schema import config_fingerprint
 
 class LiveCertificationError(RuntimeError):
     pass
+
+
+def _current_commit_sha() -> str:
+    """Return the checked-out source commit; never trust caller-supplied commit env vars."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).resolve().parents[3]),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    sha = result.stdout.strip()
+    return sha if len(sha) == 40 and all(ch in "0123456789abcdef" for ch in sha.lower()) else ""
 
 
 def verify_live_certification(
@@ -35,8 +52,11 @@ def verify_live_certification(
     if artifact.get("configuration_fingerprint") != config_fingerprint(config):
         raise LiveCertificationError("Certification configuration fingerprint does not match runtime configuration")
 
-    expected_commit = os.getenv("GITHUB_SHA") or os.getenv("LIVE_CERT_COMMIT")
-    if expected_commit and artifact.get("commit_sha") != expected_commit:
+    running_commit = _current_commit_sha()
+    certified_commit = str(artifact.get("commit_sha", "")).strip()
+    if not running_commit:
+        raise LiveCertificationError("Running source commit is unavailable; live certification cannot be verified")
+    if not certified_commit or certified_commit != running_commit:
         raise LiveCertificationError("Certification commit does not match the running source commit")
 
     failures = artifact.get("failures") or []
