@@ -73,7 +73,7 @@ from scanner.ai_scorer import AIConfidenceScorer
 from execution.risk_engine import RiskEngine
 from scanner.position_sizing import PositionSizingEngine
 from scanner.entry_confirmation import EntryConfirmationEngine
-from app_layer.forward_session_guard import ForwardSessionGuard
+from app_layer.forward_session_guard import ForwardSessionGuard, ForwardSessionError
 
 # ── Constants ────────────────────────────────────────────────────
 STARTING_EQUITY = 10_000.0
