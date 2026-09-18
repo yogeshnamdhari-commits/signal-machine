@@ -103,6 +103,16 @@ def _verify_bundle_files(
 ) -> Dict[str, Path]:
     bundle = artifact["evidence_bundle"]
     indexed = bundle["artifacts"]
+    bundle_root_rel = bundle.get("root")
+    if not isinstance(bundle_root_rel, str) or not bundle_root_rel:
+        raise ForwardEvidenceError("Evidence bundle root is missing")
+    bundle_root = (data_root / bundle_root_rel).resolve()
+    data_root_resolved = data_root.resolve()
+    try:
+        bundle_root.relative_to(data_root_resolved)
+    except ValueError as exc:
+        raise ForwardEvidenceError("Evidence bundle root escapes the data root") from exc
+
     resolved: Dict[str, Path] = {}
 
     for name, meta in indexed.items():
@@ -120,6 +130,12 @@ def _verify_bundle_files(
         except ValueError as exc:
             raise ForwardEvidenceError(
                 f"Evidence path escapes the data root: {rel}"
+            ) from exc
+        try:
+            candidate.relative_to(bundle_root)
+        except ValueError as exc:
+            raise ForwardEvidenceError(
+                f"Evidence path is outside the declared bundle root: {rel}"
             ) from exc
         path = candidate
         if not path.is_file():
