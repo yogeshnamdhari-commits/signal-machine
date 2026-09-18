@@ -606,8 +606,9 @@ class ExchangeAdapter:
         requested = set(symbols or [])
         for s in result.get("symbols", []):
             if requested and s["symbol"] not in requested:
-                filters = {}
-                for f in s.get("filters", []):
+                continue
+            filters = {}
+            for f in s.get("filters", []):
                     if f["filterType"] == "PRICE_FILTER":
                         filters["tick_size"] = float(f["tickSize"])
                         filters["min_price"] = float(f["minPrice"])
