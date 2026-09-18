@@ -4,28 +4,19 @@ Parameter Freeze — Lock strategy parameters during validation.
 During the validation phase (Phase 1-3), no strategy parameters should change.
 This module snapshots parameters at freeze time and detects any drift.
 
-Usage:
-    from scanner.parameter_freeze import ParameterFreeze
-    
-    freeze = ParameterFreeze()
-    
-    # At freeze time (start of validation):
-    freeze.freeze()
-    
-    # At any point (e.g., after restart):
-    status = freeze.check()
-    if not status["frozen"]:
-        print("Parameters not frozen!")
-    elif not status["clean"]:
-        print(f"Parameters changed: {status['drift']}")
+The freeze is also bound to the exact source commit. A freeze created without
+an authoritative commit identifier, or checked from a different commit, is
+invalid and therefore fails closed.
 """
 
 import hashlib
 import json
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 # Ensure packages/ai-engine is on the path when run as a script
 _AI_ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +24,29 @@ if str(_AI_ROOT) not in sys.path:
     sys.path.insert(0, str(_AI_ROOT))
 
 _FREEZE_PATH = _AI_ROOT / "data" / "parameter_freeze.json"
+
+
+def _current_commit_sha() -> str:
+    """Return the authoritative source commit, or an empty string if unavailable.
+
+    CI provides GITHUB_SHA. Outside CI, resolve the checked-out repository HEAD.
+    No guessed/fallback commit is permitted because the freeze must fail closed.
+    """
+    github_sha = os.environ.get("GITHUB_SHA", "").strip()
+    if github_sha:
+        return github_sha
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(_AI_ROOT.parent.parent),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
 
 def _snapshot_parameters() -> Dict[str, Any]:
@@ -44,7 +58,7 @@ def _snapshot_parameters() -> Dict[str, Any]:
             TradeConfig, StateConfig, CacheConfig
         )
         from config.settings import config
-        
+
         snapshot = {
             "timestamp": time.time(),
             "ema": {
@@ -121,72 +135,107 @@ def _snapshot_parameters() -> Dict[str, Any]:
 
 def _compute_hash(snapshot: Dict[str, Any]) -> str:
     """Compute a stable hash of the parameter snapshot."""
-    # Remove timestamp before hashing
     s = {k: v for k, v in snapshot.items() if k != "timestamp"}
     canonical = json.dumps(s, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
 class ParameterFreeze:
-    """Manages strategy parameter freezing during validation."""
-    
+    """Manages strategy parameter and source-commit freezing during validation."""
+
     def __init__(self):
         self._freeze_path = _FREEZE_PATH
-    
+
     def freeze(self) -> Dict[str, Any]:
-        """Freeze current parameters. Returns freeze record."""
+        """Freeze current parameters and exact source commit."""
         snapshot = _snapshot_parameters()
         param_hash = _compute_hash(snapshot)
-        
+        commit_sha = _current_commit_sha()
+        if not commit_sha:
+            return {
+                "frozen": False,
+                "clean": False,
+                "reason": "Authoritative source commit unavailable; freeze refused",
+            }
+
         record = {
             "frozen": True,
             "frozen_at": time.time(),
             "frozen_at_human": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "code_commit_sha": commit_sha,
             "param_hash": param_hash,
             "snapshot": snapshot,
-            "reason": "Validation phase — parameters locked until baseline complete",
+            "reason": "Validation phase — parameters and source commit locked until validation completes",
         }
-        
+
         self._freeze_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._freeze_path, "w") as f:
             json.dump(record, f, indent=2, default=str)
-        
+
         return record
-    
+
     def check(self) -> Dict[str, Any]:
-        """Check if parameters match the frozen snapshot."""
+        """Check parameters and source commit against the frozen record."""
         if not self._freeze_path.exists():
             return {"frozen": False, "clean": False, "reason": "No freeze file found"}
-        
-        with open(self._freeze_path) as f:
-            frozen = json.load(f)
-        
+
+        try:
+            with open(self._freeze_path) as f:
+                frozen = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"frozen": False, "clean": False, "reason": f"Invalid freeze file: {exc}"}
+
         if not frozen.get("frozen"):
             return {"frozen": False, "clean": False, "reason": "Freeze not active"}
-        
+
+        frozen_commit = str(frozen.get("code_commit_sha", "")).strip()
+        current_commit = _current_commit_sha()
+        if not frozen_commit:
+            return {
+                "frozen": True,
+                "clean": False,
+                "reason": "Freeze has no authoritative source commit",
+            }
+        if not current_commit:
+            return {
+                "frozen": True,
+                "clean": False,
+                "reason": "Current authoritative source commit unavailable",
+                "frozen_commit": frozen_commit,
+            }
+        if current_commit != frozen_commit:
+            return {
+                "frozen": True,
+                "clean": False,
+                "reason": "Source commit changed since freeze",
+                "frozen_commit": frozen_commit,
+                "current_commit": current_commit,
+            }
+
         current_snapshot = _snapshot_parameters()
         current_hash = _compute_hash(current_snapshot)
         frozen_hash = frozen.get("param_hash", "")
-        
+
         if current_hash == frozen_hash:
             return {
                 "frozen": True,
                 "clean": True,
                 "frozen_at": frozen.get("frozen_at_human", "unknown"),
+                "code_commit_sha": current_commit,
                 "hash": current_hash,
             }
-        else:
-            # Find what changed
-            drift = self._find_drift(frozen.get("snapshot", {}), current_snapshot)
-            return {
-                "frozen": True,
-                "clean": False,
-                "frozen_at": frozen.get("frozen_at_human", "unknown"),
-                "frozen_hash": frozen_hash,
-                "current_hash": current_hash,
-                "drift": drift,
-            }
-    
+
+        drift = self._find_drift(frozen.get("snapshot", {}), current_snapshot)
+        return {
+            "frozen": True,
+            "clean": False,
+            "frozen_at": frozen.get("frozen_at_human", "unknown"),
+            "code_commit_sha": current_commit,
+            "frozen_hash": frozen_hash,
+            "current_hash": current_hash,
+            "drift": drift,
+        }
+
     def _find_drift(self, frozen: Dict, current: Dict) -> list:
         """Find specific parameter changes between frozen and current."""
         changes = []
@@ -205,32 +254,35 @@ class ParameterFreeze:
                             f"{section}.{param}: {frozen[section][param]} → {current[section][param]}"
                         )
         return changes
-    
+
     def unfreeze(self) -> bool:
         """Unfreeze parameters (requires manual confirmation)."""
         if not self._freeze_path.exists():
             return False
-        
+
         with open(self._freeze_path) as f:
             frozen = json.load(f)
-        
+
         frozen["frozen"] = False
         frozen["unfrozen_at"] = time.time()
         frozen["unfrozen_at_human"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        
+
         with open(self._freeze_path, "w") as f:
             json.dump(frozen, f, indent=2, default=str)
-        
+
         return True
 
 
 if __name__ == "__main__":
     freeze = ParameterFreeze()
-    
-    import sys
+
     if len(sys.argv) > 1 and sys.argv[1] == "freeze":
         record = freeze.freeze()
+        if not record.get("frozen"):
+            print(f"❌ Freeze refused: {record.get('reason', 'unknown reason')}")
+            raise SystemExit(1)
         print(f"🔒 Parameters frozen at {record['frozen_at_human']}")
+        print(f"   Commit: {record['code_commit_sha']}")
         print(f"   Hash: {record['param_hash']}")
     elif len(sys.argv) > 1 and sys.argv[1] == "unfreeze":
         if freeze.unfreeze():
@@ -240,12 +292,13 @@ if __name__ == "__main__":
     else:
         status = freeze.check()
         if not status["frozen"]:
-            print("⚠️  Parameters NOT frozen — run: python3 parameter_freeze.py freeze")
+            print(f"⚠️  Parameters NOT frozen — {status.get('reason', 'run freeze first')}")
         elif status["clean"]:
             print(f"✅ Parameters frozen and clean (since {status['frozen_at']})")
+            print(f"   Commit: {status['code_commit_sha']}")
             print(f"   Hash: {status['hash']}")
         else:
-            print(f"❌ Parameters CHANGED since freeze!")
-            print(f"   Frozen at: {status['frozen_at']}")
+            print("❌ Freeze integrity check FAILED")
+            print(f"   Reason: {status.get('reason', 'parameter drift')}")
             for change in status.get("drift", []):
                 print(f"   → {change}")
