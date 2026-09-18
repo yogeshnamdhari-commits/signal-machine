@@ -466,4 +466,18 @@ class ForwardSessionGuard:
             _canonical_json({k: v for k, v in final.items() if k != "provenance_sha256"}).encode("utf-8")
         ).hexdigest()
         _atomic_write(_artifact_path(artifact_root, session), final)
+
+        if session == "D":
+            try:
+                from app_layer.forward_evidence_aggregator import aggregate_forward_evidence
+
+                aggregate_forward_evidence(
+                    artifact_root=artifact_root,
+                    output_path=artifact_root / "forward_aggregate.json",
+                )
+            except Exception as exc:
+                raise ForwardSessionError(
+                    f"Session D completed artifact cannot be aggregated: {exc}"
+                ) from exc
+
         return final
