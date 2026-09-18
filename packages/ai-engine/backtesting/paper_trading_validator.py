@@ -725,6 +725,9 @@ class PaperTradingEngine:
         # ── State ────────────────────────────────────────────────
         self.active_symbols: Set[str] = set()
         self.symbol_data: Dict[str, Dict] = {}
+        # Observed funding schedules keyed by symbol and settlement timestamp.
+        # This preserves an interval after Binance rolls nextFundingTime forward.
+        self._funding_schedule: Dict[str, Dict[int, Dict[str, Any]]] = {}
         self.signals: List[PaperSignal] = []
         self.closed_trades: List[PaperTrade] = []
         self.daily_reports: List[DailyReport] = []
@@ -945,9 +948,31 @@ class PaperTradingEngine:
                 rate = float(data.get("funding_rate", 0.0))
                 event_ts = float(data.get("timestamp", int(time.time() * 1000)))
                 await self.funding.process_funding(sym, rate, event_ts / 1000.0)
+                next_funding_time = int(data.get("next_funding_time", 0) or 0)
+                observed_at = int(event_ts)
+                funding_observation = {
+                    "funding_rate": rate,
+                    "next_funding_time": next_funding_time,
+                    "mark_price": float(data.get("mark_price", 0.0) or 0.0),
+                    "index_price": float(data.get("index_price", 0.0) or 0.0),
+                    "observed_at": observed_at,
+                    "source": data.get("source", "binance"),
+                    "feed": data.get("feed", "markPrice"),
+                    "data_quality": "REAL",
+                    "synthetic": False,
+                }
+                if next_funding_time > 0:
+                    schedule = self._funding_schedule.setdefault(sym, {})
+                    schedule[next_funding_time] = funding_observation
+                    # Retain a bounded history; entries can only be used once their
+                    # settlement timestamp has passed.
+                    if len(schedule) > 8:
+                        for stale_ts in sorted(schedule)[:-8]:
+                            schedule.pop(stale_ts, None)
+
                 sd["funding"] = {
                     "funding_rate": rate,
-                    "next_funding_time": int(data.get("next_funding_time", 0) or 0),
+                    "next_funding_time": next_funding_time,
                     "mark_price": float(data.get("mark_price", 0.0) or 0.0),
                     "index_price": float(data.get("index_price", 0.0) or 0.0),
                     "observed_at": int(event_ts),
@@ -1208,51 +1233,56 @@ class PaperTradingEngine:
     # ── Health monitoring loop ───────────────────────────────────
 
     def _settle_due_funding(self) -> None:
-        """Apply only observed, real funding rates once their settlement time arrives."""
+        """Apply observed funding schedules once their settlement timestamp arrives."""
         now_ms = int(time.time() * 1000)
 
         for trade in self.position_mgr.get_open_positions():
-            obs = self.symbol_data.get(trade.symbol, {}).get("funding")
-            if not obs:
-                continue
-            if obs.get("data_quality") != "REAL" or obs.get("synthetic", False):
+            schedule = self._funding_schedule.get(trade.symbol, {})
+            if not schedule:
                 continue
 
-            settlement_ms = int(obs.get("next_funding_time", 0) or 0)
-            observed_at_ms = int(obs.get("observed_at", 0) or 0)
-            if settlement_ms <= 0 or settlement_ms > now_ms:
-                continue
-            if trade.entry_time * 1000 >= settlement_ms:
-                continue
-            if trade.last_funding_time >= settlement_ms:
-                continue
-            mark_price = float(obs.get("mark_price", 0.0) or 0.0)
-            if mark_price <= 0:
-                continue
+            for settlement_ms in sorted(schedule):
+                if settlement_ms <= trade.last_funding_time:
+                    continue
+                if settlement_ms <= 0 or settlement_ms > now_ms:
+                    continue
+                if trade.entry_time * 1000 >= settlement_ms:
+                    continue
 
-            funding_rate = float(obs.get("funding_rate", 0.0) or 0.0)
-            funding_pnl = self.position_mgr.apply_funding(
-                trade.id,
-                funding_rate=funding_rate,
-                mark_price=mark_price,
-                settlement_time=settlement_ms,
-            )
-            if funding_pnl != 0.0:
-                logger.info(
-                    "PAPER FUNDING: {} {} @ rate {:.6%} | Notional {:.2f} | Funding PnL {:.4f}",
-                    trade.side,
-                    trade.symbol,
-                    funding_rate,
-                    mark_price * trade.quantity,
-                    funding_pnl,
-                )
-            elif trade.last_funding_time == settlement_ms and observed_at_ms > 0:
-                logger.debug(
-                    "Funding settlement applied with observed_at={} for {} {}",
-                    observed_at_ms,
-                    trade.symbol,
+                obs = schedule[settlement_ms]
+                if obs.get("data_quality") != "REAL" or obs.get("synthetic", False):
+                    continue
+
+                mark_price = float(obs.get("mark_price", 0.0) or 0.0)
+                if mark_price <= 0:
+                    continue
+
+                funding_rate = float(obs.get("funding_rate", 0.0) or 0.0)
+                funding_pnl = self.position_mgr.apply_funding(
                     trade.id,
+                    funding_rate=funding_rate,
+                    mark_price=mark_price,
+                    settlement_time=settlement_ms,
                 )
+                if funding_pnl != 0.0:
+                    logger.info(
+                        "PAPER FUNDING: {} {} @ rate {:.6%} | Notional {:.2f} | Funding PnL {:.4f}",
+                        trade.side,
+                        trade.symbol,
+                        funding_rate,
+                        mark_price * trade.quantity,
+                        funding_pnl,
+                    )
+
+            # Drop only schedules that every open trade has already passed.
+            if schedule:
+                earliest_open_entry_ms = min(
+                    (int(p.entry_time * 1000) for p in self.position_mgr.get_open_positions() if p.symbol == trade.symbol),
+                    default=now_ms,
+                )
+                for settlement_ms in list(schedule):
+                    if settlement_ms < earliest_open_entry_ms:
+                        schedule.pop(settlement_ms, None)
 
     async def _health_loop(self) -> None:
         """Periodic system health check."""
@@ -1290,6 +1320,7 @@ class PaperTradingEngine:
                 "start_time": self._start_time,
                 "closed_trades_count": len(self.closed_trades),
                 "signals_count": len(self.signals),
+                "funding_schedule": self._funding_schedule,
                 "open_positions": [
                     {
                         "id": t.id, "signal_id": t.signal_id, "symbol": t.symbol,
@@ -1331,6 +1362,12 @@ class PaperTradingEngine:
             self.peak_equity = state.get("peak_equity", self.current_equity)
             self._start_time = state.get("start_time", time.time())
             self.equity_history = state.get("equity_history", [])
+            raw_schedule = state.get("funding_schedule", {})
+            self._funding_schedule = {
+                str(symbol): {int(ts): obs for ts, obs in entries.items()}
+                for symbol, entries in raw_schedule.items()
+                if isinstance(entries, dict)
+            }
 
             # Restore open positions
             for pos_data in state.get("open_positions", []):
