@@ -1,5 +1,6 @@
 """Tests for the controlled forward-session evidence guard."""
 
+import hashlib
 import json
 
 import pytest
@@ -56,14 +57,27 @@ def test_forward_session_d_requires_completed_c(monkeypatch, tmp_path):
             "D", production_data=True, artifact_root=tmp_path
         )
 
-    c = {
+    c_base = {
         "schema_version": 1,
         "session": "C",
         "status": "COMPLETED",
         "code_commit_sha": "commit-1",
         "parameter_hash": "param-1",
+        "summary": {"total_trades": 7, "total_signals": 19},
+        "summary_sha256": "",
+        "provenance_sha256": "",
     }
-    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+    c_base["summary_sha256"] = hashlib.sha256(
+        json.dumps(c_base["summary"], sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    c_base["provenance_sha256"] = hashlib.sha256(
+        json.dumps(
+            {k: v for k, v in c_base.items() if k != "provenance_sha256"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    (tmp_path / "session_C.json").write_text(json.dumps(c_base), encoding="utf-8")
 
     d = guard.ForwardSessionGuard.prepare(
         "D", production_data=True, artifact_root=tmp_path
@@ -101,5 +115,67 @@ def test_finalize_records_observation_counts_and_summary_hash(monkeypatch, tmp_p
     assert final["closed_trade_count"] == 7
     assert final["signal_count"] == 19
     assert len(final["summary_sha256"]) == 64
+    assert final["summary"] == summary
     saved = json.loads((tmp_path / "session_C.json").read_text(encoding="utf-8"))
     assert saved["provenance_sha256"] == final["provenance_sha256"]
+    assert saved["summary"] == summary
+    assert saved["summary_sha256"] == final["summary_sha256"]
+
+
+def test_forward_session_d_rejects_tampered_completed_c(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    c = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "summary": {"total_trades": 7, "total_signals": 19},
+        "summary_sha256": hashlib.sha256(
+            json.dumps(
+                {"total_trades": 7, "total_signals": 19},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "tampered",
+    }
+    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+
+    with pytest.raises(guard.ForwardSessionError, match="provenance integrity check failed"):
+        guard.ForwardSessionGuard.prepare(
+            "D", production_data=True, artifact_root=tmp_path
+        )
+
+
+def test_forward_session_d_rejects_tampered_completed_c_summary(monkeypatch, tmp_path):
+    _fake_freeze(monkeypatch)
+    c = {
+        "schema_version": 1,
+        "session": "C",
+        "status": "COMPLETED",
+        "code_commit_sha": "commit-1",
+        "parameter_hash": "param-1",
+        "summary": {"total_trades": 7, "total_signals": 19},
+        "summary_sha256": hashlib.sha256(
+            json.dumps(
+                {"total_trades": 6, "total_signals": 19},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "provenance_sha256": "",
+    }
+    c["provenance_sha256"] = hashlib.sha256(
+        json.dumps(
+            {k: v for k, v in c.items() if k != "provenance_sha256"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    (tmp_path / "session_C.json").write_text(json.dumps(c), encoding="utf-8")
+
+    with pytest.raises(guard.ForwardSessionError, match="summary integrity check failed"):
+        guard.ForwardSessionGuard.prepare(
+            "D", production_data=True, artifact_root=tmp_path
+        )
