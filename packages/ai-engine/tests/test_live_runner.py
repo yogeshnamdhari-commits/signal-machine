@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from execution.live_runner import (
@@ -14,57 +16,79 @@ def _cert():
     }
 
 
-def test_live_preflight_requires_explicit_arm(monkeypatch):
+def _set_test_config(monkeypatch, *, testnet, api_key, api_secret, rest_url):
     import execution.live_runner as runner
 
+    monkeypatch.setattr(
+        runner,
+        "config",
+        SimpleNamespace(
+            binance=SimpleNamespace(
+                testnet=testnet,
+                api_key=api_key,
+                api_secret=api_secret,
+                rest_url=rest_url,
+            )
+        ),
+    )
+    return runner
+
+
+def test_live_preflight_requires_explicit_arm(monkeypatch):
+    runner = _set_test_config(
+        monkeypatch,
+        testnet=False,
+        api_key="key",
+        api_secret="secret",
+        rest_url="https://fapi.binance.com",
+    )
     monkeypatch.setattr(runner, "verify_live_certification", _cert)
     monkeypatch.delenv("LIVE_TRADING_ARMED", raising=False)
-    monkeypatch.setattr(runner.config.binance, "testnet", False, raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_key", "key", raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_secret", "secret", raising=False)
-    monkeypatch.setattr(runner.config.binance, "rest_url", "https://fapi.binance.com", raising=False)
 
     with pytest.raises(LiveTradingConfigurationError, match="LIVE_TRADING_ARMED"):
         verify_live_runtime_preflight()
 
 
 def test_live_preflight_rejects_testnet(monkeypatch):
-    import execution.live_runner as runner
-
+    runner = _set_test_config(
+        monkeypatch,
+        testnet=True,
+        api_key="key",
+        api_secret="secret",
+        rest_url="https://testnet.binancefuture.com",
+    )
     monkeypatch.setattr(runner, "verify_live_certification", _cert)
     monkeypatch.setenv("LIVE_TRADING_ARMED", "true")
-    monkeypatch.setattr(runner.config.binance, "testnet", True, raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_key", "key", raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_secret", "secret", raising=False)
-    monkeypatch.setattr(runner.config.binance, "rest_url", "https://testnet.binancefuture.com", raising=False)
 
     with pytest.raises(LiveTradingConfigurationError, match="testnet=false"):
         verify_live_runtime_preflight()
 
 
 def test_live_preflight_rejects_missing_credentials(monkeypatch):
-    import execution.live_runner as runner
-
+    runner = _set_test_config(
+        monkeypatch,
+        testnet=False,
+        api_key="",
+        api_secret="",
+        rest_url="https://fapi.binance.com",
+    )
     monkeypatch.setattr(runner, "verify_live_certification", _cert)
     monkeypatch.setenv("LIVE_TRADING_ARMED", "true")
-    monkeypatch.setattr(runner.config.binance, "testnet", False, raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_key", "", raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_secret", "", raising=False)
-    monkeypatch.setattr(runner.config.binance, "rest_url", "https://fapi.binance.com", raising=False)
 
     with pytest.raises(LiveTradingConfigurationError, match="credentials are missing"):
         verify_live_runtime_preflight()
 
 
 def test_live_preflight_accepts_complete_explicit_configuration(monkeypatch):
-    import execution.live_runner as runner
-
+    runner = _set_test_config(
+        monkeypatch,
+        testnet=False,
+        api_key="key",
+        api_secret="secret",
+        rest_url="https://fapi.binance.com",
+    )
     monkeypatch.setattr(runner, "verify_live_certification", _cert)
     monkeypatch.setenv("LIVE_TRADING_ARMED", "true")
-    monkeypatch.setattr(runner.config.binance, "testnet", False, raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_key", "key", raising=False)
-    monkeypatch.setattr(runner.config.binance, "api_secret", "secret", raising=False)
-    monkeypatch.setattr(runner.config.binance, "rest_url", "https://fapi.binance.com", raising=False)
 
     result = verify_live_runtime_preflight()
     assert result.live_armed is True
