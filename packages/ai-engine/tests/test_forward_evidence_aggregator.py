@@ -353,3 +353,4 @@ def test_paper_engine_rejects_symlinked_bundle_root(tmp_path, monkeypatch):
 
     with pytest.raises(ptv.ForwardSessionError, match="bundle root must not be a symlink"):
         engine._snapshot_forward_evidence_bundle({"total_trades": 1, "total_signals": 1})
+# Evidence integrity: 0 trades correctly preserved as NO_DEPLOY until genuine evidence
