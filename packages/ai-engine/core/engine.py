@@ -5510,11 +5510,9 @@ class DeltaTerminalEngine:
         else:
             oi_bias = None
 
-        vol = getattr(self, '_vol_map', {}).get(sym, 0)
-        if vol == 0:
-            # Filter out synthetic !ticker@arr trades for volume calc
-            _real_trades = [t for t in sd["trades"][-50:] if t.get("_source") != "ticker_arr"]
-            vol = sum(t.get("quantity", 0) * t.get("price", 0) for t in _real_trades)
+        # 24h volume is authoritative only from Binance 24h ticker quoteVolume.
+        # Never substitute a recent trade sample for a 24h statistic.
+        vol = float(_eff_ticker.get("quoteVolume") or 0)
         _trades_count = len(sd.get("trades", []))
         # Filter out synthetic ticker trades for fallback computation
         # Include ALL trades (even ticker_arr) for CVD/OF — they have real price data
@@ -5790,7 +5788,7 @@ class DeltaTerminalEngine:
             "time": time.strftime("%H:%M:%S", time.localtime(ts)),
             "timestamp": ts,
             # ── Additional dashboard fields ──
-            "volume_24h": round(vol, 2),
+            "volume_24h": round(vol, 2) if vol > 0 else None,
             "change_1h": 0.0,  # computed from klines below
             "change_4h": 0.0,  # computed from klines below
             "spread": 0.0,  # computed from best bid/ask if available
