@@ -226,3 +226,16 @@ def test_sweep_volume_baseline_does_not_mix_timeframes():
         return before
 
     return asyncio.run(run())
+
+
+def test_directional_evidence_uses_metric_specific_freshness():
+    from dashboard.live_sheet_contract import build_signal_display
+
+    row = {
+        "timestamp": time.time(),
+        "open_interest": 1_000_000.0,
+        "oi_bias": "buy",
+        "metric_timestamps": {"open_interest": time.time() - 60},
+    }
+    display = build_signal_display({}, row)
+    assert display["oi"].quality.value == "unavailable"
