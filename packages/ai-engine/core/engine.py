@@ -707,14 +707,13 @@ class DeltaTerminalEngine:
                 # Update institutional CVD tracker (skip synthetic trades)
                 if data.get("_source") != "ticker_arr":
                     self.cvd_inst.update(
-                        sym, data.get("price", 0), data.get("quantity", 0), 
-                        data.get("is_buyer_maker", False)
+                        sym, data.get("price", 0), data.get("quantity", 0),
+                        data.get("is_buyer_maker", False),
+                        timestamp_ms=data.get("trade_time"),
                     )
                 
-                # Feed liquidation engine — only very large trades (> $100k)
-                trade_val = data.get("price", 0) * data.get("quantity", 0)
-                if trade_val > 100_000:
-                    await self.liquidation.process_trade(sym, data)
+                # Ordinary trades are never interpreted as liquidations.
+                # Authentic liquidation metrics come only from Binance forceOrder.
                 
             elif event == "depth":
                 sd["orderbook"] = {"bids": data.get("bids", []), "asks": data.get("asks", [])}
@@ -799,12 +798,13 @@ class DeltaTerminalEngine:
 
             elif event == "liquidation":
                 # Feed liquidation engine with trade-like data
-                liq_trade = {
-                    "price": data.get("price", 0),
-                    "quantity": data.get("quantity", 0),
-                    "is_buyer_maker": data.get("side") == "SELL",
-                }
-                await self.liquidation.process_trade(sym, liq_trade, normal_volume=5000)
+                await self.liquidation.process_force_order(
+                    symbol=sym,
+                    side=data.get("side", ""),
+                    price=float(data.get("price", 0) or 0),
+                    quantity=float(data.get("quantity", 0) or 0),
+                    timestamp_ms=int(data.get("timestamp", int(time.time() * 1000))),
+                )
 
         except Exception as exc:
             logger.error("Handler error {}: {}", sym, exc)
