@@ -5517,20 +5517,21 @@ class DeltaTerminalEngine:
         cvd_data = self.cvd_inst.get_analysis(sym)
         regime_data = self.regime.get_regime(sym) if hasattr(self.regime, 'get_regime') else None
 
-        funding_rate = funding_data.get("current_rate", 0) if funding_data else 0
-        funding_bias = funding_data.get("signal", "neutral") if funding_data else "neutral"
-        funding_z = funding_data.get("z_score", 0) if funding_data else 0
+        funding_rate = funding_data.get("current_rate") if funding_data else None
+        funding_bias = funding_data.get("signal") if funding_data else None
+        funding_z = funding_data.get("z_score") if funding_data else None
         # Use production premium index funding rate (WS may have testnet data)
         if sym in self._premium_data:
-            funding_rate = self._premium_data[sym].get("current_rate", funding_rate)
-            # Recompute funding_bias from actual rate (WS signal may be stale)
-            if funding_rate < -0.0001:
+            funding_rate = self._premium_data[sym].get("current_rate")
+            # Recompute from the authoritative production premium-index rate.
+            if funding_rate is not None and funding_rate < -0.0001:
                 funding_bias = "buy"
-            elif funding_rate > 0.0001:
+            elif funding_rate is not None and funding_rate > 0.0001:
                 funding_bias = "sell"
-            else:
+            elif funding_rate is not None:
                 funding_bias = "neutral"
-        funding_rate = max(-0.05, min(0.05, funding_rate))
+        if funding_rate is not None:
+            funding_rate = max(-0.05, min(0.05, funding_rate))
 
         current_oi = oi_data.get("current_oi", 0) if oi_data else 0
         oi_change_pct = oi_data.get("change_5m_pct") if oi_data else None
@@ -5543,15 +5544,18 @@ class DeltaTerminalEngine:
             oi_bias = "buy"
         elif oi_regime_val == "bearish_oi":
             oi_bias = "sell"
-        elif abs(oi_change_pct) >= 0.005 and oi_data:
-            # Fallback: use oi_change_pct + price direction from ticker
-            price_chg_24h = float(_eff_ticker.get("price_change", 0))
+        elif oi_data and oi_change_pct is not None and abs(oi_change_pct) >= 0.005:
+            # Use the authenticated 5m OI change + 24h price direction only
+            # as a calculated contextual bias.
+            price_chg_24h = float(_eff_ticker.get("price_change", 0) or 0)
             if oi_change_pct > 0:
                 oi_bias = "buy" if price_chg_24h >= 0 else "sell"
             else:
                 oi_bias = "sell" if price_chg_24h >= 0 else "buy"
-        else:
+        elif oi_data:
             oi_bias = "neutral"
+        else:
+            oi_bias = None
 
         vol = getattr(self, '_vol_map', {}).get(sym, 0)
         if vol == 0:
@@ -5580,7 +5584,13 @@ class DeltaTerminalEngine:
             else:
                 vol_bias = "neutral"
 
-        regime = regime_data.get("regime", "range") if regime_data else "range"
+        # A regime is calculated only when the regime engine has sufficient
+        # real closed-kline evidence. Do not expose its default RANGE fallback.
+        regime = (
+            regime_data.get("regime")
+            if regime_data and regime_data.get("tf_regimes")
+            else None
+        )
 
         sig = next((s for s in deduped_signals if s["symbol"] == sym), None)
         signal_side = sig.get("side", "").lower() if sig else ""
