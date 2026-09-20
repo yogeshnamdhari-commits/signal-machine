@@ -89,14 +89,14 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
         if value is None or observed_at <= 0:
             return _factor("b_s_ratio", DirectionState.NEUTRAL, 0, "taker buy/sell ratio unavailable", row, "aggTrade", DataQuality.UNAVAILABLE, "exchange")
         state = DirectionState.BUY if value > 1.02 else DirectionState.SELL if value < 0.98 else DirectionState.NEUTRAL
-        return _factor("b_s_ratio", state, min(100, 50 + abs(value - 1) * 500), f"B/S ratio={value:.3f}", row, "aggTrade", DataQuality.LIVE, "exchange")
+        return _factor("b_s_ratio", state, min(100, 50 + abs(value - 1) * 500), f"B/S ratio={value:.3f}", row, "aggTrade", DataQuality.CALCULATED, "exchange")
 
     if key == "delta":
         value = _num(row, "net_delta")
         if value is None or observed_at <= 0:
             return _factor("delta", DirectionState.NEUTRAL, 0, "trade delta unavailable", row, "aggTrade", DataQuality.UNAVAILABLE, "exchange")
         state = DirectionState.BUY if value > 0 else DirectionState.SELL if value < 0 else DirectionState.NEUTRAL
-        return _factor("delta", state, 70 if value else 50, f"net delta={value:+.2f}", row, "aggTrade", DataQuality.LIVE, "exchange")
+        return _factor("delta", state, 70 if value else 50, f"net delta={value:+.2f}", row, "aggTrade", DataQuality.CALCULATED, "exchange")
 
     if key == "oi":
         value = _num(row, "open_interest")
@@ -111,7 +111,7 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
         # Funding is a positioning/risk modifier, not a standalone trade trigger.
         # Negative funding is long-supportive; positive funding is short-supportive.
         state = DirectionState.BUY if value < -0.0001 else DirectionState.SELL if value > 0.0001 else DirectionState.NEUTRAL
-        return _factor("funding", state, min(100, 50 + min(abs(value) * 5000, 50)), f"funding={value:+.6f}%", row, "markPrice", DataQuality.LIVE, "exchange")
+        return _factor("funding", state, min(100, 50 + min(abs(value) * 5000, 50)), f"funding={value:+.6f}%", row, "markPrice", DataQuality.CALCULATED, "exchange")
 
     if key == "cvd":
         return _from_bias("cvd", row, "cvd_bias", "aggTrade")
