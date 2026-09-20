@@ -523,7 +523,9 @@ class DeltaTerminalEngine:
             asyncio.create_task(self._loop("cleanup", self._cleanup_loop), name="cleanup"),
             asyncio.create_task(self._oi_poll_loop(), name="oi_poll"),
             asyncio.create_task(self._kline_poll_loop(), name="kline_poll"),
-            asyncio.create_task(self._rest_trade_poll_loop(), name="rest_trade_poll"),
+            # No REST trade backfill in production: aggTrade is the sole live
+            # trade-tape source. A dead WS therefore produces UNAVAILABLE metrics
+            # instead of mixing delayed REST history into real-time flow.
             asyncio.create_task(self._loop("calibration", self._calibration_outcome_loop), name="calibration"),
         ]
 
@@ -1148,130 +1150,6 @@ class DeltaTerminalEngine:
                 logger.info("📥 WS mark price cache: {} symbols", len(ws_mp))
         except Exception as e:
             logger.debug("Premium prefetch error: {}", e)
-
-    # ═══════════════════════════════════════════════════════════════
-    # REST TRADE POLLER — Backup when WS trade stream is dead
-    # Fetches recent trades via REST and feeds into the engine
-    # ═══════════════════════════════════════════════════════════════
-    async def _rest_trade_poll_loop(self) -> None:
-        """Poll recent trades via REST API when WS trade stream is inactive.
-
-        Detects when symbols have 0 or very few trades (WS dead) and
-        backfills via REST /fapi/v1/trades so orderflow, CVD, smart money,
-        and scoring all have data to work with.
-        """
-        await asyncio.sleep(15)  # Wait for initial WS connection attempt
-        _POLL_CONCURRENCY = 10
-        _POLL_INTERVAL = 15  # seconds between full cycles
-
-        while self.is_running:
-            try:
-                # Only poll symbols where WS isn't delivering trade data
-                _needs_trades = []
-                _now = time.time()
-                for sym in self.active_symbols:
-                    sd = self.symbol_data.get(sym)
-                    if not sd:
-                        _needs_trades.append(sym)
-                        continue
-                    trades = sd.get("trades", [])
-                    # No trades, or last trade older than 60s = WS is dead
-                    if not trades:
-                        _needs_trades.append(sym)
-                    else:
-                        last_ts = trades[-1].get("trade_time", 0)
-                        if last_ts > 1e10:
-                            last_ts = last_ts / 1000
-                        if _now - last_ts > 60:
-                            _needs_trades.append(sym)
-
-                if not _needs_trades:
-                    await asyncio.sleep(_POLL_INTERVAL)
-                    continue
-
-                # Sort by volume to prioritize high-liquidity symbols
-                _needs_trades.sort(key=lambda s: self._vol_map.get(s, 0), reverse=True)
-                _batch = _needs_trades[:80]  # Max 80 per cycle to avoid rate limits
-
-                logger.info("🔄 REST trade poll: {}/{} symbols need trades", len(_batch), len(self.active_symbols))
-
-                sem = asyncio.Semaphore(_POLL_CONCURRENCY)
-                _fed_count = 0
-
-                async def _fetch_sym_trades(sym: str) -> int:
-                    nonlocal _fed_count
-                    async with sem:
-                        try:
-                            data = await self.ws._get("/fapi/v1/trades", {"symbol": sym, "limit": 500})
-                            if not data or not isinstance(data, list):
-                                return 0
-                            sd = self.symbol_data.setdefault(
-                                sym, {"trades": [], "orderbook": {"bids": [], "asks": []}, "klines": {}, "ts": 0}
-                            )
-                            sd["ts"] = _now
-                            existing_count = len(sd.get("trades", []))
-                            fed = 0
-                            for t in data:
-                                price = float(t.get("price", 0))
-                                qty = float(t.get("qty", 0))
-                                if price <= 0 or qty <= 0:
-                                    continue
-                                trade_event = {
-                                    "symbol": sym,
-                                    "price": price,
-                                    "quantity": qty,
-                                    "is_buyer_maker": t.get("isBuyerMaker", False),
-                                    "trade_time": t.get("time", int(_now * 1000)),
-                                    "_source": "rest_trades",
-                                }
-                                sd["trades"].append(trade_event)
-                                # Feed event bus for orderflow, exchange flow, CVD, smart money
-                                try:
-                                    await bus.publish("trade_event", (sym, trade_event))
-                                except Exception as _e:
-                                    logger.debug("Event bus publish failed for {}: {}", sym, _e)
-                                # Feed Smart Money Engine
-                                try:
-                                    await self.smart_money.process_trade(sym, trade_event)
-                                    await self.prob_accum.process_trade(sym, trade_event)
-                                    await self.prob_whale.process_trade(sym, trade_event)
-                                    await self.prob_inst.process_trade(sym, trade_event)
-                                except Exception as _e:
-                                    logger.debug("ML engine trade feed failed for {}: {}", sym, _e)
-                                # Feed CVD tracker
-                                try:
-                                    self.cvd_inst.update(sym, price, qty, trade_event["is_buyer_maker"])
-                                except Exception as _e:
-                                    logger.debug("CVD tracker update failed for {}: {}", sym, _e)
-                                fed += 1
-
-                            # Trim excess trades
-                            max_t = _MAX_TRADES_PER_SYMBOL
-                            if len(sd["trades"]) > max_t:
-                                sd["trades"] = sd["trades"][-max_t // 2:]
-
-                            if fed > 0 and existing_count == 0:
-                                _fed_count += 1
-                            return fed
-                        except Exception as e:
-                            logger.debug("REST trade fetch error {}: {}", sym, e)
-                            return 0
-
-                results = await asyncio.gather(*[_fetch_sym_trades(s) for s in _batch], return_exceptions=True)
-                total_fed = sum(r for r in results if isinstance(r, int))
-
-                if _fed_count > 0:
-                    logger.info("✅ REST trade poll: fed trades to {} new symbols ({} total trades)", _fed_count, total_fed)
-                    self.data_freshness.record_data_update("trades", f"REST /fapi/v1/trades poll ({_fed_count} symbols)")
-                    # Sync bridge immediately so dashboard shows fresh data
-                    try:
-                        self._sync_bridge()
-                    except Exception as _e:
-                        logger.debug("Bridge sync after REST poll failed: {}", _e)
-
-            except Exception as e:
-                logger.error("REST trade poll loop error: {}", e)
-            await asyncio.sleep(_POLL_INTERVAL)
 
     async def _scan_loop(self) -> None:
         symbols_with_data = [s for s in self.active_symbols if s in self.symbol_data]
