@@ -5477,11 +5477,11 @@ class DeltaTerminalEngine:
             funding_rate = max(-0.05, min(0.05, funding_rate))
 
         current_oi = oi_data.get("current_oi", 0) if oi_data else 0
-        oi_change_pct = oi_data.get("change_pct", 0) if oi_data else 0
-        oi_signal = oi_data.get("signal", "neutral") if oi_data else "neutral"
-        oi_regime_val = oi_data.get("oi_regime", "neutral_oi") if oi_data else "neutral_oi"
-        oi_positioning_val = oi_data.get("oi_positioning", "neutral") if oi_data else "neutral"
-        oi_strength_val = oi_data.get("oi_strength", 50) if oi_data else 50
+        oi_change_pct = oi_data.get("change_5m_pct") if oi_data else None
+        oi_signal = oi_data.get("signal") if oi_data else None
+        oi_regime_val = oi_data.get("oi_regime") if oi_data else None
+        oi_positioning_val = oi_data.get("positioning") if oi_data else None
+        oi_strength_val = oi_data.get("oi_strength_score") if oi_data else None
         # Compute oi_bias directly from OI change + price direction (more reliable than regime alone)
         if oi_regime_val == "bullish_oi":
             oi_bias = "buy"
