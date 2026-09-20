@@ -153,8 +153,9 @@ class OpenInterestEngine:
         price_up = price_trend > 0
         price_down = price_trend < 0
 
-        # Need minimum OI change to classify
-        if abs(st.change_pct) < _BUILDUP_MIN_CHANGE_PCT and not st.spike_detected and not st.flush_detected:
+        # Use authentic 5m OI change for the positioning label when available.
+        effective_change_pct = st.change_5m_pct if st.change_5m_pct is not None else st.change_pct
+        if abs(effective_change_pct) < _BUILDUP_MIN_CHANGE_PCT and not st.spike_detected and not st.flush_detected:
             return "neutral"
 
         if oi_up and price_up:
