@@ -73,7 +73,10 @@ st.caption(
 rows = []
 for source_row in market_data:
     row = dict(source_row)
-    row["timestamp"] = snapshot_ts
+    # Preserve the engine's own observation timestamp; only fall back to the bridge
+    # snapshot timestamp when the row did not carry one.
+    if not row.get("timestamp"):
+        row["timestamp"] = snapshot_ts
     symbol = str(row.get("symbol", "?"))
     display = build_signal_display(signal_lookup.get(symbol, {}), row)
     observations = live_observation_values(row)
