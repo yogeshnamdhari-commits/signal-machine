@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_SHA: d86f5a127b43650bc9d8e145cd02729ba522ead7
+  TARGET_SHA: ${{ github.sha }}
   REPO_URL: https://github.com/yogeshnamdhari-commits/signal-machine.git
 
 jobs:
