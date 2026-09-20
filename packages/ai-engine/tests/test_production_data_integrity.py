@@ -196,7 +196,7 @@ def test_fvg_does_not_mix_candle_timeframes():
         assert event is None
 
         # A third 5m candle then forms only from the 5m sequence.
-        event = await det.process_kline("BTCUSDT", k("5m", 2, 108, 105, 107))
+        event = await det.process_kline("BTCUSDT", k("5m", 2, 103, 99, 101))
         return event
 
     event = asyncio.run(run())
