@@ -1,0 +1,283 @@
+name: Live Production Data Snapshot V2
+
+on:
+  push:
+    branches:
+      - live-data-snapshot-v2-20260920
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BINANCE_TESTNET: "false"
+      APP_ENV: "staging"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify frozen engine provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "c7927f3e6c16aa4f6cbc1f83f0f7c18385411b40" HEAD
+          python3 -m py_compile packages/ai-engine/exchanges/binance_ws.py
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 -m pip install -r requirements.txt
+
+      - name: Verify Binance production REST and websocket feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 - <<'PY'
+          import asyncio, json, time
+          import aiohttp, websockets
+
+          REST = "https://fapi.binance.com"
+          MARKET = "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/btcusdt@markPrice"
+          PUBLIC = "wss://fstream.binance.com/public/stream?streams=btcusdt@depth/btcusdt@bookTicker"
+
+          async def rest_check(session, path, params=None):
+              async with session.get(REST + path, params=params) as resp:
+                  body = await resp.text()
+                  if resp.status != 200:
+                      raise RuntimeError(f"REST {path} HTTP {resp.status}: {body[:300]}")
+                  return json.loads(body)
+
+          async def ws_check(url, label):
+              msgs = []
+              async with websockets.connect(url, ping_interval=20, ping_timeout=20, close_timeout=5) as ws:
+                  deadline = time.time() + 12
+                  while time.time() < deadline and len(msgs) < 3:
+                      raw = await asyncio.wait_for(ws.recv(), timeout=5)
+                      msg = json.loads(raw)
+                      if "data" in msg:
+                          msgs.append(msg)
+              if len(msgs) == 0:
+                  raise RuntimeError(f"{label} received zero market-data messages")
+              return len(msgs)
+
+          async def main():
+              timeout = aiohttp.ClientTimeout(total=15)
+              async with aiohttp.ClientSession(timeout=timeout) as s:
+                  server_time = await rest_check(s, "/fapi/v1/time")
+                  ticker = await rest_check(s, "/fapi/v1/ticker/24hr", {"symbol":"BTCUSDT"})
+                  oi = await rest_check(s, "/fapi/v1/openInterest", {"symbol":"BTCUSDT"})
+                  premium = await rest_check(s, "/fapi/v1/premiumIndex", {"symbol":"BTCUSDT"})
+              market_n, public_n = await asyncio.gather(
+                  ws_check(MARKET, "MARKET"),
+                  ws_check(PUBLIC, "PUBLIC"),
+              )
+              print(json.dumps({
+                  "production_rest": True,
+                  "server_time": server_time,
+                  "btc_ticker_price": ticker.get("lastPrice"),
+                  "btc_open_interest": oi.get("openInterest"),
+                  "btc_mark_price": premium.get("markPrice"),
+                  "market_ws_messages": market_n,
+                  "public_ws_messages": public_n
+              }, indent=2))
+          asyncio.run(main())
+          PY
+
+      - name: Start canonical production market-data engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 main.py --mode engine > /tmp/deltaengine.log 2>&1 &
+          echo $! > /tmp/deltaengine.pid
+
+      - name: Wait for fresh bridge data
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          bridge = Path("packages/ai-engine/data/bridge/market_data.json")
+          deadline = time.time() + 240
+          while time.time() < deadline:
+              if bridge.exists():
+                  try:
+                      p = json.loads(bridge.read_text())
+                      rows = p.get("rows", [])
+                      age = time.time() - float(p.get("timestamp", 0))
+                      if len(rows) >= 20 and 0 <= age <= 10:
+                          print(f"FRESH_PRODUCTION_BRIDGE rows={len(rows)} age={age:.2f}s")
+                          break
+                  except Exception:
+                      pass
+              time.sleep(2)
+          else:
+              print("=== ENGINE LOG TAIL ===")
+              print(Path("/tmp/deltaengine.log").read_text()[-40000:])
+              raise SystemExit("No fresh canonical production bridge snapshot")
+          PY
+
+      - name: Export uploaded 60-symbol table
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 - <<'PY'
+          import csv, json, time
+          from pathlib import Path
+          from dashboard.live_sheet_contract import build_signal_display, display_value, live_observation_values
+
+          requested = [
+              "ZECUSDT","UNIUSDT","ONDOUSDT","龙虾USDT","XTZUSDT","PENGUUSDT",
+              "USELESSUSDT","MARSCOINUSDT","SYNUSDT","SOLUSDT","TAOUSDT","XRPUSDT",
+              "ZAMAUSDT","SUIUSDT","ONEUSDT","WLDUSDT","TRUMPUSDT","LSKUSDT",
+              "XLMUSDT","LTCUSDT","XMRUSDT","PUMPUSDT","PONSUSDT","ZILUSDT",
+              "VVVUSDT","STRKUSDT","牛来USDT","TRXUSDT","SKLUSDT","OPUSDT",
+              "PIEVERSEUSDT","ONGUSDT","XPLUSDT","UBUSDT","MYXUSDT","RAYSOLUSDT",
+              "TUSDT","SAGAUSDT","MUSDT","TIAUSDT","STXUSDT","WIFUSDT","WLFIUSDT",
+              "PENDLEUSDT","MITOUSDT","VIRTUALUSDT","ZENUSDT","POLUSDT","MORPHOUSDT",
+              "SEIUSDT","ZKUSDT","ZROUSDT","MONUSDT","VETUSDT","PTBUSDT","ORDIUSDT",
+              "RENDERUSDT","SUSDT","SANDUSDT","STABLEUSDT"
+          ]
+          root = Path("data/bridge")
+          bridge = json.loads((root/"market_data.json").read_text())
+          rows = {str(r.get("symbol")): dict(r) for r in bridge.get("rows", []) if r.get("symbol")}
+          signals_data = json.loads((root/"signals.json").read_text()) if (root/"signals.json").exists() else {}
+          signals = {str(s.get("symbol")): s for s in signals_data.get("signals", []) if s.get("symbol")}
+          ts = float(bridge.get("timestamp", 0))
+
+          cols = [
+            "Symbol","Price","24h","Volume 24h","OI","OI Bias","OI Δ%","Funding","Fund Bias",
+            "Net Delta","B/S Ratio","B/S","CVD 5m","CVD Bias","Flow Strength","Flow Bias",
+            "Ex Flow","Vol Bias","Imbalance","Imb Bias","Liq Zone ↓","Liq Zone ↑","Liq Risk",
+            "Sweep","Sweep Price","FVG","FVG Price","Regime","Reg Conf","Signal",
+            "Signal Authority","Signal Reason"
+          ]
+
+          def fmt(v, suffix=""):
+              if v is None or v == "": return "UNAVAILABLE"
+              try: n=float(v)
+              except: return str(v)
+              a=abs(n)
+              if a>=1e9: return f"{n/1e9:.2f}B{suffix}"
+              if a>=1e6: return f"{n/1e6:.2f}M{suffix}"
+              if a>=1e3: return f"{n/1e3:.2f}K{suffix}"
+              return f"{n:.4f}{suffix}"
+
+          def evidence(x):
+              return f"{x.get('state','NEUTRAL')} | {x.get('quality','UNAVAILABLE')}"
+
+          out=[]
+          for sym in requested:
+              row=rows.get(sym)
+              if row is None:
+                  out.append({c: "UNAVAILABLE" for c in cols})
+                  out[-1]["Symbol"]=sym
+                  out[-1]["Signal"]="NO_SIGNAL"
+                  out[-1]["Signal Authority"]="none"
+                  out[-1]["Signal Reason"]="symbol unavailable on Binance production universe"
+                  for c in ["OI Bias","Fund Bias","B/S","CVD Bias","Flow Bias","Vol Bias","Imb Bias","Sweep","FVG","Regime"]:
+                      out[-1][c]="NEUTRAL | NOT_APPLICABLE"
+                  continue
+
+              display=build_signal_display(signals.get(sym, {}), row)
+              obs=live_observation_values(row)
+              fvg=display["fvg"]
+              out.append({
+                "Symbol":sym,
+                "Price":fmt(display_value(row,"price"),"$"),
+                "24h":fmt(display_value(row,"change_24h"),"%"),
+                "Volume 24h":fmt(display_value(row,"volume_24h"),"$"),
+                "OI":fmt(display_value(row,"open_interest"),"$"),
+                "OI Bias":evidence(display["oi"]),
+                "OI Δ%":fmt(display_value(row,"oi_change_pct"),"%"),
+                "Funding":fmt(display_value(row,"funding"),"%"),
+                "Fund Bias":evidence(display["funding"]),
+                "Net Delta":fmt(display_value(row,"net_delta"),"$"),
+                "B/S Ratio":fmt(display_value(row,"buy_sell_ratio")),
+                "B/S":evidence(display["b_s_ratio"]),
+                "CVD 5m":fmt(obs["cvd_5m"],"$"),
+                "CVD Bias":evidence(display["cvd"]),
+                "Flow Strength":fmt(obs["flow_strength"]),
+                "Flow Bias":evidence(display["flow"]),
+                "Ex Flow":fmt(obs["exchange_flow"],"$"),
+                "Vol Bias":evidence(display["volume"]),
+                "Imbalance":fmt(obs["imbalance"]),
+                "Imb Bias":evidence(display["imbalance"]),
+                "Liq Zone ↓":fmt(display_value(row,"long_liq_vol"),"$"),
+                "Liq Zone ↑":fmt(display_value(row,"short_liq_vol"),"$"),
+                "Liq Risk":str(display["liq_risk"] or "UNAVAILABLE").upper(),
+                "Sweep":evidence(display["sweep"]),
+                "Sweep Price":fmt(display["sweep_price"],"$"),
+                "FVG":f"{fvg['state']} | {fvg['quality']}",
+                "FVG Price":fmt(fvg["value"],"$"),
+                "Regime":evidence(display["regime"]),
+                "Reg Conf":fmt(display["regime_conf"],"%"),
+                "Signal":display["signal"],
+                "Signal Authority":display["authority"],
+                "Signal Reason":display["signal_reason"]
+              })
+
+          outdir=Path("../../live_snapshot"); outdir.mkdir(parents=True, exist_ok=True)
+          with (outdir/"live_snapshot.csv").open("w",newline="",encoding="utf-8") as f:
+              w=csv.DictWriter(f,fieldnames=cols); w.writeheader(); w.writerows(out)
+          with (outdir/"live_snapshot.md").open("w",encoding="utf-8") as f:
+              f.write("| "+" | ".join(cols)+" |\n")
+              f.write("| "+" | ".join(["---"]*len(cols))+" |\n")
+              for r in out:
+                  f.write("| "+" | ".join(str(r[c]).replace("|","\\|").replace("\n"," ") for c in cols)+" |\n")
+          provenance={
+            "source_exchange":"Binance USDⓈ-M Futures",
+            "production_market_data":True,
+            "binance_testnet":False,
+            "engine_base_sha":"c7927f3e6c16aa4f6cbc1f83f0f7c18385411b40",
+            "snapshot_timestamp_epoch":ts,
+            "snapshot_age_seconds":round(time.time()-ts,3),
+            "bridge_rows":len(rows),
+            "requested_rows":len(requested),
+            "live_rows":sum(1 for r in out if r["Price"]!="UNAVAILABLE"),
+            "unavailable_rows":sum(1 for r in out if r["Price"]=="UNAVAILABLE")
+          }
+          (outdir/"provenance.json").write_text(json.dumps(provenance,indent=2),encoding="utf-8")
+          print(json.dumps(provenance,indent=2))
+          PY
+
+      - name: Stop engine
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -f /tmp/deltaengine.pid ]]; then
+            pid="$(cat /tmp/deltaengine.pid)"
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 3
+            kill -KILL "$pid" 2>/dev/null || true
+          fi
+          mkdir -p live_snapshot
+          cp /tmp/deltaengine.log live_snapshot/engine.log 2>/dev/null || true
+
+      - name: Upload snapshot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-production-snapshot-v2
+          path: |
+            live_snapshot/live_snapshot.csv
+            live_snapshot/live_snapshot.md
+            live_snapshot/provenance.json
+            live_snapshot/engine.log
+            packages/ai-engine/data/bridge/market_data.json
+            packages/ai-engine/data/bridge/data_quality.json
+          if-no-files-found: error
+          retention-days: 7
