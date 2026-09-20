@@ -5707,7 +5707,7 @@ class DeltaTerminalEngine:
             "flow_strength": round(ef_data.get("flow_strength_score", 50), 1) if ef_data else None,
             "flow_signal": ef_data.get("flow_signal") if ef_data else None,
             # Exchange flow — debug panel
-            "flow_total_trades": ef_data.get("total_trades", 0) if ef_data else 0,
+            "flow_total_trades": ef_data.get("window_trades", ef_data.get("total_trades", 0)) if ef_data else 0,
             "flow_source": ef_data.get("source_label") if ef_data else None,
             "flow_vol_24h": round(ef_data.get("vol_24h", 0), 2) if ef_data else 0,
             "flow_vol_valid": ef_data.get("vol_24h_valid", True) if ef_data else True,
