@@ -5480,41 +5480,43 @@ class DeltaTerminalEngine:
         cvd_data = self.cvd_inst.get_analysis(sym)
         regime_data = self.regime.get_regime(sym) if hasattr(self.regime, 'get_regime') else None
 
-        funding_rate = funding_data.get("current_rate", 0) if funding_data else 0
-        funding_bias = funding_data.get("signal", "neutral") if funding_data else "neutral"
-        funding_z = funding_data.get("z_score", 0) if funding_data else 0
-        # Use production premium index funding rate (WS may have testnet data)
+        # Current funding and OI are direct exchange observations. Missing observations stay unavailable.
+        funding_rate = None
+        funding_bias = None
+        funding_z = None
         if sym in self._premium_data:
-            funding_rate = self._premium_data[sym].get("current_rate", funding_rate)
-            # Recompute funding_bias from actual rate (WS signal may be stale)
-            if funding_rate < -0.0001:
-                funding_bias = "buy"
-            elif funding_rate > 0.0001:
-                funding_bias = "sell"
-            else:
-                funding_bias = "neutral"
-        funding_rate = max(-0.05, min(0.05, funding_rate))
+            try:
+                funding_rate = float(self._premium_data[sym].get("current_rate"))
+            except (TypeError, ValueError):
+                funding_rate = None
+            if funding_rate is not None:
+                if funding_rate < -0.0001:
+                    funding_bias = "buy"
+                elif funding_rate > 0.0001:
+                    funding_bias = "sell"
+                else:
+                    funding_bias = "neutral"
 
-        current_oi = oi_data.get("current_oi", 0) if oi_data else 0
-        oi_change_pct = oi_data.get("change_pct", 0) if oi_data else 0
-        oi_signal = oi_data.get("signal", "neutral") if oi_data else "neutral"
-        oi_regime_val = oi_data.get("oi_regime", "neutral_oi") if oi_data else "neutral_oi"
-        oi_positioning_val = oi_data.get("oi_positioning", "neutral") if oi_data else "neutral"
-        oi_strength_val = oi_data.get("oi_strength", 50) if oi_data else 50
-        # Compute oi_bias directly from OI change + price direction (more reliable than regime alone)
-        if oi_regime_val == "bullish_oi":
-            oi_bias = "buy"
-        elif oi_regime_val == "bearish_oi":
-            oi_bias = "sell"
-        elif abs(oi_change_pct) >= 0.005 and oi_data:
-            # Fallback: use oi_change_pct + price direction from ticker
-            price_chg_24h = float(_eff_ticker.get("price_change", 0))
-            if oi_change_pct > 0:
-                oi_bias = "buy" if price_chg_24h >= 0 else "sell"
+        current_oi = oi_data.get("current_oi") if oi_data else None
+        oi_change_pct = oi_data.get("change_pct") if oi_data else None
+        oi_signal = oi_data.get("signal") if oi_data else None
+        oi_regime_val = oi_data.get("oi_regime") if oi_data else None
+        oi_positioning_val = oi_data.get("oi_positioning", oi_data.get("positioning")) if oi_data else None
+        oi_strength_val = oi_data.get("oi_strength", oi_data.get("oi_strength_score")) if oi_data else None
+        oi_bias = None
+        if oi_data:
+            if oi_regime_val == "bullish_oi":
+                oi_bias = "buy"
+            elif oi_regime_val == "bearish_oi":
+                oi_bias = "sell"
+            elif oi_change_pct is not None and abs(oi_change_pct) >= 0.005:
+                price_chg_24h = float(_eff_ticker.get("price_change", 0) or 0)
+                if oi_change_pct > 0:
+                    oi_bias = "buy" if price_chg_24h >= 0 else "sell"
+                else:
+                    oi_bias = "sell" if price_chg_24h >= 0 else "buy"
             else:
-                oi_bias = "sell" if price_chg_24h >= 0 else "buy"
-        else:
-            oi_bias = "neutral"
+                oi_bias = "neutral"
 
         vol = getattr(self, '_vol_map', {}).get(sym, 0)
         if vol == 0:
