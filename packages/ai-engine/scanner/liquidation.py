@@ -469,8 +469,9 @@ class LiquidationEngine:
 
         st.net_liq = st.long_liq_vol - st.short_liq_vol
 
-        # Get top clusters (sorted by volume, top 5)
-        top_clusters = sorted(st.clusters.values(), key=lambda c: c.total_volume, reverse=True)[:5]
+        # Expose observed clusters sorted by price so the dashboard can select
+        # the nearest real cluster above/below the current market price.
+        top_clusters = sorted(st.clusters.values(), key=lambda c: c.price_level)
         cluster_data = [
             {
                 "price": round(c.price_level, 6),
