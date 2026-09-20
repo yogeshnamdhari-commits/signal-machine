@@ -711,10 +711,8 @@ class DeltaTerminalEngine:
                         data.get("is_buyer_maker", False)
                     )
                 
-                # Feed liquidation engine — only very large trades (> $100k)
-                trade_val = data.get("price", 0) * data.get("quantity", 0)
-                if trade_val > 100_000:
-                    await self.liquidation.process_trade(sym, data)
+                # Authentic liquidations come only from Binance forceOrder events.
+                # A large ordinary aggTrade is not sufficient evidence of liquidation.
                 
             elif event == "depth":
                 sd["orderbook"] = {"bids": data.get("bids", []), "asks": data.get("asks", [])}
@@ -775,27 +773,6 @@ class DeltaTerminalEngine:
                     await self.funding.process_funding(
                         sym, data.get("funding_rate", 0), data.get("timestamp", 0) / 1000
                     )
-
-            elif event == "open_interest":
-                # ── OI via WebSocket (3-second push, bypasses banned REST) ──
-                try:
-                    oi_contracts = data.get("open_interest", 0)
-                    if oi_contracts > 0:
-                        # Use mark price (from premiumIndex) for OI valuation
-                        price = self._mark_prices.get(sym, 0)
-                        if price <= 0:
-                            sd_trades = sd.get("trades", [])
-                            if sd_trades:
-                                price = sd_trades[-1].get("price", 0)
-                        if price > 0:
-                            self.data_quality.validate_oi(sym, oi_contracts, price)
-                            await self.oi.process_oi(sym, oi_contracts, price, time.time())
-                            # Track WS OI as active source
-                            if not getattr(self, '_oi_ws_active', False):
-                                self._oi_ws_active = True
-                                logger.info("✅ OI WebSocket stream active — bypassing banned REST endpoint")
-                except Exception as e:
-                    logger.debug("OI WS handler error {}: {}", sym, e)
 
             elif event == "liquidation":
                 # Feed liquidation engine with trade-like data
@@ -1190,18 +1167,8 @@ class DeltaTerminalEngine:
                 # ── DIAG: Log initial kline counts after prefetch ──
                 for _iv, _kl in sd.get("klines", {}).items():
                     logger.info("🔍 DIAG[PREFETCH] sym={} interval={} count={}", sym, _iv, len(_kl))
-                # Generate a synthetic trade from last 5m close price
-                klines_5m = sd["klines"].get("5m", [])
-                if klines_5m:
-                    last_close = klines_5m[-1].get("close", 0)
-                    if last_close > 0:
-                        sd["trades"].append({
-                            "symbol": sym,
-                            "price": last_close,
-                            "quantity": 0.001,
-                            "is_buyer_maker": False,
-                            "trade_time": int(time.time() * 1000),
-                        })
+                # Do not synthesize trade-tape events from candle closes.
+                # Trade-derived metrics require authentic aggTrade/REST trade observations.
                 fetched += 1
                 await asyncio.sleep(0.1)  # Rate limit: ~10 req/s
             except Exception as e:
