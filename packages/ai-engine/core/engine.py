@@ -5569,9 +5569,21 @@ class DeltaTerminalEngine:
             "volume": vol,
             # ── Binance full market data (API returns strings, cast to float) ──
             # Use dynamic precision to preserve accuracy for low-price tokens
-            "mark_price": _price_round(float(self._premium_data.get(sym, {}).get("mark_price", 0)), price) if sym in self._premium_data else _price_round(price, price),
-            "index_price": _price_round(float(self._premium_data.get(sym, {}).get("index_price", 0)), price) if sym in self._premium_data else _price_round(price, price),
-            "funding_countdown": max(0, int((self._premium_data.get(sym, {}).get("next_funding_time", 0) - int(time.time() * 1000)) / 1000)) if sym in self._premium_data and self._premium_data.get(sym, {}).get("next_funding_time", 0) > 0 else 0,
+            "mark_price": (
+                _price_round(float(self._premium_data[sym].get("mark_price")), price)
+                if sym in self._premium_data and self._premium_data[sym].get("mark_price")
+                else None
+            ),
+            "index_price": (
+                _price_round(float(self._premium_data[sym].get("index_price")), price)
+                if sym in self._premium_data and self._premium_data[sym].get("index_price")
+                else None
+            ),
+            "funding_countdown": (
+                max(0, int((self._premium_data[sym].get("next_funding_time", 0) - int(time.time() * 1000)) / 1000))
+                if sym in self._premium_data and self._premium_data[sym].get("next_funding_time", 0) > 0
+                else None
+            ),
             "high_24h": _price_round(float(_eff_ticker.get("high") or 0), price),
             "low_24h": _price_round(float(_eff_ticker.get("low") or 0), price),
             "volume_btc": round(float(_eff_ticker.get("volume") or 0), 2),
@@ -5582,8 +5594,16 @@ class DeltaTerminalEngine:
             "signal": signal_side,
             "regime": regime,
             # Regime — multi-timeframe fields
-            "regime_confidence_pct": round(regime_data.get("regime_confidence_pct", 50), 1) if regime_data else 50,
-            "regime_alignment": round(regime_data.get("alignment_score", 0), 3) if regime_data else 0,
+            "regime_confidence_pct": (
+                round(regime_data.get("regime_confidence_pct"), 1)
+                if regime_data and regime_data.get("regime_confidence_pct") is not None
+                else None
+            ),
+            "regime_alignment": (
+                round(regime_data.get("alignment_score"), 3)
+                if regime_data and regime_data.get("alignment_score") is not None
+                else None
+            ),
             "regime_1m": regime_data.get("tf_regimes", {}).get("1m", "") if regime_data else "",
             "regime_5m": regime_data.get("tf_regimes", {}).get("5m", "") if regime_data else "",
             "regime_15m": regime_data.get("tf_regimes", {}).get("15m", "") if regime_data else "",
@@ -5595,12 +5615,12 @@ class DeltaTerminalEngine:
             "regime_conf_1h": round(regime_data.get("tf_confidences", {}).get("1h", 0), 3) if regime_data else 0,
             "regime_conf_4h": round(regime_data.get("tf_confidences", {}).get("4h", 0), 3) if regime_data else 0,
             # End regime enhanced
-            "funding": round(funding_rate * 100, 6),
-            "funding_bias": funding_bias if funding_bias != "neutral" else ("buy" if funding_rate < 0 else "sell"),
-            "funding_z": round(funding_z, 2),
-            "open_interest": round(oi_usd, 2),
+            "funding": round(funding_rate * 100, 6) if funding_rate is not None else None,
+            "funding_bias": funding_bias,
+            "funding_z": round(funding_z, 2) if funding_z is not None else None,
+            "open_interest": round(oi_usd, 2) if oi_usd is not None else None,
             "oi_bias": oi_bias,
-            "oi_change_pct": round(oi_change_pct, 2),
+            "oi_change_pct": round(oi_change_pct, 2) if oi_change_pct is not None else None,
             # OI — enhanced fields
             "oi_regime": oi_data.get("oi_regime", "neutral_oi") if oi_data else "neutral_oi",
             "oi_positioning": oi_data.get("positioning", "neutral") if oi_data else "neutral",
