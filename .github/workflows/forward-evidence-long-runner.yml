@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_SHA: ${{ github.sha }}
+  TARGET_SHA: \${{ github.sha }}
   REPO_URL: https://github.com/yogeshnamdhari-commits/signal-machine.git
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 6030
     steps:
-      - name: Run C segment
+      - name: Run C segment 1
         shell: bash
         run: |
           set -euo pipefail
@@ -31,12 +31,25 @@ jobs:
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
-          if [[ "$(git -C "$ROOT" rev-parse HEAD)" != "$TARGET_SHA" ]]; then exit 1; fi
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
           if [[ ! -f "data/reports/forward_sessions/session_C.json" ]]; then
             rm -f data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
           fi
           python3 -m pip install -r requirements.txt
           python3 run_forward_session.py --session C --hours 100 --create-freeze
+      - name: Upload C segment 1 state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-c-state-1-\${{ github.run_id }}
+          path: |
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+          if-no-files-found: error
+          retention-days: 90
 
   c2:
     name: C — segment 2/4 (100h)
@@ -44,16 +57,42 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 6030
     steps:
-      - name: Resume C
+      - name: Download C segment 1 state
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-c-state-1-\${{ github.run_id }}
+          path: state-in
+      - name: Resume C segment 2
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$HOME/signal-machine-forward/C/repo"
-          test -d "$ROOT/.git"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
+          cp "$GITHUB_WORKSPACE/state-in/parameter_freeze.json" data/parameter_freeze.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_state.json" data/reports/paper_trading_state.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_trades.csv" data/reports/paper_trading_trades.csv
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_signals.csv" data/reports/paper_trading_signals.csv
+          cp "$GITHUB_WORKSPACE/state-in/session_C.json" data/reports/forward_sessions/session_C.json
+          python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session C --hours 100
+      - name: Upload C segment 2 state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-c-state-2-\${{ github.run_id }}
+          path: |
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+          if-no-files-found: error
+          retention-days: 90
 
   c3:
     name: C — segment 3/4 (100h)
@@ -61,16 +100,42 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 6030
     steps:
-      - name: Resume C
+      - name: Download C segment 2 state
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-c-state-2-\${{ github.run_id }}
+          path: state-in
+      - name: Resume C segment 3
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$HOME/signal-machine-forward/C/repo"
-          test -d "$ROOT/.git"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
+          cp "$GITHUB_WORKSPACE/state-in/parameter_freeze.json" data/parameter_freeze.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_state.json" data/reports/paper_trading_state.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_trades.csv" data/reports/paper_trading_trades.csv
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_signals.csv" data/reports/paper_trading_signals.csv
+          cp "$GITHUB_WORKSPACE/state-in/session_C.json" data/reports/forward_sessions/session_C.json
+          python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session C --hours 100
+      - name: Upload C segment 3 state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-c-state-3-\${{ github.run_id }}
+          path: |
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+          if-no-files-found: error
+          retention-days: 90
 
   c4:
     name: C — final segment (36h)
@@ -78,27 +143,53 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 2190
     steps:
+      - name: Download C segment 3 state
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-c-state-3-\${{ github.run_id }}
+          path: state-in
       - name: Finalize C
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$HOME/signal-machine-forward/C/repo"
-          test -d "$ROOT/.git"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
+          cp "$GITHUB_WORKSPACE/state-in/parameter_freeze.json" data/parameter_freeze.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_state.json" data/reports/paper_trading_state.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_trades.csv" data/reports/paper_trading_trades.csv
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_signals.csv" data/reports/paper_trading_signals.csv
+          cp "$GITHUB_WORKSPACE/state-in/session_C.json" data/reports/forward_sessions/session_C.json
+          python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session C --hours 36 --finalize
           python3 - <<'PY'
           import json
           from pathlib import Path
-          p = Path("data/reports/forward_sessions/session_C.json")
-          a = json.loads(p.read_text())
+          a = json.loads(Path("data/reports/forward_sessions/session_C.json").read_text())
           assert a["status"] == "COMPLETED", a
-          assert a["code_commit_sha"] == "${{ github.sha }}", a
+          assert a["code_commit_sha"] == "\${{ github.sha }}", a
           assert a["real_orders"] is False, a
           assert a["orders_policy"] == "NO_REAL_ORDERS", a
           print("Session C immutable completion verified.")
           PY
+      - name: Upload C final state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-c-final-\${{ github.run_id }}
+          path: |
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+          if-no-files-found: error
+          retention-days: 90
 
   d1:
     name: D — segment 1/4 (100h)
@@ -106,30 +197,45 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 6030
     steps:
-      - name: Initialize D from completed C
+      - name: Download completed C state
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-c-final-\${{ github.run_id }}
+          path: c-state
+      - name: Run D segment 1
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$HOME/signal-machine-forward/D/repo"
-          CROOT="$HOME/signal-machine-forward/C/repo"
-          mkdir -p "$(dirname "$ROOT")"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
-          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
-          rm -rf "$ROOT/packages/ai-engine/data/reports/forward_sessions/session_C.json"
-          rm -rf "$ROOT/packages/ai-engine/data/reports/forward_sessions/session_C_evidence"
-          cp -a "$CROOT/packages/ai-engine/data/reports/forward_sessions/session_C.json" "$ROOT/packages/ai-engine/data/reports/forward_sessions/"
-          cp -a "$CROOT/packages/ai-engine/data/reports/forward_sessions/session_C_evidence" "$ROOT/packages/ai-engine/data/reports/forward_sessions/"
-          mkdir -p "$ROOT/packages/ai-engine/data"
-          cp -f "$CROOT/packages/ai-engine/data/parameter_freeze.json" "$ROOT/packages/ai-engine/data/parameter_freeze.json"
           cd "$ROOT/packages/ai-engine"
-          if [[ "$(git -C "$ROOT" rev-parse HEAD)" != "$TARGET_SHA" ]]; then exit 1; fi
-          if [[ ! -f "data/reports/forward_sessions/session_D.json" ]]; then
-            rm -f data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
-          fi
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
+          cp "$GITHUB_WORKSPACE/c-state/parameter_freeze.json" data/parameter_freeze.json
+          cp "$GITHUB_WORKSPACE/c-state/paper_trading_state.json" data/reports/paper_trading_state.json
+          cp "$GITHUB_WORKSPACE/c-state/paper_trading_trades.csv" data/reports/paper_trading_trades.csv
+          cp "$GITHUB_WORKSPACE/c-state/paper_trading_signals.csv" data/reports/paper_trading_signals.csv
+          cp "$GITHUB_WORKSPACE/c-state/session_C.json" data/reports/forward_sessions/session_C.json
+          cp -a "$GITHUB_WORKSPACE/c-state/session_C_evidence" data/reports/forward_sessions/
           python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session D --hours 100
+      - name: Upload D segment 1 state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-d-state-1-\${{ github.run_id }}
+          path: |
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/parameter_freeze.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
+          if-no-files-found: error
+          retention-days: 90
 
   d2:
     name: D — segment 2/4 (100h)
@@ -137,16 +243,46 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 6030
     steps:
-      - name: Resume D
+      - name: Download D segment 1 state
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-d-state-1-\${{ github.run_id }}
+          path: state-in
+      - name: Resume D segment 2
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$HOME/signal-machine-forward/D/repo"
-          test -d "$ROOT/.git"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
+          cp "$GITHUB_WORKSPACE/state-in/parameter_freeze.json" data/parameter_freeze.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_state.json" data/reports/paper_trading_state.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_trades.csv" data/reports/paper_trading_trades.csv
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_signals.csv" data/reports/paper_trading_signals.csv
+          cp "$GITHUB_WORKSPACE/state-in/session_C.json" data/reports/forward_sessions/session_C.json
+          cp -a "$GITHUB_WORKSPACE/state-in/session_C_evidence" data/reports/forward_sessions/
+          cp "$GITHUB_WORKSPACE/state-in/session_D.json" data/reports/forward_sessions/session_D.json
+          python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session D --hours 100
+      - name: Upload D segment 2 state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-d-state-2-\${{ github.run_id }}
+          path: |
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/parameter_freeze.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
+          if-no-files-found: error
+          retention-days: 90
 
   d3:
     name: D — segment 3/4 (100h)
@@ -154,16 +290,45 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 6030
     steps:
-      - name: Resume D
+      - name: Download D segment 2 state
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-d-state-2-\${{ github.run_id }}
+          path: state-in
+      - name: Resume D segment 3
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$HOME/signal-machine-forward/D/repo"
-          test -d "$ROOT/.git"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
+          cp "$GITHUB_WORKSPACE/state-in/parameter_freeze.json" data/parameter_freeze.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_state.json" data/reports/paper_trading_state.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_trades.csv" data/reports/paper_trading_trades.csv
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_signals.csv" data/reports/paper_trading_signals.csv
+          cp "$GITHUB_WORKSPACE/state-in/session_C.json" data/reports/forward_sessions/session_C.json
+          cp -a "$GITHUB_WORKSPACE/state-in/session_C_evidence" data/reports/forward_sessions/
+          cp "$GITHUB_WORKSPACE/state-in/session_D.json" data/reports/forward_sessions/session_D.json
+          python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session D --hours 100
+      - name: Upload D segment 3 state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-d-state-3-\${{ github.run_id }}
+          path: |
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/parameter_freeze.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
+          if-no-files-found: error
+          retention-days: 90
 
   d4:
     name: D — final segment (36h) + aggregate verification
@@ -171,33 +336,43 @@ jobs:
     runs-on: [self-hosted, signal-machine-forward]
     timeout-minutes: 2190
     steps:
+      - name: Download D segment 3 state
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-d-state-3-\${{ github.run_id }}
+          path: state-in
       - name: Finalize D and verify aggregate
         shell: bash
         run: |
           set -euo pipefail
           ROOT="$HOME/signal-machine-forward/D/repo"
-          test -d "$ROOT/.git"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
+          [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]]
+          cp "$GITHUB_WORKSPACE/state-in/parameter_freeze.json" data/parameter_freeze.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_state.json" data/reports/paper_trading_state.json
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_trades.csv" data/reports/paper_trading_trades.csv
+          cp "$GITHUB_WORKSPACE/state-in/paper_trading_signals.csv" data/reports/paper_trading_signals.csv
+          cp "$GITHUB_WORKSPACE/state-in/session_C.json" data/reports/forward_sessions/session_C.json
+          cp -a "$GITHUB_WORKSPACE/state-in/session_C_evidence" data/reports/forward_sessions/
+          cp "$GITHUB_WORKSPACE/state-in/session_D.json" data/reports/forward_sessions/session_D.json
+          python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session D --hours 36 --finalize
           python3 - <<'PY'
           import json
           from pathlib import Path
           from validation.forward_evidence_binding import verify_forward_evidence_report
-
           root = Path("data/reports/forward_sessions")
           for session in ("C", "D"):
               artifact = json.loads((root / f"session_{session}.json").read_text())
               assert artifact["status"] == "COMPLETED", artifact
-              assert artifact["code_commit_sha"] == "${{ github.sha }}", artifact
+              assert artifact["code_commit_sha"] == "\${{ github.sha }}", artifact
               assert artifact["real_orders"] is False, artifact
               assert artifact["orders_policy"] == "NO_REAL_ORDERS", artifact
-
-          report = verify_forward_evidence_report(
-              root / "forward_aggregate.json",
-              expected_commit="${{ github.sha }}",
-          )
+          report = verify_forward_evidence_report(root / "forward_aggregate.json", expected_commit="\${{ github.sha }}")
           print("Immutable C/D aggregate verified.")
           print(json.dumps({
               "total_signals": report["total_signals"],
@@ -208,24 +383,11 @@ jobs:
               "aggregate_sha256": report["aggregate_sha256"],
           }, indent=2))
           PY
-      - name: Archive immutable forward evidence
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions"
-          rm -rf "$GITHUB_WORKSPACE/forward-evidence-archive"
-          mkdir -p "$GITHUB_WORKSPACE/forward-evidence-archive"
-          cp -a "$ROOT/session_C.json" "$GITHUB_WORKSPACE/forward-evidence-archive/"
-          cp -a "$ROOT/session_C_evidence" "$GITHUB_WORKSPACE/forward-evidence-archive/"
-          cp -a "$ROOT/session_D.json" "$GITHUB_WORKSPACE/forward-evidence-archive/"
-          cp -a "$ROOT/session_D_evidence" "$GITHUB_WORKSPACE/forward-evidence-archive/"
-          cp -a "$ROOT/forward_aggregate.json" "$GITHUB_WORKSPACE/forward-evidence-archive/"
       - name: Upload immutable forward evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-evidence-${{ github.sha }}
-          path: forward-evidence-archive
+          name: forward-evidence-\${{ github.sha }}
+          path: $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions
           if-no-files-found: error
           retention-days: 90
