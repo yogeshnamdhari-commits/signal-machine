@@ -30,8 +30,9 @@ jobs:
           set -euo pipefail
           git merge-base --is-ancestor "c7927f3e6c16aa4f6cbc1f83f0f7c18385411b40" HEAD
           changed="$(git diff --name-only "c7927f3e6c16aa4f6cbc1f83f0f7c18385411b40"..HEAD)"
-          printf '%s\n' "$changed"
-          disallowed="$(printf '%s\n' "$changed" | grep -v '^.github/workflows/live-data-snapshot.yml
+          printf '%s\\n' "$changed"
+          disallowed="$(printf '%s\\n' "$changed" | grep -v '^.github/workflows/live-data-snapshot.yml$' | grep -v '^packages/ai-engine/exchanges/binance_ws.py$' || true)"
+          test -z "$disallowed"
 
       - name: Compile patched production feed client
         shell: bash
