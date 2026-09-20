@@ -510,11 +510,13 @@ class BinanceWebSocket:
         data = await self._get("/fapi/v1/klines", {"symbol": symbol, "interval": interval, "limit": limit})
         if not data:
             return []
+        now_ms = int(time.time() * 1000)
         return [
             {
                 "open_time": k[0], "open": float(k[1]), "high": float(k[2]),
                 "low": float(k[3]), "close": float(k[4]), "volume": float(k[5]),
                 "close_time": k[6], "quote_volume": float(k[7]), "trades": k[8],
+                "is_closed": int(k[6]) <= now_ms,
                 "source": "binance", "feed": "klines", "data_quality": "REAL",
             }
             for k in data
