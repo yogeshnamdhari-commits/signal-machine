@@ -5568,8 +5568,9 @@ class DeltaTerminalEngine:
         change_1h = _closed_change("1h")
         change_4h = _closed_change("4h")
 
-        # L1 spread comes from the most recent real bookTicker/depth event.
-        book = sd.get("orderbook", {})
+        # Spread uses the dedicated L1 bookTicker state; L2 remains reserved
+        # for depth/DOM analytics.
+        book = sd.get("l1_orderbook") or sd.get("orderbook", {})
         spread = None
         try:
             bids = book.get("bids", [])
