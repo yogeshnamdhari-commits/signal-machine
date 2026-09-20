@@ -841,98 +841,40 @@ class DeltaTerminalEngine:
                 symbols = list(self.active_symbols)
                 sem = asyncio.Semaphore(_POLL_CONCURRENCY)
 
-                # ── OI DATA: Try REST first, then derive from trade flow proxy ──
-                # Binance IP ban blocks: REST /fapi/v1/openInterest AND WS @openInterest stream
-                # When both are unavailable, derive OI change from orderflow + CVD data
-                _oi_rest_ok = False
-                _oi_proxy_count = 0
+                # ── OI DATA: production REST only; no proxy estimates ──
+                _oi_ok_count = 0
 
                 async def _poll_one(sym: str) -> bool:
+                    nonlocal _oi_ok_count
                     async with sem:
                         try:
                             oi_data = await self.ws.get_open_interest(sym)
                             if oi_data and oi_data.get("open_interest", 0) > 0:
                                 price = self._mark_prices.get(sym, 0)
-                                if price <= 0:
-                                    sd = self.symbol_data.get(sym, {})
-                                    trades = sd.get("trades", [])
-                                    if trades:
-                                        price = trades[-1].get("price", 0)
                                 if price > 0:
                                     self.data_quality.validate_oi(sym, oi_data["open_interest"], price)
                                     await self.oi.process_oi(
-                                        sym, oi_data["open_interest"], price, time.time()
+                                        sym,
+                                        oi_data["open_interest"],
+                                        price,
+                                        float(oi_data.get("timestamp", int(time.time() * 1000))) / 1000,
                                     )
+                                    _oi_ok_count += 1
                                     return True
                         except Exception as e:
-                            pass
+                            logger.debug("OI REST poll error {}: {}", sym, e)
                         return False
 
-                # Try REST for a small batch first to detect if ban is active
-                _test_batch = symbols[:5]
-                _test_results = await asyncio.gather(*[_poll_one(s) for s in _test_batch])
-                _oi_rest_ok = any(_test_results)
-
-                if _oi_rest_ok:
-                    # REST is working — poll all symbols
-                    _remaining = [s for s in symbols if s not in set(_test_batch)]
-                    await asyncio.gather(*[_poll_one(s) for s in _remaining])
-                    self.data_freshness.record_data_update("open_interest", "Binance REST /fapi/v1/openInterest (60s poll)")
-                else:
-                    # REST banned — derive OI from trade flow proxy
-                    for sym in symbols:
-                        try:
-                            price = self._mark_prices.get(sym, 0)
-                            if price <= 0:
-                                sd = self.symbol_data.get(sym, {})
-                                trades = sd.get("trades", [])
-                                if trades:
-                                    price = trades[-1].get("price", 0)
-                            if price <= 0:
-                                continue
-
-                            # ── OI PROXY: Derive from orderflow + CVD ──
-                            of = self.orderflow.get_analysis(sym)
-                            cvd_data = self.cvd_inst.get_analysis(sym)
-                            if not of:
-                                continue
-
-                            # Net delta = buy_volume - sell_volume (in contracts)
-                            buy_vol = of.get("buy_volume", 0)
-                            sell_vol = of.get("sell_volume", 0)
-                            total_vol = buy_vol + sell_vol
-                            net_delta = buy_vol - sell_vol  # positive = net buying
-
-                            # Convert net delta to approximate OI change (contracts)
-                            # Scale: $1M net delta ≈ 1000 contracts OI change
-                            _scale = 1.0 / price if price > 0 else 0
-                            oi_change_contracts = net_delta * _scale
-
-                            # Current OI estimate: use cumulative delta as proxy
-                            # Start from a reasonable base (volume * 0.1 as rough OI estimate)
-                            if not hasattr(self, '_oi_proxy_state'):
-                                self._oi_proxy_state = {}
-                            proxy_st = self._oi_proxy_state.setdefault(sym, {
-                                "oi": total_vol * 0.1 if total_vol > 0 else 1000,
-                                "readings": 0,
-                            })
-
-                            # Update OI estimate
-                            prev_oi = proxy_st["oi"]
-                            proxy_st["oi"] = max(1, prev_oi + oi_change_contracts)
-                            proxy_st["readings"] += 1
-
-                            # Feed to OpenInterestEngine for regime/positioning analysis
-                            await self.oi.process_oi(
-                                sym, proxy_st["oi"], price, time.time()
-                            )
-                            _oi_proxy_count += 1
-                        except Exception as e:
-                            logger.debug("OI proxy error {}: {}", sym, e)
-
+                await asyncio.gather(*[_poll_one(s) for s in symbols])
+                if _oi_ok_count:
                     self.data_freshness.record_data_update(
                         "open_interest",
-                        f"Trade flow proxy (REST banned, {_oi_proxy_count}/{len(symbols)} symbols)"
+                        f"Binance REST /fapi/v1/openInterest ({_oi_ok_count}/{len(symbols)} symbols)",
+                    )
+                else:
+                    self.data_freshness.record_data_update(
+                        "open_interest",
+                        "UNAVAILABLE — Binance REST /fapi/v1/openInterest did not return production data",
                     )
 
                 # ── Record data freshness for other polling sources ──
