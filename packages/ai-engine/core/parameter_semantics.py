@@ -51,7 +51,9 @@ def _factor(
     feed: str,
     quality: DataQuality,
     source: str = "engine",
+    observed_at: float | None = None,
 ) -> DirectionalFactor:
+    observed_at = _observed_at(row, name) if observed_at is None else observed_at
     return DirectionalFactor(
         name=name,
         state=state,
@@ -135,7 +137,17 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
     if key == "exchange_flow":
         return _from_bias("exchange_flow", row, "exchange_bias", "exchangeFlow")
     if key == "volume":
-        return _from_bias("volume", row, "vol_bias", "ticker24h")
+        return _factor(
+            "volume",
+            DirectionState.NEUTRAL,
+            0,
+            "24h volume is contextual size; no directional volume vote",
+            row,
+            "ticker24h",
+            DataQuality.NOT_APPLICABLE,
+            "exchange",
+            observed_at=observed_at,
+        )
 
     if key == "imbalance":
         value = _num(row, "imbalance")
@@ -168,7 +180,16 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
         else:
             state = DirectionState.NEUTRAL
         confidence = float(row.get("regime_confidence_pct", 50) or 50)
-        return _factor("regime", state, max(0, min(100, confidence)), f"regime={regime}; confidence={confidence:.1f}%", row, "regime", DataQuality.CALCULATED)
+        return _factor(
+            "regime",
+            state,
+            max(0, min(100, confidence)),
+            f"regime={regime}; confidence={confidence:.1f}%",
+            row,
+            "regime",
+            _quality_for(row, "regime", observed_at, derived=True),
+            observed_at=observed_at,
+        )
 
     return _factor(key, DirectionState.NEUTRAL, 0, "no directional semantics defined", row, "", DataQuality.NOT_APPLICABLE)
 

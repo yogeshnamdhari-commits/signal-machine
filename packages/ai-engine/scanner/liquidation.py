@@ -129,28 +129,38 @@ class LiquidationEngine:
     async def initialize(self) -> None:
         logger.info("Liquidation analytics engine ready (clusters + heat zones + sweep + risk)")
 
-    async def process_trade(self, symbol: str, trade: Dict, normal_volume: float = 0) -> None:
-        """Process a trade and detect liquidation events."""
+    async def process_trade(
+        self,
+        symbol: str,
+        trade: Dict,
+        normal_volume: float = 0,
+        *,
+        authoritative: bool = False,
+    ) -> None:
+        """Process a trade or authoritative forceOrder event."""
         st = self._states.setdefault(symbol, LiqState(symbol=symbol))
 
         price = trade.get("price", 0)
         qty = trade.get("quantity", 0)
         val = price * qty
-        now = time.time()
+        event_ts = float(trade.get("timestamp", 0) or 0)
+        if event_ts > 1e10:
+            event_ts /= 1000.0
+        now = event_ts if event_ts > 0 else time.time()
 
         if val <= 0 or price <= 0:
             return
 
-        # ── Detect liquidation from unusual trade size ──
+        # Confirmed Binance forceOrder events are authoritative liquidation evidence.
+        # Ordinary aggTrade events are never treated as liquidation evidence by the production engine.
         is_maker = trade.get("is_buyer_maker", False)
-        is_liq = False
+        is_liq = bool(authoritative)
 
-        if normal_volume > 0 and val / max(normal_volume, 1) > self._spike_threshold:
-            is_liq = True
-        elif normal_volume == 0 and val > self._min_liq_value * 500:
-            # Without baseline, require extremely large trade ($50M+) to classify as liquidation
-            # Lower thresholds cause regular large trades to be misclassified as liquidations
-            is_liq = True
+        if not authoritative:
+            if normal_volume > 0 and val / max(normal_volume, 1) > self._spike_threshold:
+                is_liq = True
+            elif normal_volume == 0 and val > self._min_liq_value * 500:
+                is_liq = True
 
         if is_liq:
             # Maker selling = long liquidation (forced selling), Maker buying = short liquidation
@@ -549,6 +559,7 @@ class LiquidationEngine:
             # ── Risk ──
             "liq_risk": st.liq_risk,
             "liq_risk_level": st.liq_risk_level,
+            "observed_at": max((e.timestamp for e in st.events), default=0.0),
 
             # ── Backward compatibility (used by scoring engine) ──
             "signal": (

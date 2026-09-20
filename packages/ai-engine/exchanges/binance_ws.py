@@ -371,7 +371,7 @@ class BinanceWebSocket:
                 "low": float(t.get("l", 0) or 0),
                 "open": float(t.get("o", 0) or 0),
                 "count": int(t.get("n", 0) or 0),
-                "last_update": time.time(),
+                "last_update": float(t.get("E") or t.get("T") or time.time() * 1000) / 1000.0,
                 "data_quality": "REAL",
                 "source": "binance",
                 "feed": "ticker24h",
@@ -382,7 +382,7 @@ class BinanceWebSocket:
             "feed": "ticker24h",
             "data_quality": "REAL",
             "count": len(tickers),
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(max((t.get("E", 0) or t.get("T", 0) or 0) for t in tickers) or time.time() * 1000),
         })
 
     async def _flush_loop(self) -> None:
@@ -517,7 +517,8 @@ class BinanceWebSocket:
         if oi <= 0:
             return
 
-        now = time.time()
+        now_ms = int(d.get("E") or d.get("T") or time.time() * 1000)
+        now = now_ms / 1000.0
         cached = self._oi_cache.get(sym)
         if cached:
             prev_oi = cached.get("oi", 0)
@@ -541,7 +542,7 @@ class BinanceWebSocket:
                 "symbol": sym,
                 "open_interest": oi,
                 "change_pct": change_pct,
-                "timestamp": int(now * 1000),
+                "timestamp": now_ms,
                 "source": "binance",
                 "feed": "openInterest",
                 "data_quality": "REAL",

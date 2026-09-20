@@ -693,7 +693,7 @@ class DeltaTerminalEngine:
             if event == "funding":
                 self.data_freshness.record_tick("binance")
                 self.trade_blocker.record_data_tick("binance")
-                self.data_freshness.record_data_update("funding", "Binance + Bybit + OKX (volume-weighted avg)")
+                self.data_freshness.record_data_update("funding", "Binance Futures markPrice")
             if event == "liquidation":
                 self.data_freshness.record_data_update("liquidation", "Binance Futures Liquidation Stream")
                 self.trade_blocker.record_data_tick("binance")
@@ -723,11 +723,8 @@ class DeltaTerminalEngine:
                         data.get("is_buyer_maker", False)
                     )
                 
-                # Feed liquidation engine — only very large trades (> $100k)
-                trade_val = data.get("price", 0) * data.get("quantity", 0)
-                if trade_val > 100_000:
-                    await self.liquidation.process_trade(sym, data)
-                
+                # Regular aggTrade events are NOT liquidation evidence.
+                # Only Binance forceOrder events are allowed to feed the liquidation engine.
             elif event == "depth":
                 sd["orderbook"] = {"bids": data.get("bids", []), "asks": data.get("asks", [])}
                 # Data Quality: validate orderbook
@@ -810,13 +807,16 @@ class DeltaTerminalEngine:
                     logger.debug("OI WS handler error {}: {}", sym, e)
 
             elif event == "liquidation":
-                # Feed liquidation engine with trade-like data
+                # Binance forceOrder is authoritative liquidation evidence.
                 liq_trade = {
                     "price": data.get("price", 0),
                     "quantity": data.get("quantity", 0),
                     "is_buyer_maker": data.get("side") == "SELL",
+                    "timestamp": data.get("timestamp", 0),
+                    "source": "binance",
+                    "feed": "forceOrder",
                 }
-                await self.liquidation.process_trade(sym, liq_trade, normal_volume=5000)
+                await self.liquidation.process_trade(sym, liq_trade, authoritative=True)
 
         except Exception as exc:
             logger.error("Handler error {}: {}", sym, exc)
@@ -5518,7 +5518,11 @@ class DeltaTerminalEngine:
             funding_rate = max(-0.05, min(0.05, funding_rate))
 
         current_oi = oi_data.get("current_oi") if oi_data else None
-        oi_change_pct = oi_data.get("change_pct") if oi_data else None
+        oi_change_pct = (
+            oi_data.get("change_pct")
+            if oi_data and oi_data.get("change_ready", False)
+            else None
+        )
         oi_signal = oi_data.get("signal") if oi_data else None
         oi_regime_val = oi_data.get("oi_regime") if oi_data else None
         oi_positioning_val = oi_data.get("positioning") if oi_data else None
@@ -5553,7 +5557,8 @@ class DeltaTerminalEngine:
         spread = dom_data.get("spread") if dom_data else None
 
         # Do not manufacture directional volume from order flow.
-        vol_bias = "neutral" if vol > 0 else None
+        # 24h volume is contextual size, not directional evidence.
+        vol_bias = None
 
         regime = regime_data.get("regime") if regime_data else None
 
@@ -5577,53 +5582,106 @@ class DeltaTerminalEngine:
         if _oi_cache:
             _oi_ts = max(_oi_ts, float(_oi_cache.get("ts", 0) or 0))
         _flow_ts = float(ef_data.get("last_update_ts", 0) or 0) if ef_data else 0.0
-        ts = max(_ticker_ts, _trade_ts, _depth_ts, _funding_ts, _oi_ts, _liq_ts, _kline_ts, _flow_ts)
+
+        def _latest_kline_ts(interval: str) -> float:
+            candles = sd.get("klines", {}).get(interval, [])
+            if not candles:
+                return 0.0
+            latest = max(candles, key=lambda k: float(k.get("open_time", 0) or 0))
+            value = float(latest.get("close_time", 0) or latest.get("open_time", 0) or 0)
+            return value / 1000.0 if value > 1e10 else value
+
+        _kline_1m_ts = _latest_kline_ts("1m")
+        _kline_5m_ts = _latest_kline_ts("5m")
+        _kline_15m_ts = _latest_kline_ts("15m")
+        _kline_1h_ts = _latest_kline_ts("1h")
+        _kline_4h_ts = _latest_kline_ts("4h")
+        _kline_ts = max(_kline_1m_ts, _kline_5m_ts, _kline_15m_ts, _kline_1h_ts, _kline_4h_ts)
+
+        _regime_ts = float(regime_data.get("observed_at", 0) or 0) if regime_data else 0.0
+        _regime_ts = max(_regime_ts, _kline_ts)
+        _liq_obs_ts = float(liq_data.get("observed_at", 0) or 0) if liq_data else 0.0
+        _sweep_fvg_ts = _kline_5m_ts
+
+        ts = max(
+            _ticker_ts, _trade_ts, _depth_ts, _funding_ts, _oi_ts,
+            _liq_ts, _kline_ts, _flow_ts, _regime_ts
+        ) or time.time()
 
         # Convert OI from contracts to USD: contracts × mark_price = USD value
         # Use cached mark price (more accurate than last trade price for valuation)
         mark = self._mark_prices.get(sym, 0)
-        oi_price = mark if mark > 0 else price
-        oi_usd = current_oi * oi_price if oi_price > 0 else 0
+        oi_usd = (
+            current_oi * mark
+            if current_oi is not None and current_oi > 0 and mark > 0
+            else None
+        )
 
         # Sanity validation — flag unrealistic OI values
         # Production max OI: BTC ~$40B, ETH ~$15B, others <$5B
         oi_threshold = 50_000_000_000 if sym == "BTCUSDT" else (
             20_000_000_000 if sym == "ETHUSDT" else 5_000_000_000)
-        if oi_usd > oi_threshold:
+        if oi_usd is not None and oi_usd > oi_threshold:
             logger.warning("Suspicious OI USD: {} ${:.1f} (raw contracts={}, mark_price={}, last_price={})",
                            sym, oi_usd, current_oi, mark, price)
 
+        def _interval_change(interval: str) -> float | None:
+            candles = sd.get("klines", {}).get(interval, [])
+            if len(candles) < 2:
+                return None
+            ordered = sorted(candles, key=lambda k: float(k.get("open_time", 0) or 0))
+            latest_close = float(ordered[-1].get("close", 0) or 0)
+            prior_close = float(ordered[-2].get("close", 0) or 0)
+            if latest_close <= 0 or prior_close <= 0:
+                return None
+            return (latest_close - prior_close) / prior_close * 100.0
+
+        change_1h = _interval_change("1h")
+        change_4h = _interval_change("4h")
+
         return {
             "symbol": sym,
-            "price": price,
-            "volume": vol,
+            "price": _price_round(price, price) if price > 0 else None,
+            "volume": vol if vol > 0 else None,
             # ── Binance full market data (API returns strings, cast to float) ──
             # Use dynamic precision to preserve accuracy for low-price tokens
-            "mark_price": _price_round(float(self._premium_data.get(sym, {}).get("mark_price", 0)), price) if sym in self._premium_data else _price_round(price, price),
-            "index_price": _price_round(float(self._premium_data.get(sym, {}).get("index_price", 0)), price) if sym in self._premium_data else _price_round(price, price),
-            "funding_countdown": max(0, int((self._premium_data.get(sym, {}).get("next_funding_time", 0) - int(time.time() * 1000)) / 1000)) if sym in self._premium_data and self._premium_data.get(sym, {}).get("next_funding_time", 0) > 0 else 0,
-            "high_24h": _price_round(float(_eff_ticker.get("high") or 0), price),
-            "low_24h": _price_round(float(_eff_ticker.get("low") or 0), price),
-            "volume_btc": round(float(_eff_ticker.get("volume") or 0), 2),
-            "change_24h": round(float(_eff_ticker.get("change_pct") or 0), 2),
-            "change_24h_raw": round(float(_eff_ticker.get("price_change") or 0), 4),
-            "open_24h": _price_round(float(_eff_ticker.get("open") or 0), price),
-            "trades_24h": int(_eff_ticker.get("count") or 0),
+            "mark_price": (
+                _price_round(float(self._premium_data[sym].get("mark_price") or 0), price)
+                if sym in self._premium_data and float(self._premium_data[sym].get("mark_price") or 0) > 0
+                else None
+            ),
+            "index_price": (
+                _price_round(float(self._premium_data[sym].get("index_price") or 0), price)
+                if sym in self._premium_data and float(self._premium_data[sym].get("index_price") or 0) > 0
+                else None
+            ),
+            "funding_countdown": (
+                max(0, int((self._premium_data[sym].get("next_funding_time", 0) - int(time.time() * 1000)) / 1000))
+                if sym in self._premium_data and self._premium_data[sym].get("next_funding_time", 0) > 0
+                else None
+            ),
+            "high_24h": _price_round(float(_eff_ticker.get("high") or 0), price) if _eff_ticker else None,
+            "low_24h": _price_round(float(_eff_ticker.get("low") or 0), price) if _eff_ticker else None,
+            "volume_btc": round(float(_eff_ticker.get("volume") or 0), 2) if _eff_ticker else None,
+            "change_24h": round(float(_eff_ticker.get("change_pct") or 0), 2) if _eff_ticker else None,
+            "change_24h_raw": round(float(_eff_ticker.get("price_change") or 0), 4) if _eff_ticker else None,
+            "open_24h": _price_round(float(_eff_ticker.get("open") or 0), price) if _eff_ticker else None,
+            "trades_24h": int(_eff_ticker.get("count") or 0) if _eff_ticker else None,
             "signal": signal_side,
             "regime": regime,
             # Regime — multi-timeframe fields
-            "regime_confidence_pct": round(regime_data.get("regime_confidence_pct", 50), 1) if regime_data else 50,
-            "regime_alignment": round(regime_data.get("alignment_score", 0), 3) if regime_data else 0,
-            "regime_1m": regime_data.get("tf_regimes", {}).get("1m", "") if regime_data else "",
-            "regime_5m": regime_data.get("tf_regimes", {}).get("5m", "") if regime_data else "",
-            "regime_15m": regime_data.get("tf_regimes", {}).get("15m", "") if regime_data else "",
-            "regime_1h": regime_data.get("tf_regimes", {}).get("1h", "") if regime_data else "",
-            "regime_4h": regime_data.get("tf_regimes", {}).get("4h", "") if regime_data else "",
-            "regime_conf_1m": round(regime_data.get("tf_confidences", {}).get("1m", 0), 3) if regime_data else 0,
-            "regime_conf_5m": round(regime_data.get("tf_confidences", {}).get("5m", 0), 3) if regime_data else 0,
-            "regime_conf_15m": round(regime_data.get("tf_confidences", {}).get("15m", 0), 3) if regime_data else 0,
-            "regime_conf_1h": round(regime_data.get("tf_confidences", {}).get("1h", 0), 3) if regime_data else 0,
-            "regime_conf_4h": round(regime_data.get("tf_confidences", {}).get("4h", 0), 3) if regime_data else 0,
+            "regime_confidence_pct": round(regime_data.get("regime_confidence_pct"), 1) if regime_data and regime_data.get("regime_confidence_pct") is not None else None,
+            "regime_alignment": round(regime_data.get("alignment_score"), 3) if regime_data and regime_data.get("alignment_score") is not None else None,
+            "regime_1m": regime_data.get("tf_regimes", {}).get("1m") if regime_data else None,
+            "regime_5m": regime_data.get("tf_regimes", {}).get("5m") if regime_data else None,
+            "regime_15m": regime_data.get("tf_regimes", {}).get("15m") if regime_data else None,
+            "regime_1h": regime_data.get("tf_regimes", {}).get("1h") if regime_data else None,
+            "regime_4h": regime_data.get("tf_regimes", {}).get("4h") if regime_data else None,
+            "regime_conf_1m": round(regime_data.get("tf_confidences", {}).get("1m"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("1m") is not None else None,
+            "regime_conf_5m": round(regime_data.get("tf_confidences", {}).get("5m"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("5m") is not None else None,
+            "regime_conf_15m": round(regime_data.get("tf_confidences", {}).get("15m"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("15m") is not None else None,
+            "regime_conf_1h": round(regime_data.get("tf_confidences", {}).get("1h"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("1h") is not None else None,
+            "regime_conf_4h": round(regime_data.get("tf_confidences", {}).get("4h"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("4h") is not None else None,
             # End regime enhanced
             "funding": round(funding_rate * 100, 6) if funding_rate is not None else None,
             "funding_bias": funding_bias,
@@ -5635,9 +5693,9 @@ class DeltaTerminalEngine:
             "oi_regime": oi_data.get("oi_regime") if oi_data else None,
             "oi_positioning": oi_data.get("positioning") if oi_data else None,
             "oi_strength": round(oi_data.get("oi_strength_score"), 1) if oi_data and oi_data.get("oi_strength_score") is not None else None,
-            "oi_spike": oi_data.get("spike_detected", False) if oi_data else False,
-            "oi_flush": oi_data.get("flush_detected", False) if oi_data else False,
-            "oi_peak": round(oi_data.get("peak_oi", 0), 2) if oi_data else 0,
+            "oi_spike": oi_data.get("spike_detected") if oi_data else None,
+            "oi_flush": oi_data.get("flush_detected") if oi_data else None,
+            "oi_peak": round(oi_data.get("peak_oi"), 2) if oi_data and oi_data.get("peak_oi") is not None else None,
             # End OI enhanced
             # Exchange flow — enhanced fields (real aggTrade only, no synthetic)
             "exchange_flow": round(ef_data.get("net_flow"), 2) if ef_data else None,
@@ -5646,15 +5704,15 @@ class DeltaTerminalEngine:
             "aggressive_sell_vol": round(ef_data.get("taker_sell_vol"), 2) if ef_data else None,
             "net_delta": round(ef_data.get("recent_net_delta"), 2) if ef_data else None,
             "buy_sell_ratio": round(ef_data.get("flow_ratio"), 6) if ef_data else None,
-            "taker_dominance": round(ef_data.get("taker_dominance", 0.5), 3) if ef_data else 0.5,
-            "flow_strength": round(ef_data.get("flow_strength_score"), 1) if ef_data else None,
+            "taker_dominance": round(ef_data.get("taker_dominance"), 3) if ef_data and ef_data.get("taker_dominance") is not None else None,
+            "flow_strength": round(ef_data.get("flow_strength_score"), 1) if ef_data and ef_data.get("flow_strength_score") is not None else None,
             "flow_signal": ef_data.get("flow_signal") if ef_data else None,
             # Exchange flow — debug panel
-            "flow_total_trades": ef_data.get("total_trades", 0) if ef_data else 0,
+            "flow_total_trades": ef_data.get("total_trades") if ef_data else None,
             "flow_source": ef_data.get("source_label") if ef_data else None,
-            "flow_vol_24h": round(ef_data.get("vol_24h", 0), 2) if ef_data else 0,
-            "flow_vol_valid": ef_data.get("vol_24h_valid", True) if ef_data else True,
-            "flow_vol_msg": ef_data.get("vol_validation_msg", "") if ef_data else "",
+            "flow_vol_24h": round(ef_data.get("vol_24h"), 2) if ef_data and ef_data.get("vol_24h") is not None else None,
+            "flow_vol_valid": ef_data.get("vol_24h_valid") if ef_data else None,
+            "flow_vol_msg": ef_data.get("vol_validation_msg") if ef_data else None,
             # End exchange flow
             # CVD — multi-timeframe fields
             "cvd_bias": cvd_data.get("cvd_bias") if cvd_data else None,
@@ -5673,24 +5731,24 @@ class DeltaTerminalEngine:
             "imbalance": round(imbalance, 6) if imbalance is not None else None,
             "vol_bias": vol_bias,
             # Orderflow — debug panel (real aggTrade only)
-            "of_buy_volume": round(of.get("buy_volume", 0), 2) if of else 0,
-            "of_sell_volume": round(of.get("sell_volume", 0), 2) if of else 0,
-            "of_flow_ratio": round(of.get("flow_ratio", 0.5), 4) if of else 0.5,
-            "of_flow_signal": of.get("flow_signal", "neutral") if of else "neutral",
-            "of_flow_strength": round(of.get("flow_strength_score", 50), 1) if of else 50,
-            "of_total_trades": of.get("total_trades", 0) if of else 0,
-            "of_absorption": of.get("absorption", "none") if of else "none",
-            "of_sweep": of.get("sweep", "none") if of else "none",
+            "of_buy_volume": round(of.get("buy_volume"), 2) if of and of.get("buy_volume") is not None else None,
+            "of_sell_volume": round(of.get("sell_volume"), 2) if of and of.get("sell_volume") is not None else None,
+            "of_flow_ratio": round(of.get("flow_ratio"), 6) if of and of.get("flow_ratio") is not None else None,
+            "of_flow_signal": of.get("flow_signal") if of else None,
+            "of_flow_strength": round(of.get("flow_strength_score"), 1) if of and of.get("flow_strength_score") is not None else None,
+            "of_total_trades": of.get("total_trades") if of else None,
+            "of_absorption": of.get("absorption") if of else None,
+            "of_sweep": of.get("sweep") if of else None,
             # End orderflow debug
-            "cascade_active": liq_data.get("cascade_active", False) if liq_data else False,
-            "cascade_side": liq_data.get("cascade_side", "") if liq_data else "",
+            "cascade_active": liq_data.get("cascade_active") if liq_data else None,
+            "cascade_side": liq_data.get("cascade_side") if liq_data else None,
             # Liquidation — enhanced fields
-            "long_liq_vol": round(liq_data.get("long_liq_vol", 0), 2) if liq_data else 0,
-            "short_liq_vol": round(liq_data.get("short_liq_vol", 0), 2) if liq_data else 0,
-            "long_liq_count": liq_data.get("long_liq_count", 0) if liq_data else 0,
-            "short_liq_count": liq_data.get("short_liq_count", 0) if liq_data else 0,
-            "cascade_intensity": round(liq_data.get("cascade_intensity", 0), 3) if liq_data else 0,
-            "cluster_count": liq_data.get("cluster_count", 0) if liq_data else 0,
+            "long_liq_vol": round(liq_data.get("long_liq_vol"), 2) if liq_data and liq_data.get("long_liq_vol") is not None else None,
+            "short_liq_vol": round(liq_data.get("short_liq_vol"), 2) if liq_data and liq_data.get("short_liq_vol") is not None else None,
+            "long_liq_count": liq_data.get("long_liq_count") if liq_data else None,
+            "short_liq_count": liq_data.get("short_liq_count") if liq_data else None,
+            "cascade_intensity": round(liq_data.get("cascade_intensity"), 3) if liq_data and liq_data.get("cascade_intensity") is not None else None,
+            "cluster_count": liq_data.get("cluster_count") if liq_data else None,
             "sweep_detected": bool(sweep_det_data and sweep_det_data.get("recent_sweep_count", 0) > 0),
             "sweep_direction": sweep_det_data.get("last_sweep_side") if sweep_det_data else None,
             "sweep_intensity": sweep_det_data.get("avg_confidence") if sweep_det_data else None,
@@ -5701,20 +5759,20 @@ class DeltaTerminalEngine:
             "fvg_alignment": (fvg_det_data.get("fvg_alignment") if fvg_det_data and fvg_det_data.get("fvg_gap_high") and fvg_det_data.get("fvg_gap_low") else None),
             "fvg_type": (fvg_det_data.get("latest_fvg_type") if fvg_det_data and fvg_det_data.get("fvg_gap_high") and fvg_det_data.get("fvg_gap_low") else None),
             "fvg_score": round(fvg_det_data.get("fvg_score"), 1) if fvg_det_data and fvg_det_data.get("fvg_gap_high") and fvg_det_data.get("fvg_gap_low") else None,
-            "fvg_bull_count": fvg_det_data.get("unfilled_bullish_count", 0) if fvg_det_data else 0,
-            "fvg_bear_count": fvg_det_data.get("unfilled_bearish_count", 0) if fvg_det_data else 0,
+            "fvg_bull_count": fvg_det_data.get("unfilled_bullish_count") if fvg_det_data else None,
+            "fvg_bear_count": fvg_det_data.get("unfilled_bearish_count") if fvg_det_data else None,
             # FVG price levels — actual gap boundaries from detector
             "fvg_gap_high": round(fvg_det_data.get("fvg_gap_high"), 8) if fvg_det_data and fvg_det_data.get("fvg_gap_high") else None,
             "fvg_gap_low": round(fvg_det_data.get("fvg_gap_low"), 8) if fvg_det_data and fvg_det_data.get("fvg_gap_low") else None,
             "fvg_gap_size": round(fvg_det_data.get("fvg_gap_size"), 8) if fvg_det_data and fvg_det_data.get("fvg_gap_size") else None,
             "fvg_latest_strength": round(fvg_det_data.get("fvg_latest_strength"), 4) if fvg_det_data and fvg_det_data.get("fvg_latest_strength") is not None else None,
             # ── Sweep Detector — real sweep data from price action ──
-            "sw_signal": sweep_det_data.get("signal", "neutral") if sweep_det_data else "neutral",
-            "sw_recent_count": sweep_det_data.get("recent_sweep_count", 0) if sweep_det_data else 0,
-            "sw_high_sweeps": sweep_det_data.get("high_sweeps", 0) if sweep_det_data else 0,
-            "sw_low_sweeps": sweep_det_data.get("low_sweeps", 0) if sweep_det_data else 0,
-            "sw_avg_confidence": round(sweep_det_data.get("avg_confidence", 0), 2) if sweep_det_data else 0,
-            "sw_last_side": sweep_det_data.get("last_sweep_side", "") if sweep_det_data else "",
+            "sw_signal": sweep_det_data.get("signal") if sweep_det_data else None,
+            "sw_recent_count": sweep_det_data.get("recent_sweep_count") if sweep_det_data else None,
+            "sw_high_sweeps": sweep_det_data.get("high_sweeps") if sweep_det_data else None,
+            "sw_low_sweeps": sweep_det_data.get("low_sweeps") if sweep_det_data else None,
+            "sw_avg_confidence": round(sweep_det_data.get("avg_confidence"), 4) if sweep_det_data and sweep_det_data.get("avg_confidence") is not None else None,
+            "sw_last_side": sweep_det_data.get("last_sweep_side") if sweep_det_data else None,
             # Sweep price levels — actual sweep event prices from detector
             "sweep_price": round(sweep_det_data.get("sweep_price"), 8) if sweep_det_data and sweep_det_data.get("recent_sweep_count", 0) > 0 and sweep_det_data.get("sweep_price") else None,
             "sweep_reject_price": round(sweep_det_data.get("sweep_reject_price"), 8) if sweep_det_data and sweep_det_data.get("recent_sweep_count", 0) > 0 and sweep_det_data.get("sweep_reject_price") else None,
@@ -5722,24 +5780,34 @@ class DeltaTerminalEngine:
             "time": time.strftime("%H:%M:%S", time.localtime(ts)),
             "timestamp": ts,
             # ── Additional dashboard fields ──
-            "volume_24h": round(vol, 2),
-            "change_1h": 0.0,  # computed from klines below
-            "change_4h": 0.0,  # computed from klines below
+            "volume_24h": round(vol, 2) if vol > 0 else None,
+            "change_1h": round(change_1h, 4) if change_1h is not None else None,
+            "change_4h": round(change_4h, 4) if change_4h is not None else None,
             "spread": round(spread, 10) if spread is not None else None,
-            "confidence": round(sig.get("confidence", 0) if sig else 0, 3),
-            "institutional_score": round(sig.get("institutional_score", 0) if sig else 0, 1),
-            "absorption_score": round(of.get("absorption_score", 0) if of else 0, 2),
-            "sweep_score": round(of.get("sweep_score", 0) if of else 0, 2),
-            "smart_money_score": 0.0,  # computed from smart_money engine
+            "confidence": round(sig.get("confidence"), 3) if sig and sig.get("confidence") is not None else None,
+            "institutional_score": round(sig.get("institutional_score"), 1) if sig and sig.get("institutional_score") is not None else None,
+            "absorption_score": round(of.get("absorption_score"), 2) if of and of.get("absorption_score") is not None else None,
+            "sweep_score": round(of.get("sweep_score"), 2) if of and of.get("sweep_score") is not None else None,
+            "smart_money_score": None,
             "observed_at_by_metric": {
-                "price": _ticker_ts, "volume": _ticker_ts, "oi": _oi_ts, "funding": _funding_ts,
-                "delta": _trade_ts, "b_s_ratio": _trade_ts, "cvd": _trade_ts,
-                "flow": _flow_ts or _trade_ts, "exchange_flow": _flow_ts or _trade_ts,
-                "imbalance": _depth_ts, "sweep": _kline_ts, "fvg": _kline_ts,
-                "regime": _kline_ts, "liquidation": _liq_ts,
+                "price": _ticker_ts or _trade_ts,
+                "volume": _ticker_ts,
+                "oi": _oi_ts,
+                "funding": _funding_ts,
+                "delta": _trade_ts,
+                "b_s_ratio": _trade_ts,
+                "cvd": _trade_ts,
+                "flow": _flow_ts or _trade_ts,
+                "exchange_flow": _flow_ts or _trade_ts,
+                "imbalance": _depth_ts,
+                "sweep": _sweep_fvg_ts if sweep_det_data else 0,
+                "fvg": _sweep_fvg_ts if fvg_det_data else 0,
+                "regime": _regime_ts,
+                "liquidation": _liq_obs_ts,
             },
             "source_feed_by_metric": {
-                "price": "Binance Futures ticker24h", "volume": "Binance Futures ticker24h",
+                "price": "Binance Futures ticker24h" if _ticker_ts else "Binance Futures aggTrade",
+                "volume": "Binance Futures ticker24h",
                 "oi": "Binance Futures openInterest", "funding": "Binance Futures markPrice",
                 "delta": "Binance Futures aggTrade", "b_s_ratio": "Binance Futures aggTrade",
                 "cvd": "Binance Futures aggTrade", "flow": "Binance Futures aggTrade",

@@ -241,6 +241,8 @@ class OpenInterestEngine:
             "current_oi": st.current_oi,
             "change_abs": st.change_abs,
             "change_pct": st.change_pct,
+            "change_ready": len(st.readings) >= 2,
+            "readings_count": len(st.readings),
             "oi_trend": st.oi_trend,
             "price_oi_divergence": st.price_oi_divergence,
             "squeeze_risk": abs(st.price_oi_divergence) > 0.8,
