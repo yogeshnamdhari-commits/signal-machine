@@ -911,7 +911,7 @@ class DeltaTerminalEngine:
             await asyncio.sleep(60)
 
     async def _kline_poll_loop(self) -> None:
-        """Poll 5m klines via REST every 60s, 1H klines every 5min to keep regime + HTF detection fresh."""
+        """Refresh closed Binance OHLCV for all regime timeframes in production."""
         await asyncio.sleep(10)  # Wait for prefetch to complete first
         _POLL_CONCURRENCY = 10
         sem = asyncio.Semaphore(_POLL_CONCURRENCY)
@@ -987,9 +987,68 @@ class DeltaTerminalEngine:
                         except Exception as e:
                             logger.debug("Kline poll error {}: {}", sym, e)
 
+                async def _poll_regime_interval(sym: str, interval: str, limit: int) -> None:
+                    """Refresh a regime timeframe from closed Binance candles only."""
+                    async with sem:
+                        try:
+                            klines = await self.ws.get_klines(sym, interval=interval, limit=limit)
+                            if not klines:
+                                return
+                            sd = self.symbol_data.get(sym)
+                            if not sd:
+                                sd = self.symbol_data.setdefault(
+                                    sym, {"trades": [], "orderbook": {"bids": [], "asks": []}, "klines": {}, "ts": 0}
+                                )
+                            sd["ts"] = time.time()
+                            kl_list = sd.setdefault("klines", {}).setdefault(interval, [])
+                            existing = {k.get("open_time", 0) for k in kl_list}
+                            for kl in klines:
+                                ev = {
+                                    "symbol": sym, "interval": interval,
+                                    "open_time": kl.get("open_time", 0),
+                                    "close_time": kl.get("close_time", 0),
+                                    "open": kl.get("open", 0), "high": kl.get("high", 0),
+                                    "low": kl.get("low", 0), "close": kl.get("close", 0),
+                                    "volume": kl.get("volume", 0), "trades": kl.get("trades", 0),
+                                    "is_closed": bool(kl.get("is_closed", False)),
+                                }
+                                if not ev["is_closed"]:
+                                    continue
+                                ot = ev["open_time"]
+                                is_new = False
+                                if kl_list and kl_list[-1].get("open_time") == ot:
+                                    kl_list[-1] = ev
+                                    is_new = True
+                                elif ot not in existing:
+                                    kl_list.append(ev)
+                                    existing.add(ot)
+                                    is_new = True
+                                if is_new:
+                                    await self.regime.process_kline(sym, interval, ev)
+                            await asyncio.sleep(0.05)
+                        except Exception as exc:
+                            logger.debug("{} kline poll error {}: {}", interval, sym, exc)
+
                 # Poll ALL active symbols for klines (regime needs data even without trades)
                 top_syms = sorted(self.active_symbols, key=lambda s: self._vol_map.get(s, 0), reverse=True)[:250]
                 await asyncio.gather(*[_poll_kline(s) for s in top_syms])
+
+                # Refresh the remaining regime timeframes every minute. This keeps
+                # 1m/15m regime evidence live instead of freezing at startup.
+                await asyncio.gather(
+                    *[
+                        _poll_regime_interval(s, "1m", 60)
+                        for s in top_syms
+                    ],
+                    *[
+                        _poll_regime_interval(s, "15m", 40)
+                        for s in top_syms
+                    ],
+                )
+                self.data_freshness.record_data_update(
+                    "klines", "Binance OHLCV 1m/5m/15m REST poll (60s)"
+                )
+
                 # ── DIAG: Log kline counts for top 5 symbols after poll ──
                 for _dsym in top_syms[:5]:
                     _dsd = self.symbol_data.get(_dsym, {})
@@ -1041,8 +1100,16 @@ class DeltaTerminalEngine:
                                 logger.debug("1H kline poll error {}: {}", sym, e)
 
                     await asyncio.gather(*[_poll_1h_kline(s) for s in top_syms])
-                    logger.info("📊 1H kline poll: refreshed {}/{} symbols", _1h_fetched, len(top_syms))
-                    self.data_freshness.record_data_update("klines", "Binance OHLCV 1h REST poll (5min)")
+
+                    _4h_fetched = 0
+                    async def _poll_4h_kline(sym: str) -> None:
+                        nonlocal _4h_fetched
+                        await _poll_regime_interval(sym, "4h", 30)
+                        _4h_fetched += 1
+
+                    await asyncio.gather(*[_poll_4h_kline(s) for s in top_syms])
+                    logger.info("📊 1H/4H kline poll: refreshed {}/{} symbols", _1h_fetched, _4h_fetched)
+                    self.data_freshness.record_data_update("klines", "Binance OHLCV 1h/4h REST poll (5min)")
             except Exception as e:
                 logger.debug("Kline poll loop error: {}", e)
             await asyncio.sleep(60)
