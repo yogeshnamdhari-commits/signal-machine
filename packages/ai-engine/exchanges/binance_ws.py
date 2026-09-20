@@ -171,7 +171,7 @@ class BinanceWebSocket:
         configured = list(config.scanner.ws_streams)
 
         if route == "public":
-            stream_types = [s for s in configured if s in {"bookTicker", "depth@100ms", "depth"}]
+            stream_types = [s for s in configured if s in {"bookTicker", "depth20@100ms", "depth"}]
         else:
             stream_types = [s for s in configured if s in {"aggTrade", "trade", "openInterest"}]
 
@@ -239,6 +239,8 @@ class BinanceWebSocket:
             "quantity": float(d["q"]),
             "is_buyer_maker": d["m"],
             "trade_time": d["T"],
+            "exchange_event_time": d.get("E", d["T"]),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "aggTrade",
             "data_quality": "REAL",
@@ -254,7 +256,9 @@ class BinanceWebSocket:
             "symbol": d["s"],
             "bids": [[d["b"], d["B"]]],
             "asks": [[d["a"], d["A"]]],
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(d.get("E", time.time() * 1000)),
+            "exchange_event_time": int(d.get("E", time.time() * 1000)),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "bookTicker",
             "depth_quality": "L1",
@@ -268,10 +272,15 @@ class BinanceWebSocket:
             "symbol": d["s"],
             "bids": d.get("b", []),
             "asks": d.get("a", []),
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(d.get("E", time.time() * 1000)),
+            "exchange_event_time": int(d.get("E", time.time() * 1000)),
+            "received_time": int(time.time() * 1000),
+            "last_update_id": int(d.get("u", 0) or 0),
+            "first_update_id": int(d.get("U", 0) or 0),
+            "previous_update_id": int(d.get("pu", 0) or 0),
             "source": "binance",
-            "feed": "depth",
-            "depth_quality": "L2",
+            "feed": "depth20@100ms" if "depth20@100ms" in str(d) else "depth",
+            "depth_quality": "L2_TOP20_SNAPSHOT" if "depth20@100ms" in str(d) else "L2_DIFF_UNSAFE",
             "synthetic": False,
         }
         if self._callback:
@@ -311,7 +320,9 @@ class BinanceWebSocket:
             "index_price": index_price,
             "funding_rate": funding_rate,
             "next_funding_time": d.get("T", 0),
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(d.get("E", time.time() * 1000)),
+            "exchange_event_time": int(d.get("E", time.time() * 1000)),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "markPrice",
             "data_quality": "REAL",
@@ -372,6 +383,7 @@ class BinanceWebSocket:
                 "open": float(t.get("o", 0) or 0),
                 "count": int(t.get("n", 0) or 0),
                 "last_update": time.time(),
+                "exchange_event_time": int(t.get("E", time.time() * 1000)),
                 "data_quality": "REAL",
                 "source": "binance",
                 "feed": "ticker24h",
@@ -560,6 +572,7 @@ class BinanceWebSocket:
                 "symbol": symbol,
                 "open_interest": cached["oi"],
                 "change_pct": cached.get("change_pct", 0),
+                "change_5m_pct": None,
                 "source": "websocket",
                 "data_quality": "REAL",
                 "timestamp": int(cached.get("ts", time.time()) * 1000),
@@ -571,9 +584,54 @@ class BinanceWebSocket:
             "symbol": data["symbol"],
             "open_interest": float(data["openInterest"]),
             "change_pct": 0,
+            "change_5m_pct": None,
             "source": "rest",
             "data_quality": "REAL",
             "timestamp": int(time.time() * 1000),
+        }
+
+    async def get_open_interest_5m_change(self, symbol: str) -> Optional[Dict]:
+        """Return authentic 5-minute OI change from Binance Open Interest Statistics.
+
+        This endpoint is historical aggregate data, not a flow/price proxy. If the
+        exchange does not return two valid 5m observations, the change is unavailable.
+        """
+        data = await self._get(
+            "/futures/data/openInterestHist",
+            {"symbol": symbol, "period": "5m", "limit": 2},
+            use_data_url=True,
+        )
+        if not isinstance(data, list) or len(data) < 2:
+            return None
+
+        rows = []
+        for item in data:
+            try:
+                oi = float(item.get("sumOpenInterest", 0))
+                ts = int(item.get("timestamp", 0))
+            except (TypeError, ValueError):
+                continue
+            if oi > 0 and ts > 0:
+                rows.append((ts, oi))
+        rows.sort()
+
+        if len(rows) < 2 or rows[-2][1] <= 0:
+            return None
+
+        prev_ts, prev_oi = rows[-2]
+        latest_ts, latest_oi = rows[-1]
+        change_pct = (latest_oi - prev_oi) / prev_oi * 100.0
+        return {
+            "symbol": symbol,
+            "period": "5m",
+            "change_pct": change_pct,
+            "previous_oi": prev_oi,
+            "latest_oi": latest_oi,
+            "previous_timestamp": prev_ts,
+            "latest_timestamp": latest_ts,
+            "source": "binance",
+            "feed": "openInterestHist",
+            "data_quality": "REAL",
         }
 
     async def get_funding_rate(self, symbol: str, limit: int = 10) -> List[Dict]:
