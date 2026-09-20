@@ -5698,9 +5698,22 @@ class DeltaTerminalEngine:
             "short_liq_count": liq_data.get("short_liq_count") if liq_data else None,
             "cascade_intensity": round(liq_data.get("cascade_intensity"), 3) if liq_data and liq_data.get("cascade_intensity") is not None else None,
             "cluster_count": liq_data.get("cluster_count") if liq_data else None,
-            "sweep_detected": liq_data.get("sweep_detected") if liq_data else None,
-            "sweep_direction": liq_data.get("sweep_direction") if liq_data else None,
-            "sweep_intensity": round(liq_data.get("sweep_intensity"), 3) if liq_data and liq_data.get("sweep_intensity") is not None else None,
+            # Price-action sweep fields come from the dedicated kline sweep detector.
+            "sweep_detected": bool(sweep_det_data and sweep_det_data.get("recent_sweep_count", 0) > 0),
+            "sweep_direction": (
+                "down" if sweep_det_data and sweep_det_data.get("high_sweeps", 0) > sweep_det_data.get("low_sweeps", 0)
+                else "up" if sweep_det_data and sweep_det_data.get("low_sweeps", 0) > sweep_det_data.get("high_sweeps", 0)
+                else None
+            ),
+            "sweep_intensity": (
+                round(sweep_det_data.get("avg_confidence"), 3)
+                if sweep_det_data and sweep_det_data.get("avg_confidence") is not None
+                else None
+            ),
+            # Liquidation-cluster sweep is kept separate from price-action sweep.
+            "liq_sweep_detected": liq_data.get("sweep_detected") if liq_data else None,
+            "liq_sweep_direction": liq_data.get("sweep_direction") if liq_data else None,
+            "liq_sweep_intensity": round(liq_data.get("sweep_intensity"), 3) if liq_data and liq_data.get("sweep_intensity") is not None else None,
             "liq_risk": round(liq_data.get("liq_risk"), 1) if liq_data and liq_data.get("liq_risk") is not None else None,
             "liq_risk_level": liq_data.get("liq_risk_level") if liq_data else None,
             # End liquidation enhanced
