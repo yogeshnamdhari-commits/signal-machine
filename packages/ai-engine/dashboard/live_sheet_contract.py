@@ -53,8 +53,12 @@ def display_value(row: Dict[str, Any], key: str) -> Any:
                 "flow_strength": 15.0,
                 "imbalance": 5.0,
                 "sweep": 3600.0,
+                "sweep_price": 3600.0,
                 "regime": 420.0,
                 "fvg": 259200.0,
+                "fvg_gap_high": 259200.0,
+                "fvg_gap_low": 259200.0,
+                "liq_risk_level": 3600.0,
                 "long_liq_vol": 3600.0,
                 "short_liq_vol": 3600.0,
             }.get(key, 60.0)
