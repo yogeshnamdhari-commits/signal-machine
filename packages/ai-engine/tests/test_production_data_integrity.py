@@ -88,10 +88,12 @@ def test_live_row_source_has_no_synthetic_trade_or_oi_proxy():
 
     source = inspect.getsource(DeltaTerminalEngine._prefetch_klines)
     oi_source = inspect.getsource(DeltaTerminalEngine._oi_poll_loop)
+    engine_source = inspect.getsource(DeltaTerminalEngine)
 
     assert "Generate a synthetic trade" not in source
     assert "_oi_proxy_state" not in oi_source
     assert "Trade flow proxy" not in oi_source
+    assert "_rest_trade_poll_loop" not in engine_source
 
 
 def test_live_sheet_contract_does_not_turn_missing_flow_into_values():
@@ -111,3 +113,16 @@ def test_live_sheet_contract_does_not_turn_missing_flow_into_values():
     assert display_value(missing, "cvd_5m") is None
     assert display_value(missing, "exchange_flow") is None
     assert display_value(missing, "flow_strength") is None
+
+
+def test_funding_direction_uses_percent_units():
+    from core.parameter_semantics import direction_for_parameter
+    from core.directional_factor import DirectionState
+
+    row = {
+        "funding": 0.005,  # 0.005%, below +/-0.01% neutral band
+        "mark_price": 100.0,
+        "timestamp": time.time(),
+    }
+    factor = direction_for_parameter("funding", row)
+    assert factor.state is DirectionState.NEUTRAL
