@@ -687,7 +687,12 @@ class DeltaTerminalEngine:
             if event_ms:
                 try:
                     event_sec = float(event_ms) / 1000.0 if float(event_ms) > 10_000_000_000 else float(event_ms)
-                    sd["source_times"][event] = event_sec
+                    source_key = (
+                        "depth_l1"
+                        if event == "depth" and str(data.get("depth_quality", "")) == "L1"
+                        else event
+                    )
+                    sd["source_times"][source_key] = event_sec
                 except (TypeError, ValueError):
                     pass
             # ── Record data freshness tick ──
@@ -735,13 +740,19 @@ class DeltaTerminalEngine:
                 # Authentic liquidation metrics come only from Binance forceOrder.
                 
             elif event == "depth":
-                sd["orderbook"] = {"bids": data.get("bids", []), "asks": data.get("asks", [])}
                 depth_quality = str(data.get("depth_quality", "") or "")
+                # L1 bookTicker is stored separately so it can never overwrite the
+                # canonical L2 book used by DOM/imbalance analytics.
+                if depth_quality == "L1":
+                    sd["l1_orderbook"] = {
+                        "bids": data.get("bids", []),
+                        "asks": data.get("asks", []),
+                    }
+                    return
+                sd["orderbook"] = {"bids": data.get("bids", []), "asks": data.get("asks", [])}
                 # L1 bookTicker is valid for spread/best bid-ask only. It must never
                 # be fed to L2 analytics, otherwise a one-level quote masquerades as
                 # a complete order book and corrupts imbalance/DOM metrics.
-                if depth_quality == "L1":
-                    return
                 if depth_quality != "L2_TOP20_SNAPSHOT":
                     logger.warning("Ignoring unsupported depth quality for {}: {}", sym, depth_quality)
                     return
