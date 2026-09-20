@@ -300,6 +300,15 @@ class OpenInterestEngine:
                 "oi_momentum_score": 50,
             }
         
+        if st.change_pct is None and len(st.readings) < 5:
+            return {
+                "valid": True,
+                "reason": "OI baseline established; directional change not yet observable",
+                "oi_expansion_pct": None,
+                "oi_trend": "UNKNOWN",
+                "oi_momentum_score": round(st.oi_strength_score, 1),
+            }
+
         oi_rising = st.oi_trend > 0
         oi_falling = st.oi_trend < 0
         price_rising = price_change_24h > 0.5  # > 0.5% = rising
@@ -325,7 +334,7 @@ class OpenInterestEngine:
         return {
             "valid": valid,
             "reason": reason,
-            "oi_expansion_pct": round(st.change_pct, 4),
+            "oi_expansion_pct": round(st.change_pct, 4) if st.change_pct is not None else None,
             "oi_trend": "RISING" if oi_rising else ("FALLING" if oi_falling else "FLAT"),
             "oi_momentum_score": round(st.oi_strength_score, 1),
         }
