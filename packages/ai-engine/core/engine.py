@@ -5530,25 +5530,17 @@ class DeltaTerminalEngine:
         _real_count = len(_real_trades)
         of = self.orderflow.get_analysis(sym)
 
-        imbalance = of.get("imbalance", 0) if of else 0
-        # ── VOL BIAS: use orderflow imbalance, fallback to exchange flow ──
-        if of and imbalance != 0:
+        imbalance = of.get("imbalance") if of else None
+        vol_bias = None
+        if of and imbalance is not None:
             vol_bias = "buy" if imbalance > 0.1 else ("sell" if imbalance < -0.1 else "neutral")
-        else:
-            # Fallback: use exchange flow ratio (taker buy vs sell pressure)
-            _ef = self.exchange_flow.get_analysis(sym) if hasattr(self, 'exchange_flow') else None
-            if _ef and _ef.get("total_trades", 0) >= 20:
-                _fr = _ef.get("flow_ratio", 0.5)
-                vol_bias = "buy" if _fr > 0.55 else ("sell" if _fr < 0.45 else "neutral")
-            else:
-                vol_bias = "neutral"
 
-        regime = regime_data.get("regime", "range") if regime_data else "range"
+        regime = regime_data.get("regime") if regime_data else None
 
         sig = next((s for s in deduped_signals if s["symbol"] == sym), None)
         signal_side = sig.get("side", "").lower() if sig else ""
 
-        ts = last.get("time", time.time())
+        ts = last.get("time") or _eff_ticker.get("last_update") or time.time()
 
         # No synthetic flow/CVD substitutions are permitted here.
         # Exchange flow, orderflow, and CVD must come from authentic trade observations.
@@ -5556,14 +5548,18 @@ class DeltaTerminalEngine:
         # Convert OI from contracts to USD: contracts × mark_price = USD value
         # Use cached mark price (more accurate than last trade price for valuation)
         mark = self._mark_prices.get(sym, 0)
-        oi_price = mark if mark > 0 else price
-        oi_usd = current_oi * oi_price if oi_price > 0 else 0
+        oi_price = mark if mark > 0 else None
+        oi_usd = (
+            current_oi * oi_price
+            if current_oi is not None and oi_price is not None and oi_price > 0
+            else None
+        )
 
         # Sanity validation — flag unrealistic OI values
         # Production max OI: BTC ~$40B, ETH ~$15B, others <$5B
         oi_threshold = 50_000_000_000 if sym == "BTCUSDT" else (
             20_000_000_000 if sym == "ETHUSDT" else 5_000_000_000)
-        if oi_usd > oi_threshold:
+        if oi_usd is not None and oi_usd > oi_threshold:
             logger.warning("Suspicious OI USD: {} ${:.1f} (raw contracts={}, mark_price={}, last_price={})",
                            sym, oi_usd, current_oi, mark, price)
 
