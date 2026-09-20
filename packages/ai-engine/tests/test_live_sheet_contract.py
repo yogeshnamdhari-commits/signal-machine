@@ -92,3 +92,17 @@ def test_raw_live_observations_are_unavailable_without_trade_tape():
     assert observed["flow_strength"] is None
     assert observed["exchange_flow"] is None
     assert observed["imbalance"] == -0.11
+
+def test_l2_imbalance_is_unavailable_without_depth_observation():
+    row = {"imbalance": 0.9, "observed_at_by_metric": {}}
+    display = build_signal_display({}, row)
+    assert display["imbalance"].quality.value == "UNAVAILABLE"
+
+def test_l2_imbalance_uses_depth_timestamp_not_trade_timestamp():
+    row = {
+        "imbalance": 0.9,
+        "trade": "present",
+        "observed_at_by_metric": {"imbalance": 100.0},
+    }
+    display = build_signal_display({}, row)
+    assert display["imbalance"].observed_at == 100.0

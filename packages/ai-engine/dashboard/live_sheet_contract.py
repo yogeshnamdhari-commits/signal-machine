@@ -55,7 +55,7 @@ def display_value(row: Dict[str, Any], key: str) -> Any:
             or int(row.get("long_liq_count", 0) or 0) > 0
             or int(row.get("short_liq_count", 0) or 0) > 0
         )
-        return value if has_liq_data and value not in (None, "", "low") else (value if has_liq_data else None)
+        return value if has_liq_data else None
 
     if key == "volume_24h" and (_as_float(value) or 0) <= 0:
         return None

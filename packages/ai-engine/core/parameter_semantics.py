@@ -5,6 +5,7 @@ This module is display/evidence logic. It never creates an executable trade sign
 from __future__ import annotations
 
 from typing import Any, Dict
+import time
 
 from core.directional_factor import DataQuality, DirectionState, DirectionalFactor
 
@@ -19,12 +20,26 @@ def _num(row: Dict[str, Any], key: str):
         return None
 
 
-def _observed_at(row: Dict[str, Any]) -> float:
-    value = row.get("observed_at", row.get("timestamp", row.get("last_update", 0)))
+def _observed_at(row: Dict[str, Any], metric: str | None = None) -> float:
+    observed = row.get("observed_at_by_metric", {})
+    value = (
+        observed.get(metric, 0)
+        if metric
+        else row.get("observed_at", row.get("timestamp", row.get("last_update", 0)))
+    )
     try:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _quality_for(row: Dict[str, Any], metric: str, observed_at: float, *, derived: bool) -> DataQuality:
+    if observed_at <= 0:
+        return DataQuality.UNAVAILABLE
+    age = time.time() - observed_at
+    if age < 0 or age > 60.0:
+        return DataQuality.STALE
+    return DataQuality.CALCULATED if derived else DataQuality.LIVE
 
 
 def _factor(
@@ -44,7 +59,7 @@ def _factor(
         reason=reason,
         source=str(row.get("source", source)),
         feed=str(row.get("feed", feed)),
-        observed_at=_observed_at(row) or 1.0,
+        observed_at=observed_at or 1.0,
         quality=quality,
     )
 
@@ -57,8 +72,8 @@ def _from_bias(name: str, row: Dict[str, Any], key: str, feed: str = "derived") 
         state = DirectionState.SELL
     else:
         state = DirectionState.NEUTRAL
-    observed_at = _observed_at(row)
-    quality = DataQuality.CALCULATED if value and observed_at > 0 else DataQuality.UNAVAILABLE
+    observed_at = _observed_at(row, name)
+    quality = _quality_for(row, name, observed_at, derived=True) if value and observed_at > 0 else DataQuality.UNAVAILABLE
     return _factor(
         name,
         state,
@@ -72,14 +87,14 @@ def _from_bias(name: str, row: Dict[str, Any], key: str, feed: str = "derived") 
 
 def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor:
     key = name.lower()
-    observed_at = _observed_at(row)
+    observed_at = _observed_at(row, key)
 
     if key == "price":
         value = _num(row, "change_24h")
         if value is None or observed_at <= 0:
             return _factor("price", DirectionState.NEUTRAL, 0, "24h price observation unavailable", row, "ticker24h", DataQuality.UNAVAILABLE, "exchange")
         state = DirectionState.BUY if value > 0 else DirectionState.SELL if value < 0 else DirectionState.NEUTRAL
-        return _factor("price", state, min(100, 50 + abs(value) * 5), f"24h change={value:+.2f}%", row, "ticker24h", DataQuality.LIVE, "exchange")
+        return _factor("price", state, min(100, 50 + abs(value) * 5), f"24h change={value:+.2f}%", row, "ticker24h", _quality_for(row, "price", observed_at, derived=False), "exchange")
 
     if key in {"b_s_ratio", "delta", "cvd", "flow", "exchange_flow"} and (row.get("flow_total_trades") is not None and int(row.get("flow_total_trades") or 0) <= 0):
         return _factor(key, DirectionState.NEUTRAL, 0, "trade tape unavailable; no directional vote", row, "aggTrade", DataQuality.UNAVAILABLE)
@@ -89,14 +104,14 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
         if value is None or observed_at <= 0:
             return _factor("b_s_ratio", DirectionState.NEUTRAL, 0, "taker buy/sell ratio unavailable", row, "aggTrade", DataQuality.UNAVAILABLE, "exchange")
         state = DirectionState.BUY if value > 1.02 else DirectionState.SELL if value < 0.98 else DirectionState.NEUTRAL
-        return _factor("b_s_ratio", state, min(100, 50 + abs(value - 1) * 500), f"B/S ratio={value:.3f}", row, "aggTrade", DataQuality.LIVE, "exchange")
+        return _factor("b_s_ratio", state, min(100, 50 + abs(value - 1) * 500), f"B/S ratio={value:.3f}", row, "aggTrade", _quality_for(row, "b_s_ratio", observed_at, derived=False), "exchange")
 
     if key == "delta":
         value = _num(row, "net_delta")
         if value is None or observed_at <= 0:
             return _factor("delta", DirectionState.NEUTRAL, 0, "trade delta unavailable", row, "aggTrade", DataQuality.UNAVAILABLE, "exchange")
         state = DirectionState.BUY if value > 0 else DirectionState.SELL if value < 0 else DirectionState.NEUTRAL
-        return _factor("delta", state, 70 if value else 50, f"net delta={value:+.2f}", row, "aggTrade", DataQuality.LIVE, "exchange")
+        return _factor("delta", state, 70 if value else 50, f"net delta={value:+.2f}", row, "aggTrade", _quality_for(row, "delta", observed_at, derived=False), "exchange")
 
     if key == "oi":
         value = _num(row, "open_interest")
@@ -111,7 +126,7 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
         # Funding is a positioning/risk modifier, not a standalone trade trigger.
         # Negative funding is long-supportive; positive funding is short-supportive.
         state = DirectionState.BUY if value < -0.0001 else DirectionState.SELL if value > 0.0001 else DirectionState.NEUTRAL
-        return _factor("funding", state, min(100, 50 + min(abs(value) * 5000, 50)), f"funding={value:+.6f}%", row, "markPrice", DataQuality.LIVE, "exchange")
+        return _factor("funding", state, min(100, 50 + min(abs(value) * 5000, 50)), f"funding={value:+.6f}%", row, "markPrice", _quality_for(row, "funding", observed_at, derived=False), "exchange")
 
     if key == "cvd":
         return _from_bias("cvd", row, "cvd_bias", "aggTrade")
@@ -127,7 +142,7 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
         if value is None or observed_at <= 0:
             return _factor("imbalance", DirectionState.NEUTRAL, 0, "order-book imbalance unavailable", row, "depth", DataQuality.UNAVAILABLE, "exchange")
         state = DirectionState.BUY if value > 0.05 else DirectionState.SELL if value < -0.05 else DirectionState.NEUTRAL
-        return _factor("imbalance", state, min(100, 50 + abs(value) * 100), f"book imbalance={value:+.3f}", row, "depth", DataQuality.LIVE, "exchange")
+        return _factor("imbalance", state, min(100, 50 + abs(value) * 100), f"book imbalance={value:+.3f}", row, "depth", _quality_for(row, "imbalance", observed_at, derived=False), "exchange")
 
     if key == "sweep":
         detected = bool(row.get("sweep_detected"))

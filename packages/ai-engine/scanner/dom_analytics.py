@@ -141,4 +141,5 @@ class DOMAnalytics:
             "ask_wall_price": latest.large_ask_wall,
             "persistent_levels": persistent[:5],
             "pressure_side": "buy" if latest.imbalance > 0.1 else ("sell" if latest.imbalance < -0.1 else "neutral"),
+            "observed_at": latest.timestamp,
         }
