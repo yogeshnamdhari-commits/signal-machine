@@ -30,8 +30,38 @@ def _as_positive_float(value: Any) -> float | None:
 
 
 def display_value(row: Dict[str, Any], key: str) -> Any:
-    """Return a semantically valid value; do not display placeholder zeroes as live data."""
+    """Return only semantically valid and fresh production observations."""
     value = row.get(key)
+
+    # When the canonical row carries source timestamps, enforce per-metric
+    # freshness instead of trusting the single dashboard snapshot timestamp.
+    metric_ts = row.get("metric_timestamps", {}).get(key)
+    if metric_ts:
+        try:
+            age = time.time() - float(metric_ts)
+            max_age = {
+                "price": 60.0,
+                "change_24h": 120.0,
+                "volume_24h": 120.0,
+                "open_interest": 15.0,
+                "oi_change_pct": 420.0,
+                "funding": 30.0,
+                "net_delta": 15.0,
+                "buy_sell_ratio": 15.0,
+                "cvd_5m": 15.0,
+                "exchange_flow": 15.0,
+                "flow_strength": 15.0,
+                "imbalance": 5.0,
+                "sweep": 10.0,
+                "regime": 420.0,
+                "fvg": 420.0,
+                "long_liq_vol": 300.0,
+                "short_liq_vol": 300.0,
+            }.get(key, 60.0)
+            if age < 0 or age > max_age:
+                return None
+        except (TypeError, ValueError):
+            return None
 
     if key in {"open_interest", "oi_change_pct"}:
         if _as_positive_float(row.get("open_interest")) is None:
