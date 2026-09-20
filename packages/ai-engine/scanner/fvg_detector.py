@@ -49,6 +49,9 @@ class FVGState:
     events: List[FVGEvent] = field(default_factory=list)
     unfilled_bullish: List[FVGEvent] = field(default_factory=list)
     unfilled_bearish: List[FVGEvent] = field(default_factory=list)
+    recent_candles_by_interval: Dict[str, List[Dict]] = field(default_factory=dict)
+    unfilled_bullish_by_interval: Dict[str, List[FVGEvent]] = field(default_factory=dict)
+    unfilled_bearish_by_interval: Dict[str, List[FVGEvent]] = field(default_factory=dict)
     last_fvg_side: str = ""
     fvg_momentum: float = 0.0  # -1 to 1 (bearish to bullish)
 

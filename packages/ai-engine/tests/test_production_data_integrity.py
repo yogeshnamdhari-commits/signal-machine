@@ -238,4 +238,4 @@ def test_directional_evidence_uses_metric_specific_freshness():
         "metric_timestamps": {"open_interest": time.time() - 60},
     }
     display = build_signal_display({}, row)
-    assert display["oi"].quality.value == "unavailable"
+    assert display["oi"].quality.value == "UNAVAILABLE"
