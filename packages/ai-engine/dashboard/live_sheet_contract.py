@@ -52,11 +52,11 @@ def display_value(row: Dict[str, Any], key: str) -> Any:
                 "exchange_flow": 15.0,
                 "flow_strength": 15.0,
                 "imbalance": 5.0,
-                "sweep": 10.0,
+                "sweep": 3600.0,
                 "regime": 420.0,
-                "fvg": 420.0,
-                "long_liq_vol": 300.0,
-                "short_liq_vol": 300.0,
+                "fvg": 259200.0,
+                "long_liq_vol": 3600.0,
+                "short_liq_vol": 3600.0,
             }.get(key, 60.0)
             if age < 0 or age > max_age:
                 return None
