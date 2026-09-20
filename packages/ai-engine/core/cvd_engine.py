@@ -296,10 +296,6 @@ class CVDEngine:
 
     def get_cvd(self, symbol: str, timeframe: str = "1m") -> float:
         """Return current CVD for a timeframe (from rolling window)."""
-        now = time.time()
-        window = self._delta_windows[symbol][timeframe]
-        tf_seconds = _TF_SECONDS[timeframe]
-        cutoff = now - tf_seconds
         return self._window_delta(symbol, timeframe)
 
     def get_bias(self, symbol: str, timeframe: str = "1m") -> str:
@@ -312,8 +308,7 @@ class CVDEngine:
 
     def get_buy_sell_ratio(self, symbol: str, timeframe: str = "1m") -> float:
         """Return buy/sell volume ratio for a timeframe."""
-        buy = self._buy_vol[symbol][timeframe]
-        sell = self._sell_vol[symbol][timeframe]
+        buy, sell = self._window_buy_sell_value(symbol, timeframe)
         if sell == 0:
             return 1.0 if buy == 0 else float("inf")
         return buy / sell
