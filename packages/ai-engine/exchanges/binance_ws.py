@@ -279,8 +279,8 @@ class BinanceWebSocket:
             "first_update_id": int(d.get("U", 0) or 0),
             "previous_update_id": int(d.get("pu", 0) or 0),
             "source": "binance",
-            "feed": "depth20@100ms" if "depth20@100ms" in str(d) else "depth",
-            "depth_quality": "L2_TOP20_SNAPSHOT" if "depth20@100ms" in str(d) else "L2_DIFF_UNSAFE",
+            "feed": "depth20@100ms",
+            "depth_quality": "L2_TOP20_SNAPSHOT",
             "synthetic": False,
         }
         if self._callback:
@@ -353,6 +353,8 @@ class BinanceWebSocket:
             "quantity": float(order["q"]),
             "order_type": order.get("o", "MARKET"),
             "timestamp": order.get("T", int(time.time() * 1000)),
+            "exchange_event_time": order.get("E", order.get("T", int(time.time() * 1000))),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "forceOrder",
             "data_quality": "REAL",
