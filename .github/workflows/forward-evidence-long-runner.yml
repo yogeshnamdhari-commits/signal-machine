@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/C/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/C/repo"
           mkdir -p "$(dirname "$ROOT")"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -43,11 +43,11 @@ jobs:
         with:
           name: forward-c-state-1-\${{ github.run_id }}
           path: |
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
           if-no-files-found: error
           retention-days: 90
 
@@ -66,7 +66,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/C/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/C/repo"
           mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -86,11 +86,11 @@ jobs:
         with:
           name: forward-c-state-2-\${{ github.run_id }}
           path: |
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
           if-no-files-found: error
           retention-days: 90
 
@@ -109,7 +109,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/C/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/C/repo"
           mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -129,11 +129,11 @@ jobs:
         with:
           name: forward-c-state-3-\${{ github.run_id }}
           path: |
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
           if-no-files-found: error
           retention-days: 90
 
@@ -152,7 +152,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/C/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/C/repo"
           mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -182,12 +182,12 @@ jobs:
         with:
           name: forward-c-final-\${{ github.run_id }}
           path: |
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/parameter_freeze.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
-            $HOME/signal-machine-forward/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
           if-no-files-found: error
           retention-days: 90
 
@@ -206,7 +206,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/D/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/D/repo"
           mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -227,13 +227,13 @@ jobs:
         with:
           name: forward-d-state-1-\${{ github.run_id }}
           path: |
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/parameter_freeze.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/parameter_freeze.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
           if-no-files-found: error
           retention-days: 90
 
@@ -252,7 +252,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/D/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/D/repo"
           mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -274,13 +274,13 @@ jobs:
         with:
           name: forward-d-state-2-\${{ github.run_id }}
           path: |
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/parameter_freeze.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/parameter_freeze.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_signals.csv
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
           if-no-files-found: error
           retention-days: 90
 
@@ -299,7 +299,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/D/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/D/repo"
           mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -321,12 +321,12 @@ jobs:
         with:
           name: forward-d-state-3-\${{ github.run_id }}
           path: |
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/parameter_freeze.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
-            $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/parameter_freeze.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_trades.csv
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C.json
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions/session_D.json
           if-no-files-found: error
           retention-days: 90
 
@@ -345,7 +345,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$HOME/signal-machine-forward/D/repo"
+          ROOT="$GITHUB_WORKSPACE/forward-runtime/D/repo"
           mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
           if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
@@ -388,6 +388,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: forward-evidence-\${{ github.sha }}
-          path: $HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions
+          path: forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions
           if-no-files-found: error
           retention-days: 90
