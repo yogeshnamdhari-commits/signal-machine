@@ -5514,24 +5514,45 @@ class DeltaTerminalEngine:
             else:
                 oi_bias = "neutral"
 
-        vol = getattr(self, '_vol_map', {}).get(sym, 0)
-        if vol == 0:
-            # Filter out synthetic !ticker@arr trades for volume calc
-            _real_trades = [t for t in sd["trades"][-50:] if t.get("_source") != "ticker_arr"]
-            vol = sum(t.get("quantity", 0) * t.get("price", 0) for t in _real_trades)
+        vol = float(_eff_ticker.get("quoteVolume") or 0)
+        if vol <= 0:
+            vol = None
         _trades_count = len(sd.get("trades", []))
         # Filter out synthetic ticker trades for fallback computation
         # Include ALL trades (even ticker_arr) for CVD/OF — they have real price data
         _real_trades = [t for t in sd.get("trades", []) if t.get("_source") != "ticker_arr"]
         _real_count = len(_real_trades)
         of = self.orderflow.get_analysis(sym)
+        dom_data = self.dom.get_analysis(sym) if hasattr(self, "dom") else None
 
-        imbalance = of.get("imbalance") if of else None
-        vol_bias = None
-        if of and imbalance is not None:
-            vol_bias = "buy" if imbalance > 0.1 else ("sell" if imbalance < -0.1 else "neutral")
-
+        # Imbalance is the actual L2 depth imbalance, not trade delta.
+        imbalance = dom_data.get("imbalance") if dom_data else None
+        vol_bias = ef_data.get("flow_signal") if ef_data else None
         regime = regime_data.get("regime") if regime_data else None
+
+        # Derived intraday changes use closed exchange klines only.
+        _k5 = sd.get("klines", {}).get("5m", []) or []
+        _k1h = sd.get("klines", {}).get("1h", []) or []
+        _k4h = sd.get("klines", {}).get("4h", []) or []
+        change_1h = None
+        change_4h = None
+        if len(_k1h) >= 2:
+            _base = float(_k1h[-2].get("close") or 0)
+            _cur = float(_k1h[-1].get("close") or 0)
+            if _base > 0 and _cur > 0:
+                change_1h = (_cur - _base) / _base * 100.0
+        if len(_k4h) >= 2:
+            _base = float(_k4h[-2].get("close") or 0)
+            _cur = float(_k4h[-1].get("close") or 0)
+            if _base > 0 and _cur > 0:
+                change_4h = (_cur - _base) / _base * 100.0
+        elif len(_k5) >= 49:
+            _base = float(_k5[-49].get("close") or 0)
+            _cur = float(_k5[-1].get("close") or 0)
+            if _base > 0 and _cur > 0:
+                change_4h = (_cur - _base) / _base * 100.0
+
+        spread = dom_data.get("spread") if dom_data else None
 
         sig = next((s for s in deduped_signals if s["symbol"] == sym), None)
         signal_side = sig.get("side", "").lower() if sig else ""
@@ -5580,13 +5601,13 @@ class DeltaTerminalEngine:
                 if sym in self._premium_data and self._premium_data[sym].get("next_funding_time", 0) > 0
                 else None
             ),
-            "high_24h": _price_round(float(_eff_ticker.get("high") or 0), price),
-            "low_24h": _price_round(float(_eff_ticker.get("low") or 0), price),
-            "volume_btc": round(float(_eff_ticker.get("volume") or 0), 2),
-            "change_24h": round(float(_eff_ticker.get("change_pct") or 0), 2),
-            "change_24h_raw": round(float(_eff_ticker.get("price_change") or 0), 4),
-            "open_24h": _price_round(float(_eff_ticker.get("open") or 0), price),
-            "trades_24h": int(_eff_ticker.get("count") or 0),
+            "high_24h": _price_round(float(_eff_ticker.get("high")), price) if _eff_ticker.get("high") else None,
+            "low_24h": _price_round(float(_eff_ticker.get("low")), price) if _eff_ticker.get("low") else None,
+            "volume_btc": round(float(_eff_ticker.get("volume")), 2) if _eff_ticker.get("volume") else None,
+            "change_24h": round(float(_eff_ticker.get("change_pct")), 2) if _eff_ticker.get("change_pct") is not None else None,
+            "change_24h_raw": round(float(_eff_ticker.get("price_change")), 4) if _eff_ticker.get("price_change") is not None else None,
+            "open_24h": _price_round(float(_eff_ticker.get("open")), price) if _eff_ticker.get("open") else None,
+            "trades_24h": int(_eff_ticker.get("count")) if _eff_ticker.get("count") is not None else None,
             "signal": signal_side,
             "regime": regime,
             # Regime — multi-timeframe fields
@@ -5600,16 +5621,16 @@ class DeltaTerminalEngine:
                 if regime_data and regime_data.get("alignment_score") is not None
                 else None
             ),
-            "regime_1m": regime_data.get("tf_regimes", {}).get("1m", "") if regime_data else "",
-            "regime_5m": regime_data.get("tf_regimes", {}).get("5m", "") if regime_data else "",
-            "regime_15m": regime_data.get("tf_regimes", {}).get("15m", "") if regime_data else "",
-            "regime_1h": regime_data.get("tf_regimes", {}).get("1h", "") if regime_data else "",
-            "regime_4h": regime_data.get("tf_regimes", {}).get("4h", "") if regime_data else "",
-            "regime_conf_1m": round(regime_data.get("tf_confidences", {}).get("1m", 0), 3) if regime_data else 0,
-            "regime_conf_5m": round(regime_data.get("tf_confidences", {}).get("5m", 0), 3) if regime_data else 0,
-            "regime_conf_15m": round(regime_data.get("tf_confidences", {}).get("15m", 0), 3) if regime_data else 0,
-            "regime_conf_1h": round(regime_data.get("tf_confidences", {}).get("1h", 0), 3) if regime_data else 0,
-            "regime_conf_4h": round(regime_data.get("tf_confidences", {}).get("4h", 0), 3) if regime_data else 0,
+            "regime_1m": regime_data.get("tf_regimes", {}).get("1m") if regime_data else None,
+            "regime_5m": regime_data.get("tf_regimes", {}).get("5m") if regime_data else None,
+            "regime_15m": regime_data.get("tf_regimes", {}).get("15m") if regime_data else None,
+            "regime_1h": regime_data.get("tf_regimes", {}).get("1h") if regime_data else None,
+            "regime_4h": regime_data.get("tf_regimes", {}).get("4h") if regime_data else None,
+            "regime_conf_1m": round(regime_data.get("tf_confidences", {}).get("1m"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("1m") is not None else None,
+            "regime_conf_5m": round(regime_data.get("tf_confidences", {}).get("5m"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("5m") is not None else None,
+            "regime_conf_15m": round(regime_data.get("tf_confidences", {}).get("15m"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("15m") is not None else None,
+            "regime_conf_1h": round(regime_data.get("tf_confidences", {}).get("1h"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("1h") is not None else None,
+            "regime_conf_4h": round(regime_data.get("tf_confidences", {}).get("4h"), 3) if regime_data and regime_data.get("tf_confidences", {}).get("4h") is not None else None,
             # End regime enhanced
             "funding": round(funding_rate * 100, 6) if funding_rate is not None else None,
             "funding_bias": funding_bias,
@@ -5675,7 +5696,7 @@ class DeltaTerminalEngine:
             "short_liq_vol": round(liq_data.get("short_liq_vol"), 2) if liq_data and liq_data.get("short_liq_vol") is not None else None,
             "long_liq_count": liq_data.get("long_liq_count") if liq_data else None,
             "short_liq_count": liq_data.get("short_liq_count") if liq_data else None,
-            "cascade_intensity": round(liq_data.get("cascade_intensity", 0), 3) if liq_data else 0,
+            "cascade_intensity": round(liq_data.get("cascade_intensity"), 3) if liq_data and liq_data.get("cascade_intensity") is not None else None,
             "cluster_count": liq_data.get("cluster_count") if liq_data else None,
             "sweep_detected": liq_data.get("sweep_detected") if liq_data else None,
             "sweep_direction": liq_data.get("sweep_direction") if liq_data else None,
@@ -5708,10 +5729,10 @@ class DeltaTerminalEngine:
             "time": time.strftime("%H:%M:%S", time.localtime(ts)),
             "timestamp": ts,
             # ── Additional dashboard fields ──
-            "volume_24h": round(vol, 2),
-            "change_1h": 0.0,  # computed from klines below
-            "change_4h": 0.0,  # computed from klines below
-            "spread": 0.0,  # computed from best bid/ask if available
+            "volume_24h": round(vol, 2) if vol is not None else None,
+            "change_1h": round(change_1h, 4) if change_1h is not None else None,
+            "change_4h": round(change_4h, 4) if change_4h is not None else None,
+            "spread": spread,
             "confidence": round(sig.get("confidence", 0) if sig else 0, 3),
             "institutional_score": round(sig.get("institutional_score", 0) if sig else 0, 1),
             "absorption_score": round(of.get("absorption_score", 0) if of else 0, 2),
