@@ -700,7 +700,7 @@ class DeltaTerminalEngine:
             if event == "funding":
                 self.data_freshness.record_tick("binance")
                 self.trade_blocker.record_data_tick("binance")
-                self.data_freshness.record_data_update("funding", "Binance + Bybit + OKX (volume-weighted avg)")
+                self.data_freshness.record_data_update("funding", "Binance Futures production markPrice/premiumIndex")
             if event == "liquidation":
                 self.data_freshness.record_data_update("liquidation", "Binance Futures Liquidation Stream")
                 self.trade_blocker.record_data_tick("binance")
