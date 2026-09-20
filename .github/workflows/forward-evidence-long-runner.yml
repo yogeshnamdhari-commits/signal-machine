@@ -149,20 +149,21 @@ jobs:
           cp state-in/session_C.json data/reports/forward_sessions/session_C.json
           python3 scanner/parameter_freeze.py
 
-      - name: Restore D segment state
+      - name: Restore D frozen provenance
         if: ${{steps.resolve.outputs.phase == 'D'}}
         shell: bash
         run: |
           set -euo pipefail
           cd packages/ai-engine
           cp state-in/parameter_freeze.json data/parameter_freeze.json
-          cp state-in/paper_trading_state.json data/reports/paper_trading_state.json
-          cp state-in/paper_trading_trades.csv data/reports/paper_trading_trades.csv
-          cp state-in/paper_trading_signals.csv data/reports/paper_trading_signals.csv
+          rm -f data/reports/paper_trading_state.json
+          rm -f data/reports/paper_trading_trades.csv
+          rm -f data/reports/paper_trading_signals.csv
           cp state-in/session_C.json data/reports/forward_sessions/session_C.json
           rm -rf data/reports/forward_sessions/session_C_evidence
           cp -a state-in/session_C_evidence data/reports/forward_sessions/
-          if [[ -f state-in/session_D.json ]]; then cp state-in/session_D.json data/reports/forward_sessions/session_D.json; fi
+          rm -f data/reports/forward_sessions/session_D.json
+          rm -rf data/reports/forward_sessions/session_D_evidence
           python3 scanner/parameter_freeze.py
 
       - name: Run authentic forward segment
