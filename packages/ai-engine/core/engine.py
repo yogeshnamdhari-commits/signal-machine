@@ -5450,9 +5450,8 @@ class DeltaTerminalEngine:
         App Profit Filter in-memory fallback. Returns None when the symbol has
         no trade data. Output semantics identical to the former inline loop.
         """
-        if not sd.get("trades"):
-            return None
-        last = sd["trades"][-1]
+        trades = sd.get("trades", []) or []
+        last = trades[-1] if trades else {}
         # PHASE 2 FIX: Multi-source price + ticker data with WS cache fallback
         # _ticker_data may not have all symbols yet; WS cache has them immediately
         _tk = self._ticker_data.get(sym, {})
@@ -5464,7 +5463,9 @@ class DeltaTerminalEngine:
         # Merge: _ticker_data takes priority, WS cache fills gaps
         _eff_ticker = {**_ws_tk, **_tk} if (_ws_tk or _tk) else {}
         prod_price = float(_eff_ticker.get("price") or 0)
-        price = prod_price if prod_price > 0 else last.get("price", 0)
+        price = prod_price if prod_price > 0 else float(last.get("price") or 0)
+        if price <= 0:
+            return None
 
         funding_data = self.funding.get_analysis(sym)
         oi_data = self.oi.get_analysis(sym)
@@ -5547,128 +5548,8 @@ class DeltaTerminalEngine:
 
         ts = last.get("time", time.time())
 
-        # ── EXCHANGE FLOW FALLBACK: build from trade buffer if engine has no data ──
-        # CRITICAL: Filter out synthetic !ticker@arr trades (inflated quantities)
-        if not ef_data and _real_count >= 1:
-            _trades = sd.get("trades", [])
-            _now_ts = time.time()
-            _recent = [t for t in _trades[-1000:]
-                       if t.get("_source") != "ticker_arr"
-                       and _now_ts - (t.get("trade_time", 0) / 1000 if t.get("trade_time", 0) > 1e10 else t.get("trade_time", 0)) < 300]
-            if _recent:
-                _buy_v = sum(t["price"] * t["quantity"] for t in _recent if not t["is_buyer_maker"])
-                _sell_v = sum(t["price"] * t["quantity"] for t in _recent if t["is_buyer_maker"])
-                _total = _buy_v + _sell_v
-                _net = _buy_v - _sell_v
-                _ratio = _buy_v / _total if _total > 0 else 0.5
-                _ratio_dev = abs(_ratio - 0.5) * 2
-                _flow_str = 50 + _ratio_dev * 50
-                _signal = "buy" if _ratio > 0.6 else ("sell" if _ratio < 0.4 else "neutral")
-                _bias = "taker_buy" if _ratio > 0.6 else ("taker_sell" if _ratio < 0.4 else "balanced")
-                # Validate: total flow must be < 24h volume
-                _vol_24h = vol_24h_quote if vol_24h_quote > 0 else vol
-                _vol_valid = True
-                _vol_msg = ""
-                if _vol_24h > 0 and _total > _vol_24h:
-                    _vol_valid = False
-                    _vol_msg = f"Flow ${_total/1e9:.1f}B > Vol ${_vol_24h/1e9:.1f}B — scaled down"
-                    # Scale down proportionally to stay within 24h volume
-                    _scale = _vol_24h / _total * 0.95
-                    _buy_v *= _scale
-                    _sell_v *= _scale
-                    _total = _buy_v + _sell_v
-                    _net = _buy_v - _sell_v
-                    _ratio = _buy_v / _total if _total > 0 else 0.5
-                ef_data = {
-                    "net_flow": round(_net, 2), "aggressive_side": _bias,
-                    "taker_buy_vol": round(_buy_v, 2), "taker_sell_vol": round(_sell_v, 2),
-                    "recent_net_delta": round(_net, 2), "flow_ratio": round(_ratio, 4),
-                    "taker_dominance": 0.5, "flow_strength_score": round(_flow_str, 1),
-                    "flow_signal": _signal, "total_trades": len(_recent),
-                    "source_label": "Binance Futures (fallback)", "vol_24h": round(_vol_24h, 2),
-                    "vol_24h_valid": _vol_valid, "vol_validation_msg": _vol_msg,
-                }
-                # ── Piggyback OF/CVD from the same _recent list ──
-                # Orderflow fallback: build from same trade data as EF
-                _of_has_real = of and (of.get("buy_volume", 0) > 10 or of.get("sell_volume", 0) > 10)
-                if (not of) or (not _of_has_real):
-                    _imb = _net / _total if _total else 0
-                    _of_str = max(0, min(100, 50 + (1 if _ratio > 0.5 else -1) * _ratio_dev * 50))
-                    of = {
-                        "symbol": sym, "buy_volume": round(_buy_v, 2), "sell_volume": round(_sell_v, 2),
-                        "delta": round(_net, 2), "cumulative_delta": round(_net, 2),
-                        "imbalance": round(_imb, 4), "flow_ratio": round(_ratio, 4),
-                        "flow_signal": _signal, "flow_strength_score": round(_of_str, 1),
-                        "signal_strength": round(_of_str / 100.0, 3),
-                        "large_buy_trades": sum(1 for t in _recent if not t["is_buyer_maker"] and t["price"] * t["quantity"] >= 10000),
-                        "large_sell_trades": sum(1 for t in _recent if t["is_buyer_maker"] and t["price"] * t["quantity"] >= 10000),
-                        "avg_size": round(_total / len(_recent), 2) if _recent else 0,
-                        "delta_trend": 0, "vwap": 0,
-                        "absorption": "none", "absorption_events": 0,
-                        "sweep": "none", "sweep_events": 0,
-                        "total_trades": len(_recent),
-                    }
-                # CVD fallback: build from same trade data as EF
-                if not cvd_data:
-                    _cvd_5m = sum((t["price"] * t["quantity"]) * (1 if not t["is_buyer_maker"] else -1)
-                                  for t in _recent if _now_ts - (t.get("trade_time", 0) / 1000 if t.get("trade_time", 0) > 1e10 else t.get("trade_time", 0)) < 300)
-                    _cvd_1h = _cvd_5m  # Use same window since _recent is already 5min-filtered
-                    _buy_ratio = _buy_v / _total if _total > 0 else 0.5
-                    cvd_data = {
-                        "cvd_5m": round(_cvd_5m, 2), "cvd_1h": round(_cvd_1h, 2), "cvd_4h": round(_cvd_1h, 2),
-                        "cvd_bias": "buy" if _cvd_5m > 0 else ("sell" if _cvd_5m < 0 else "neutral"),
-                        "cvd_bias_5m": "buy" if _cvd_5m > 0 else ("sell" if _cvd_5m < 0 else "neutral"),
-                        "cvd_bias_1m": "buy" if _cvd_5m > 0 else ("sell" if _cvd_5m < 0 else "neutral"),
-                        "cvd_bias_15m": "buy" if _cvd_5m > 0 else ("sell" if _cvd_5m < 0 else "neutral"),
-                        "cvd_bias_1h": "buy" if _cvd_5m > 0 else ("sell" if _cvd_5m < 0 else "neutral"),
-                        "cvd_bias_4h": "buy" if _cvd_5m > 0 else ("sell" if _cvd_5m < 0 else "neutral"),
-                        "cvd_divergence_5m": 0, "cvd_divergence_15m": 0,
-                        "cvd_buy_ratio_5m": round(_buy_ratio, 4),
-                    }
-
-        # ── OF/CVD COMPLEMENT: compute from EF data if analyzer has no real data ──
-        # EF analyzer always has data (REST fallback). Use its buy/sell volumes for OF/CVD.
-        if ef_data:
-            _ef_buy = ef_data.get("taker_buy_vol", 0)
-            _ef_sell = ef_data.get("taker_sell_vol", 0)
-            _ef_total = _ef_buy + _ef_sell
-            _ef_net = _ef_buy - _ef_sell
-            # Orderflow: override if analyzer has no meaningful data
-            _of_has_real = of and (of.get("buy_volume", 0) > 10 or of.get("sell_volume", 0) > 10)
-            if (not of) or (not _of_has_real):
-                _ef_ratio = _ef_buy / _ef_total if _ef_total > 0 else 0.5
-                _ef_ratio_dev = abs(_ef_ratio - 0.5) * 2
-                _ef_of_str = max(0, min(100, 50 + (1 if _ef_ratio > 0.5 else -1) * _ef_ratio_dev * 50))
-                _ef_sig = "buy" if _ef_ratio > 0.6 else ("sell" if _ef_ratio < 0.4 else "neutral")
-                _ef_imb = _ef_net / _ef_total if _ef_total else 0
-                of = {
-                    "symbol": sym, "buy_volume": round(_ef_buy, 2), "sell_volume": round(_ef_sell, 2),
-                    "delta": round(_ef_net, 2), "cumulative_delta": round(_ef_net, 2),
-                    "imbalance": round(_ef_imb, 4), "flow_ratio": round(_ef_ratio, 4),
-                    "flow_signal": _ef_sig, "flow_strength_score": round(_ef_of_str, 1),
-                    "signal_strength": round(_ef_of_str / 100.0, 3),
-                    "large_buy_trades": 0, "large_sell_trades": 0,
-                    "avg_size": round(_ef_total / max(ef_data.get("total_trades", 1), 1), 2),
-                    "delta_trend": 0, "vwap": 0,
-                    "absorption": "none", "absorption_events": 0,
-                    "sweep": "none", "sweep_events": 0,
-                    "total_trades": ef_data.get("total_trades", 0),
-                }
-            # CVD: override if analyzer has no data
-            if not cvd_data:
-                _ef_cvd = _ef_net  # Net delta as CVD proxy
-                _cvd_bias = "bullish" if _ef_cvd > 0 else ("bearish" if _ef_cvd < 0 else "neutral")
-                cvd_data = {
-                    "cvd_5m": round(_ef_cvd, 2), "cvd_1h": round(_ef_cvd, 2), "cvd_4h": round(_ef_cvd, 2),
-                    "cvd_bias": _cvd_bias,
-                    "cvd_bias_5m": _cvd_bias,
-                    "cvd_bias_1m": _cvd_bias,
-                    "cvd_bias_15m": _cvd_bias,
-                    "cvd_bias_1h": _cvd_bias,
-                    "cvd_bias_4h": _cvd_bias,
-                    "cvd_divergence_5m": 0, "cvd_divergence_15m": 0,
-                    "cvd_buy_ratio_5m": round(_ef_buy / _ef_total, 4) if _ef_total > 0 else 0.5,
-                }
+        # No synthetic flow/CVD substitutions are permitted here.
+        # Exchange flow, orderflow, and CVD must come from authentic trade observations.
 
         # Convert OI from contracts to USD: contracts × mark_price = USD value
         # Use cached mark price (more accurate than last trade price for valuation)
