@@ -126,3 +126,23 @@ def test_funding_direction_uses_percent_units():
     }
     factor = direction_for_parameter("funding", row)
     assert factor.state is DirectionState.NEUTRAL
+
+
+def test_live_sheet_suppresses_stale_metric_independently():
+    from dashboard.live_sheet_contract import display_value
+
+    stale = time.time() - 120
+    row = {
+        "net_delta": 123.0,
+        "flow_total_trades": 100,
+        "metric_timestamps": {"net_delta": stale},
+    }
+    assert display_value(row, "net_delta") is None
+
+
+def test_l1_quotes_cannot_drive_l2_imbalance():
+    from core.engine import DeltaTerminalEngine
+
+    source = inspect.getsource(DeltaTerminalEngine._on_data)
+    assert 'depth_quality == "L1"' in source
+    assert 'depth_quality != "L2_TOP20_SNAPSHOT"' in source
