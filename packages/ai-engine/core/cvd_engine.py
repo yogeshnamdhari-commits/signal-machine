@@ -142,6 +142,22 @@ class CVDEngine:
         # Recompute bias for all TFs
         self._recompute_bias(symbol)
 
+    def _window_buy_sell_value(self, symbol: str, timeframe: str) -> tuple[float, float]:
+        """Return authentic taker buy/sell quote volume inside the timeframe window."""
+        tf_seconds = _TF_SECONDS[timeframe]
+        cutoff = time.time() - tf_seconds
+        buy = 0.0
+        sell = 0.0
+        for trade in self._trades.get(symbol, ()):
+            if trade.get("ts", 0) < cutoff:
+                continue
+            value = float(trade.get("value", 0) or 0)
+            if bool(trade.get("is_buyer_maker", False)):
+                sell += value
+            else:
+                buy += value
+        return buy, sell
+
     def _recompute_bias(self, symbol: str) -> None:
         """Recompute 5-level CVD bias for each timeframe."""
         for tf_name in _TF_SECONDS:
@@ -152,8 +168,10 @@ class CVDEngine:
             cutoff = now - tf_seconds
             cvd = sum(d for d, t in window if t >= cutoff)
 
-            buy_v = self._buy_vol[symbol][tf_name]
-            sell_v = self._sell_vol[symbol][tf_name]
+            # Recompute side volumes from the same rolling time window as CVD.
+            buy_v, sell_v = self._window_buy_sell_value(symbol, tf_name)
+            self._buy_vol[symbol][tf_name] = buy_v
+            self._sell_vol[symbol][tf_name] = sell_v
             total = buy_v + sell_v
 
             if total == 0:
@@ -286,8 +304,9 @@ class CVDEngine:
 
         # Compute CVD from rolling window for primary TF
         primary_cvd = self.get_cvd(symbol, primary_tf)
-        buy_5m = self._buy_vol[symbol]["5m"]
-        sell_5m = self._sell_vol[symbol]["5m"]
+        buy_5m, sell_5m = self._window_buy_sell_value(symbol, "5m")
+        self._buy_vol[symbol]["5m"] = buy_5m
+        self._sell_vol[symbol]["5m"] = sell_5m
         total_5m = buy_5m + sell_5m
 
         result = {
