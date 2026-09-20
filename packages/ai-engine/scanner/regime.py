@@ -472,6 +472,7 @@ class MarketRegimeDetector:
             "trend_strength": primary.adx / 50,              # normalized to ~0-1
             "volume_profile": primary.vol_ratio,
             "ema_bias": primary.ema_bias,
+            "observed_at": state.last_update,
             "timeframes": tf_breakdown,
             "tf_regimes": tf_regimes,
             "tf_confidences": tf_confidences,

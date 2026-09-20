@@ -92,3 +92,34 @@ def test_raw_live_observations_are_unavailable_without_trade_tape():
     assert observed["flow_strength"] is None
     assert observed["exchange_flow"] is None
     assert observed["imbalance"] == -0.11
+
+def test_l2_imbalance_is_unavailable_without_depth_observation():
+    row = {"imbalance": 0.9, "observed_at_by_metric": {}}
+    display = build_signal_display({}, row)
+    assert display["imbalance"].quality.value == "UNAVAILABLE"
+
+def test_l2_imbalance_uses_depth_timestamp_not_trade_timestamp():
+    row = {
+        "imbalance": 0.9,
+        "trade": "present",
+        "observed_at_by_metric": {"imbalance": 100.0},
+    }
+    display = build_signal_display({}, row)
+    assert display["imbalance"].observed_at == 100.0
+
+
+def test_stale_raw_metric_is_not_displayed_as_current():
+    row = {
+        "open_interest": 123.0,
+        "observed_at_by_metric": {"oi": 1.0},
+    }
+    assert display_value(row, "open_interest") is None
+
+
+def test_volume_has_no_directional_vote():
+    row = {
+        "volume_24h": 1000.0,
+        "vol_bias": None,
+        "observed_at_by_metric": {"volume": 1.0},
+    }
+    assert build_signal_display({}, row)["volume"].quality.value == "NOT_APPLICABLE"
