@@ -146,3 +146,28 @@ def test_l1_quotes_cannot_drive_l2_imbalance():
     source = inspect.getsource(DeltaTerminalEngine._on_data)
     assert 'depth_quality == "L1"' in source
     assert 'depth_quality != "L2_TOP20_SNAPSHOT"' in source
+
+
+def test_taker_flow_is_exact_five_minute_window():
+    from scanner.exchange_flow import ExchangeFlowEngine
+
+    async def run():
+        eng = ExchangeFlowEngine()
+        now_ms = int(time.time() * 1000)
+        await eng.process_trade("BTCUSDT", {
+            "price": 100.0, "quantity": 10.0,
+            "is_buyer_maker": True,
+            "trade_time": now_ms - 6 * 60 * 1000,
+        })
+        await eng.process_trade("BTCUSDT", {
+            "price": 100.0, "quantity": 2.0,
+            "is_buyer_maker": False,
+            "trade_time": now_ms - 30 * 1000,
+        })
+        return eng.get_analysis("BTCUSDT")
+
+    result = asyncio.run(run())
+    assert result is not None
+    assert result["taker_buy_vol"] == 200.0
+    assert result["taker_sell_vol"] == 0.0
+    assert result["window_trades"] == 1
