@@ -5612,6 +5612,8 @@ class DeltaTerminalEngine:
         _trade_ts = _src.get("trade")
         _depth_ts = _src.get("depth")
         _funding_ts = _src.get("funding")
+        if not _funding_ts and self._premium_data.get(sym, {}).get("timestamp"):
+            _funding_ts = float(self._premium_data[sym]["timestamp"]) / 1000.0
         _oi_ts = _src.get("open_interest")
         _liq_ts = _src.get("liquidation")
         _k5_ts = _src.get("kline_5m")
