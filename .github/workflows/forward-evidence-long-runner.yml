@@ -1,6 +1,11 @@
 name: Long-Run Forward Evidence
 
 on:
+  push:
+    branches:
+      - candidate-next-8d1b6b5
+    paths:
+      - ".github/forward-bootstrap.marker"
   workflow_dispatch:
     inputs:
       phase:
@@ -58,6 +63,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{github.event_name}}
+          HEAD_MESSAGE: ${{github.event.head_commit.message}}
           INPUT_PHASE: ${{inputs.phase}}
           INPUT_SEGMENT: ${{inputs.segment}}
           INPUT_TARGET_SHA: ${{inputs.target_sha}}
@@ -74,13 +80,33 @@ jobs:
             PREVIOUS_PHASE="$INPUT_PREVIOUS_PHASE"
             PREVIOUS_SEGMENT="$INPUT_PREVIOUS_SEGMENT"
             PREVIOUS_RUN_ID="$INPUT_PREVIOUS_RUN_ID"
+          elif [[ "$EVENT_NAME" == "push" ]]; then
+            if [[ "$HEAD_MESSAGE" =~ ^forward-bootstrap:([CD]):([0-9]+):([0-9a-fA-F]{40}):([0-9]+)$ ]]; then
+              PHASE="${BASH_REMATCH[1]}"
+              SEGMENT="${BASH_REMATCH[2]}"
+              TARGET_SHA="${BASH_REMATCH[3]}"
+              PREVIOUS_RUN_ID="${BASH_REMATCH[4]}"
+              if [[ "$PHASE" == "C" && "$SEGMENT" -gt 1 ]]; then
+                PREVIOUS_PHASE="C"
+                PREVIOUS_SEGMENT=$((SEGMENT-1))
+              elif [[ "$PHASE" == "D" && "$SEGMENT" -eq 1 ]]; then
+                PREVIOUS_PHASE="C"
+                PREVIOUS_SEGMENT="58"
+              elif [[ "$PHASE" == "D" ]]; then
+                PREVIOUS_PHASE="D"
+                PREVIOUS_SEGMENT=$((SEGMENT-1))
+              else
+                PREVIOUS_PHASE=""
+                PREVIOUS_SEGMENT=""
+                PREVIOUS_RUN_ID=""
+              fi
+            else
+              echo "Push event is not a forward bootstrap marker; exiting without evidence work."
+              exit 0
+            fi
           else
-            PHASE="C"
-            SEGMENT="1"
-            TARGET_SHA="$GITHUB_SHA"
-            PREVIOUS_PHASE=""
-            PREVIOUS_SEGMENT=""
-            PREVIOUS_RUN_ID=""
+            echo "Unsupported event: $EVENT_NAME"
+            exit 1
           fi
 
           [[ "$PHASE" == "C" || "$PHASE" == "D" ]]
