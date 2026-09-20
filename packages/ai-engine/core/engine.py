@@ -719,17 +719,23 @@ class DeltaTerminalEngine:
                 
             elif event == "depth":
                 sd["orderbook"] = {"bids": data.get("bids", []), "asks": data.get("asks", [])}
-                # Data Quality: validate orderbook
+                depth_quality = str(data.get("depth_quality", "") or "")
+                # L1 bookTicker is valid for spread/best bid-ask only. It must never
+                # be fed to L2 analytics, otherwise a one-level quote masquerades as
+                # a complete order book and corrupts imbalance/DOM metrics.
+                if depth_quality == "L1":
+                    return
+                if depth_quality != "L2_TOP20_SNAPSHOT":
+                    logger.warning("Ignoring unsupported depth quality for {}: {}", sym, depth_quality)
+                    return
+                # Data Quality: validate authentic top-20 production order book
                 self.data_quality.validate_orderbook(sym, sd["orderbook"])
-                # Phase 2 engines — both scoring + pattern detection
                 await self.institutional.process_orderbook(sym, sd["orderbook"])
                 await self.institutional_detector.process_orderbook(sym, sd["orderbook"])
                 await self.dom.process_orderbook(sym, data.get("bids", []), data.get("asks", []))
                 await self.spoof_iceberg.process_orderbook(sym, data.get("bids", []), data.get("asks", []))
                 await self.liquidity_map.process_orderbook(sym, data.get("bids", []), data.get("asks", []))
-                # Feed institutional probability detector
                 await self.prob_inst.process_orderbook(sym, sd["orderbook"])
-                # Absorption (needs recent trades + orderbook)
                 if sd["trades"]:
                     await self.absorption.process_trades(sym, sd["trades"][-20:], sd["orderbook"])
             elif event == "kline":
@@ -790,7 +796,15 @@ class DeltaTerminalEngine:
                                 price = sd_trades[-1].get("price", 0)
                         if price > 0:
                             self.data_quality.validate_oi(sym, oi_contracts, price)
-                            await self.oi.process_oi(sym, oi_contracts, price, time.time())
+                            oi_ts = data.get("exchange_event_time", data.get("timestamp", int(time.time() * 1000)))
+                            oi_ts_s = float(oi_ts) / 1000.0 if float(oi_ts) > 10_000_000_000 else float(oi_ts)
+                            await self.oi.process_oi(
+                                sym,
+                                oi_contracts,
+                                price,
+                                oi_ts_s,
+                                change_5m_pct=data.get("change_5m_pct"),
+                            )
                             # Track WS OI as active source
                             if not getattr(self, '_oi_ws_active', False):
                                 self._oi_ws_active = True
