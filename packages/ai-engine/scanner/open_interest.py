@@ -20,6 +20,7 @@ class OIState:
     prev_oi: float = 0
     change_abs: float = 0
     change_pct: float = 0
+    change_5m_pct: Optional[float] = None
     oi_trend: float = 0  # 1 = increasing, -1 = decreasing
     price_oi_divergence: float = 0
     # Spike/flush detection
@@ -60,7 +61,8 @@ class OpenInterestEngine:
     async def initialize(self) -> None:
         logger.info("OpenInterest engine ready (regime + positioning + strength)")
 
-    async def process_oi(self, symbol: str, oi: float, price: float, timestamp: float) -> None:
+    async def process_oi(self, symbol: str, oi: float, price: float, timestamp: float,
+                         change_5m_pct: Optional[float] = None) -> None:
         st = self._states.setdefault(symbol, OIState(symbol=symbol))
 
         st.readings.append({"oi": oi, "price": price, "ts": timestamp})
@@ -71,6 +73,8 @@ class OpenInterestEngine:
         st.current_oi = oi
         st.change_abs = oi - st.prev_oi
         st.change_pct = (st.change_abs / st.prev_oi * 100) if st.prev_oi > 0 else 0
+        if change_5m_pct is not None:
+            st.change_5m_pct = float(change_5m_pct)
 
         # Track peak OI
         if oi > st.peak_oi:
@@ -241,6 +245,7 @@ class OpenInterestEngine:
             "current_oi": st.current_oi,
             "change_abs": st.change_abs,
             "change_pct": st.change_pct,
+            "change_5m_pct": st.change_5m_pct,
             "oi_trend": st.oi_trend,
             "price_oi_divergence": st.price_oi_divergence,
             "squeeze_risk": abs(st.price_oi_divergence) > 0.8,
