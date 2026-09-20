@@ -201,3 +201,28 @@ def test_fvg_does_not_mix_candle_timeframes():
 
     event = asyncio.run(run())
     assert event is None
+
+
+def test_sweep_volume_baseline_does_not_mix_timeframes():
+    from scanner.sweep_detector import SweepDetector
+
+    async def run():
+        det = SweepDetector()
+        base = int(time.time() * 1000)
+        async def k(iv, idx, o, h, l, close, vol):
+            return {
+                "symbol": "BTCUSDT", "interval": iv,
+                "open_time": base + idx * 60_000,
+                "close_time": base + idx * 60_000 + 59_999,
+                "open": o, "high": h, "low": l, "close": close,
+                "volume": vol, "is_closed": True,
+            }
+
+        # Build 5m volume history, then a single 1m candle with a different
+        # volume scale; the 1m candle must not inherit the 5m baseline.
+        for i in range(5):
+            await det.process_kline("BTCUSDT", await k("5m", i, 100, 101, 99, 100.2, 100))
+        before = await det.process_kline("BTCUSDT", await k("1m", 10, 100, 102, 99.9, 101.9, 100000))
+        return before
+
+    return asyncio.run(run())
