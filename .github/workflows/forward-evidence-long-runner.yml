@@ -1,0 +1,223 @@
+
+name: Long-Run Forward Evidence (Self-Hosted)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signal-machine-forward-evidence
+  cancel-in-progress: false
+
+env:
+  TARGET_SHA: d86f5a127b43650bc9d8e145cd02729ba522ead7
+  REPO_URL: https://github.com/yogeshnamdhari-commits/signal-machine.git
+
+jobs:
+  c1:
+    name: C — segment 1/4 (100h)
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 6030
+    steps:
+      - name: Run C segment
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/C/repo"
+          mkdir -p "$(dirname "$ROOT")"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          cd "$ROOT/packages/ai-engine"
+          python3 -m pip install -r requirements.txt
+          python3 run_forward_session.py --session C --hours 100 --create-freeze
+
+  c2:
+    name: C — segment 2/4 (100h)
+    needs: c1
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 6030
+    steps:
+      - name: Resume C
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/C/repo"
+          test -d "$ROOT/.git"
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          cd "$ROOT/packages/ai-engine"
+          python3 run_forward_session.py --session C --hours 100
+
+  c3:
+    name: C — segment 3/4 (100h)
+    needs: c2
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 6030
+    steps:
+      - name: Resume C
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/C/repo"
+          test -d "$ROOT/.git"
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          cd "$ROOT/packages/ai-engine"
+          python3 run_forward_session.py --session C --hours 100
+
+  c4:
+    name: C — final segment (36h)
+    needs: c3
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 2190
+    steps:
+      - name: Finalize C
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/C/repo"
+          test -d "$ROOT/.git"
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          cd "$ROOT/packages/ai-engine"
+          python3 run_forward_session.py --session C --hours 36 --finalize
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/reports/forward_sessions/session_C.json")
+          a = json.loads(p.read_text())
+          assert a["status"] == "COMPLETED", a
+          assert a["code_commit_sha"] == "d86f5a127b43650bc9d8e145cd02729ba522ead7", a
+          assert a["real_orders"] is False, a
+          assert a["orders_policy"] == "NO_REAL_ORDERS", a
+          print("Session C immutable completion verified.")
+          PY
+
+  d1:
+    name: D — segment 1/4 (100h)
+    needs: c4
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 6030
+    steps:
+      - name: Initialize D from completed C
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/D/repo"
+          CROOT="$HOME/signal-machine-forward/C/repo"
+          mkdir -p "$(dirname "$ROOT")"
+          if [[ ! -d "$ROOT/.git" ]]; then git clone --no-tags "$REPO_URL" "$ROOT"; fi
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          mkdir -p "$ROOT/packages/ai-engine/data/reports/forward_sessions"
+          rm -rf "$ROOT/packages/ai-engine/data/reports/forward_sessions/session_C.json"
+          rm -rf "$ROOT/packages/ai-engine/data/reports/forward_sessions/session_C_evidence"
+          cp -a "$CROOT/packages/ai-engine/data/reports/forward_sessions/session_C.json" "$ROOT/packages/ai-engine/data/reports/forward_sessions/"
+          cp -a "$CROOT/packages/ai-engine/data/reports/forward_sessions/session_C_evidence" "$ROOT/packages/ai-engine/data/reports/forward_sessions/"
+          mkdir -p "$ROOT/packages/ai-engine/data"
+          cp -f "$CROOT/packages/ai-engine/data/parameter_freeze.json" "$ROOT/packages/ai-engine/data/parameter_freeze.json"
+          cd "$ROOT/packages/ai-engine"
+          python3 scanner/parameter_freeze.py
+          python3 run_forward_session.py --session D --hours 100
+
+  d2:
+    name: D — segment 2/4 (100h)
+    needs: d1
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 6030
+    steps:
+      - name: Resume D
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/D/repo"
+          test -d "$ROOT/.git"
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          cd "$ROOT/packages/ai-engine"
+          python3 run_forward_session.py --session D --hours 100
+
+  d3:
+    name: D — segment 3/4 (100h)
+    needs: d2
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 6030
+    steps:
+      - name: Resume D
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/D/repo"
+          test -d "$ROOT/.git"
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          cd "$ROOT/packages/ai-engine"
+          python3 run_forward_session.py --session D --hours 100
+
+  d4:
+    name: D — final segment (36h) + aggregate verification
+    needs: d3
+    runs-on: [self-hosted, signal-machine-forward]
+    timeout-minutes: 2190
+    steps:
+      - name: Finalize D and verify aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/D/repo"
+          test -d "$ROOT/.git"
+          git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
+          git -C "$ROOT" checkout --detach "$TARGET_SHA"
+          cd "$ROOT/packages/ai-engine"
+          python3 run_forward_session.py --session D --hours 36 --finalize
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from validation.forward_evidence_binding import verify_forward_evidence_report
+
+          root = Path("data/reports/forward_sessions")
+          for session in ("C", "D"):
+              artifact = json.loads((root / f"session_{session}.json").read_text())
+              assert artifact["status"] == "COMPLETED", artifact
+              assert artifact["code_commit_sha"] == "d86f5a127b43650bc9d8e145cd02729ba522ead7", artifact
+              assert artifact["real_orders"] is False, artifact
+              assert artifact["orders_policy"] == "NO_REAL_ORDERS", artifact
+
+          report = verify_forward_evidence_report(
+              root / "forward_aggregate.json",
+              expected_commit="d86f5a127b43650bc9d8e145cd02729ba522ead7",
+          )
+          print("Immutable C/D aggregate verified.")
+          print(json.dumps({
+              "total_signals": report["total_signals"],
+              "total_closed_trades": report["total_closed_trades"],
+              "profit_factor": report["profit_factor"],
+              "expectancy": report["expectancy"],
+              "net_pnl": report["net_pnl"],
+              "aggregate_sha256": report["aggregate_sha256"],
+          }, indent=2))
+          PY
+      - name: Archive immutable forward evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$HOME/signal-machine-forward/D/repo/packages/ai-engine/data/reports/forward_sessions"
+          rm -rf "$GITHUB_WORKSPACE/forward-evidence-archive"
+          mkdir -p "$GITHUB_WORKSPACE/forward-evidence-archive"
+          cp -a "$ROOT/session_C.json" "$GITHUB_WORKSPACE/forward-evidence-archive/"
+          cp -a "$ROOT/session_C_evidence" "$GITHUB_WORKSPACE/forward-evidence-archive/"
+          cp -a "$ROOT/session_D.json" "$GITHUB_WORKSPACE/forward-evidence-archive/"
+          cp -a "$ROOT/session_D_evidence" "$GITHUB_WORKSPACE/forward-evidence-archive/"
+          cp -a "$ROOT/forward_aggregate.json" "$GITHUB_WORKSPACE/forward-evidence-archive/"
+      - name: Upload immutable forward evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-evidence-d86f5a127b43650bc9d8e145cd02729ba522ead7
+          path: forward-evidence-archive
+          if-no-files-found: error
+          retention-days: 90
