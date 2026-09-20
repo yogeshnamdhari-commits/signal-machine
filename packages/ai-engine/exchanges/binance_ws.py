@@ -173,7 +173,7 @@ class BinanceWebSocket:
         if route == "public":
             stream_types = [s for s in configured if s in {"bookTicker", "depth@100ms", "depth"}]
         else:
-            stream_types = [s for s in configured if s in {"aggTrade", "trade", "openInterest"}]
+            stream_types = [s for s in configured if s in {"aggTrade", "trade", "kline_5m", "kline"}]
 
         names: List[str] = []
         for s in symbols[: config.scanner.max_symbols]:
