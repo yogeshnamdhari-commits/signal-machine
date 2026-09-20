@@ -130,79 +130,64 @@ class LiquidationEngine:
         logger.info("Liquidation analytics engine ready (clusters + heat zones + sweep + risk)")
 
     async def process_trade(self, symbol: str, trade: Dict, normal_volume: float = 0) -> None:
-        """Process a trade and detect liquidation events."""
+        """Ignore ordinary trades for liquidation accounting.
+
+        A normal market trade is not proof of forced liquidation. Production
+        liquidation metrics must come only from Binance's forceOrder stream.
+        """
+        return
+
+    async def process_force_order(
+        self,
+        symbol: str,
+        side: str,
+        price: float,
+        quantity: float,
+        timestamp_ms: int,
+    ) -> None:
+        """Record an authentic Binance forceOrder liquidation event."""
         st = self._states.setdefault(symbol, LiqState(symbol=symbol))
-
-        price = trade.get("price", 0)
-        qty = trade.get("quantity", 0)
-        val = price * qty
-        now = time.time()
-
-        if val <= 0 or price <= 0:
+        if price <= 0 or quantity <= 0:
             return
 
-        # ── Detect liquidation from unusual trade size ──
-        is_maker = trade.get("is_buyer_maker", False)
-        is_liq = False
+        now = timestamp_ms / 1000.0 if timestamp_ms > 10_000_000_000 else float(timestamp_ms)
+        value_usd = price * quantity
+        # SELL force-order liquidates a long; BUY force-order liquidates a short.
+        liq_side = "long" if str(side).upper() == "SELL" else "short"
 
-        if normal_volume > 0 and val / max(normal_volume, 1) > self._spike_threshold:
-            is_liq = True
-        elif normal_volume == 0 and val > self._min_liq_value * 500:
-            # Without baseline, require extremely large trade ($50M+) to classify as liquidation
-            # Lower thresholds cause regular large trades to be misclassified as liquidations
-            is_liq = True
+        event = LiqEvent(
+            symbol=symbol,
+            side=liq_side,
+            price=price,
+            quantity=quantity,
+            value_usd=value_usd,
+            timestamp=now,
+        )
 
-        if is_liq:
-            # Maker selling = long liquidation (forced selling), Maker buying = short liquidation
-            side = "long" if is_maker else "short"
-            event = LiqEvent(
-                symbol=symbol,
-                side=side,
-                price=price,
-                quantity=qty,
-                value_usd=val,
-                timestamp=now,
-            )
+        recent_events = [e for e in st.events if now - e.timestamp < self._cascade_window]
+        if len(recent_events) >= self._cascade_min_events - 1:
+            event.is_cascade = True
+        st.events.append(event)
 
-            # Check if this event is part of a cascade
-            recent_events = [e for e in st.events if now - e.timestamp < self._cascade_window]
-            if len(recent_events) >= self._cascade_min_events - 1:
-                event.is_cascade = True
+        if len(st.events) > self._max_events:
+            st.events = st.events[-self._max_events // 2:]
 
-            st.events.append(event)
+        if liq_side == "long":
+            st.long_liq_vol += value_usd
+            st.long_liq_count += 1
+            st.recent_long_vol += value_usd
+            st.recent_long_count += 1
+        else:
+            st.short_liq_vol += value_usd
+            st.short_liq_count += 1
+            st.recent_short_vol += value_usd
+            st.recent_short_count += 1
 
-            # Trim old events
-            if len(st.events) > self._max_events:
-                st.events = st.events[-self._max_events // 2:]
-
-            # Update aggregate volumes
-            if side == "long":
-                st.long_liq_vol += val
-                st.long_liq_count += 1
-                st.recent_long_vol += val
-                st.recent_long_count += 1
-            else:
-                st.short_liq_vol += val
-                st.short_liq_count += 1
-                st.recent_short_vol += val
-                st.recent_short_count += 1
-
-            # Update clusters
-            self._update_clusters(st, event)
-
-        # ── Cascade detection ──
+        self._update_clusters(st, event)
         self._detect_cascade(st, now)
-
-        # ── Sweep detection ──
         self._detect_sweep(st, price, now)
-
-        # ── Update heat zones ──
         self._compute_heat_zones(st)
-
-        # ── Compute risk level ──
         self._compute_risk(st, now)
-
-        # ── Reset periodic counters ──
         self._reset_recent_if_stale(st, now)
 
     def _update_clusters(self, st: LiqState, event: LiqEvent) -> None:
