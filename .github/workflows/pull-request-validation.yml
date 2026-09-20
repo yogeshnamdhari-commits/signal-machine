@@ -69,6 +69,11 @@ jobs:
         run: |
           python -m pytest -q
 
+      - name: Execution layer validation
+        working-directory: packages/ai-engine
+        run: |
+          python validate_execution.py
+
       - name: Production validation gate
         run: |
           PYTHONPATH=packages/ai-engine python -m production_validation_gate
