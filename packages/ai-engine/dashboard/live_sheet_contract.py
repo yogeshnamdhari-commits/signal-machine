@@ -29,9 +29,66 @@ def _as_positive_float(value: Any) -> float | None:
     return value if value is not None and value > 0 else None
 
 
+_METRIC_TIMESTAMP_KEY = {
+    "price": "price",
+    "change_24h": "price",
+    "high_24h": "price",
+    "low_24h": "price",
+    "open_24h": "price",
+    "volume": "volume",
+    "volume_24h": "volume",
+    "open_interest": "oi",
+    "oi_change_pct": "oi",
+    "funding": "funding",
+    "funding_z": "funding",
+    "net_delta": "delta",
+    "buy_sell_ratio": "b_s_ratio",
+    "cvd_5m": "cvd",
+    "cvd_1h": "cvd",
+    "cvd_4h": "cvd",
+    "flow_strength": "flow",
+    "flow_signal": "flow",
+    "exchange_flow": "exchange_flow",
+    "imbalance": "imbalance",
+    "spread": "imbalance",
+    "long_liq_vol": "liquidation",
+    "short_liq_vol": "liquidation",
+    "liq_risk": "liquidation",
+    "liq_risk_level": "liquidation",
+    "sweep_price": "sweep",
+    "sweep_reject_price": "sweep",
+    "fvg_alignment": "fvg",
+    "fvg_type": "fvg",
+    "fvg_score": "fvg",
+    "fvg_gap_high": "fvg",
+    "fvg_gap_low": "fvg",
+    "fvg_gap_size": "fvg",
+    "regime": "regime",
+    "regime_confidence_pct": "regime",
+}
+
+
+def _raw_metric_is_fresh(row: Dict[str, Any], key: str, *, max_age: float = 60.0) -> bool:
+    observations = row.get("observed_at_by_metric")
+    if not isinstance(observations, dict) or key not in _METRIC_TIMESTAMP_KEY:
+        return True
+    source_key = _METRIC_TIMESTAMP_KEY[key]
+    try:
+        observed_at = float(observations.get(source_key, 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    if observed_at <= 0:
+        return False
+    age = time.time() - observed_at
+    return 0 <= age <= max_age
+
+
 def display_value(row: Dict[str, Any], key: str) -> Any:
-    """Return a semantically valid value; do not display placeholder zeroes as live data."""
+    """Return only current, semantically valid production observations."""
     value = row.get(key)
+
+    if not _raw_metric_is_fresh(row, key):
+        return None
 
     if key in {"open_interest", "oi_change_pct"}:
         if _as_positive_float(row.get("open_interest")) is None:
@@ -55,7 +112,7 @@ def display_value(row: Dict[str, Any], key: str) -> Any:
             or int(row.get("long_liq_count", 0) or 0) > 0
             or int(row.get("short_liq_count", 0) or 0) > 0
         )
-        return value if has_liq_data and value not in (None, "", "low") else (value if has_liq_data else None)
+        return value if has_liq_data else None
 
     if key == "volume_24h" and (_as_float(value) or 0) <= 0:
         return None
