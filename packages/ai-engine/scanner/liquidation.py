@@ -188,8 +188,13 @@ class LiquidationEngine:
         self._reset_recent_if_stale(st, timestamp)
 
     async def process_trade(self, symbol: str, trade: Dict, normal_volume: float = 0) -> None:
-        """Process a trade and detect liquidation events."""
-        st = self._states.setdefault(symbol, LiqState(symbol=symbol))
+        """Deprecated compatibility shim.
+
+        Ordinary aggTrade observations do not prove liquidation. All liquidation
+        evidence must enter through process_liquidation_event() from Binance
+        forceOrder.
+        """
+        return
 
         price = trade.get("price", 0)
         qty = trade.get("quantity", 0)
