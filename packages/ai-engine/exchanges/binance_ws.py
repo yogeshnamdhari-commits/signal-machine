@@ -533,7 +533,9 @@ class BinanceWebSocket:
         if oi <= 0:
             return
 
-        now = time.time()
+        received_ms = int(time.time() * 1000)
+        event_ms = int(d.get("E", received_ms) or received_ms)
+        event_ts = event_ms / 1000.0
         cached = self._oi_cache.get(sym)
         if cached:
             prev_oi = cached.get("oi", 0)
@@ -546,7 +548,9 @@ class BinanceWebSocket:
             "oi": oi,
             "prev_oi": prev_oi,
             "change_pct": change_pct,
-            "ts": now,
+            "ts": event_ts,
+            "exchange_event_time": event_ms,
+            "received_time": received_ms,
             "source": "binance",
             "feed": "openInterest",
             "data_quality": "REAL",
@@ -557,7 +561,9 @@ class BinanceWebSocket:
                 "symbol": sym,
                 "open_interest": oi,
                 "change_pct": change_pct,
-                "timestamp": int(now * 1000),
+                "timestamp": event_ms,
+                "exchange_event_time": event_ms,
+                "received_time": received_ms,
                 "source": "binance",
                 "feed": "openInterest",
                 "data_quality": "REAL",
@@ -580,6 +586,8 @@ class BinanceWebSocket:
                 "source": "websocket",
                 "data_quality": "REAL",
                 "timestamp": int(cached.get("ts", time.time()) * 1000),
+                "exchange_event_time": int(cached.get("exchange_event_time", cached.get("ts", time.time()) * 1000)),
+                "received_time": int(time.time() * 1000),
             }
         data = await self._get("/fapi/v1/openInterest", {"symbol": symbol}, use_data_url=True)
         if not data:
