@@ -5607,8 +5607,37 @@ class DeltaTerminalEngine:
             logger.warning("Suspicious OI USD: {} ${:.1f} (raw contracts={}, mark_price={}, last_price={})",
                            sym, oi_usd, current_oi, mark, price)
 
+        _src = sd.get("source_times", {})
+        _ticker_ts = float(_eff_ticker.get("exchange_event_time", 0) or 0) / 1000.0 if _eff_ticker.get("exchange_event_time") else None
+        _trade_ts = _src.get("trade")
+        _depth_ts = _src.get("depth")
+        _funding_ts = _src.get("funding")
+        _oi_ts = _src.get("open_interest")
+        _liq_ts = _src.get("liquidation")
+        _k5_ts = _src.get("kline_5m")
+        _oi_hist_ts = float(oi_data.get("oi_hist_timestamp", 0) or 0) / 1000.0 if oi_data and oi_data.get("oi_hist_timestamp") else None
+
         return {
             "symbol": sym,
+            "metric_timestamps": {
+                "price": _ticker_ts or _trade_ts,
+                "change_24h": _ticker_ts,
+                "volume_24h": _ticker_ts,
+                "open_interest": _oi_ts,
+                "oi_change_pct": _oi_hist_ts,
+                "funding": _funding_ts,
+                "net_delta": _trade_ts,
+                "buy_sell_ratio": _trade_ts,
+                "cvd_5m": _trade_ts,
+                "exchange_flow": _trade_ts,
+                "flow_strength": _trade_ts,
+                "imbalance": _depth_ts,
+                "sweep": _trade_ts,
+                "regime": _k5_ts,
+                "fvg": _k5_ts,
+                "long_liq_vol": _liq_ts,
+                "short_liq_vol": _liq_ts,
+            },
             "price": price,
             "volume": vol,
             # ── Binance full market data (API returns strings, cast to float) ──
