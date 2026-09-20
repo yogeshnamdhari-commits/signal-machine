@@ -92,7 +92,14 @@ class CVDEngine:
     async def initialize(self) -> None:
         logger.info("CVDEngine ready (multi-TF: 1m, 5m, 15m, 1h, 4h)")
 
-    def update(self, symbol: str, price: float, quantity: float, is_buyer_maker: bool) -> None:
+    def update(
+        self,
+        symbol: str,
+        price: float,
+        quantity: float,
+        is_buyer_maker: bool,
+        timestamp_ms: float | int | None = None,
+    ) -> None:
         """
         Process a single trade tick. Accumulates into all active timeframes.
 
@@ -100,7 +107,14 @@ class CVDEngine:
           - m == false -> delta += qty (aggressive buy)
           - m == true  -> delta -= qty (aggressive sell)
         """
-        now = time.time()
+        received_now = time.time()
+        now = (
+            float(timestamp_ms) / 1000.0
+            if timestamp_ms is not None and float(timestamp_ms) > 10_000_000_000
+            else float(timestamp_ms)
+            if timestamp_ms is not None and float(timestamp_ms) > 0
+            else received_now
+        )
 
         # Delta per spec: qty-based
         delta = quantity if not is_buyer_maker else -quantity
