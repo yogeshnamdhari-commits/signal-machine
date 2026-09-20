@@ -53,6 +53,11 @@ class LiquidityMappingEngine:
         logger.info("LiquidityMapping engine ready")
 
     async def process_kline(self, symbol: str, kline: Dict) -> None:
+        # The dashboard volume profile is defined on closed 5m candles only.
+        # Mixing 1m/15m/1h/4h bars would double-count the same market volume at
+        # different aggregation levels and corrupt POC/value-area levels.
+        if not kline.get("is_closed", False) or str(kline.get("interval", "5m")) != "5m":
+            return
         lm = self._maps.setdefault(symbol, LiquidityMap(symbol=symbol))
         o, h, l, c, v = kline["open"], kline["high"], kline["low"], kline["close"], kline.get("volume", 0)
         mid = (h + l + c) / 3  # typical price

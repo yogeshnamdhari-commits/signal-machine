@@ -32,6 +32,8 @@ class SweepState:
     last_sweep_side: str = ""
     sweep_momentum: float = 0
     vol_history: List[float] = field(default_factory=list)
+    vol_history_by_interval: Dict[str, List[float]] = field(default_factory=dict)
+    events_by_interval: Dict[str, List[SweepEvent]] = field(default_factory=dict)
 
 
 class SweepDetector:
@@ -53,74 +55,74 @@ class SweepDetector:
         logger.info("SweepDetector ready")
 
     async def process_kline(self, symbol: str, kline: Dict) -> Optional[SweepEvent]:
+        """Detect sweeps from one closed candle timeframe without cross-timeframe mixing."""
+        if not kline.get("is_closed", False):
+            return None
         st = self._states.setdefault(symbol, SweepState(symbol=symbol))
-        o, h, l, c = kline["open"], kline["high"], kline["low"], kline["close"]
-        vol = kline.get("volume", 0)
-
-        if o == 0:
+        interval = str(kline.get("interval", "5m"))
+        o = float(kline.get("open", 0) or 0)
+        h = float(kline.get("high", 0) or 0)
+        l = float(kline.get("low", 0) or 0)
+        close = float(kline.get("close", 0) or 0)
+        vol = float(kline.get("volume", 0) or 0)
+        if o <= 0 or h <= 0 or l <= 0 or close <= 0:
             return None
 
-        # Track volume history for spike detection
-        st.vol_history.append(vol)
-        if len(st.vol_history) > self._vol_lookback:
-            st.vol_history = st.vol_history[-self._vol_lookback:]
+        hist = st.vol_history_by_interval.setdefault(interval, [])
+        hist.append(vol)
+        if len(hist) > self._vol_lookback:
+            st.vol_history_by_interval[interval] = hist[-self._vol_lookback:]
+            hist = st.vol_history_by_interval[interval]
 
-        body = abs(c - o)
-        upper_wick = h - max(o, c)
-        lower_wick = min(o, c) - l
-
-        # Calculate average volume for spike detection
-        avg_vol = np.mean(st.vol_history) if len(st.vol_history) >= 5 else vol
+        body = abs(close - o)
+        upper_wick = h - max(o, close)
+        lower_wick = min(o, close) - l
+        avg_vol = np.mean(hist) if len(hist) >= 5 else vol
         vol_spike = vol / avg_vol if avg_vol > 0 else 1.0
 
+        event_ts_ms = float(kline.get("close_time", 0) or 0)
+        event_ts = event_ts_ms / 1000.0 if event_ts_ms > 0 else time.time()
         event = None
 
-        # High sweep: long upper wick, close near low
         if upper_wick > body * self._wick_threshold and upper_wick > 0:
             wick_ratio = upper_wick / max(body, 0.0001)
-            reject_level = max(o, c)
-            # Confidence: wick ratio + volume spike + body ratio
+            reject_level = max(o, close)
             body_ratio = body / (h - l) if (h - l) > 0 else 0
             vol_conf = min(vol_spike / 3.0, 1.0)
-            conf = min(
-                (wick_ratio / 5) * 0.4 +
-                vol_conf * 0.35 +
-                (1 - body_ratio) * 0.25,  # smaller body = stronger rejection
-                1.0
-            )
+            conf = min((wick_ratio / 5) * 0.4 + vol_conf * 0.35 + (1 - body_ratio) * 0.25, 1.0)
             if conf > 0.3 and vol_spike >= self._volume_spike_min:
                 event = SweepEvent(
                     symbol=symbol, sweep_type="high_sweep",
                     sweep_price=h, reject_price=reject_level,
                     wick_ratio=wick_ratio, volume_spike=vol_spike,
-                    timestamp=time.time(), confidence=conf,
+                    timestamp=event_ts, confidence=conf,
                 )
-
-        # Low sweep: long lower wick, close near high
         elif lower_wick > body * self._wick_threshold and lower_wick > 0:
             wick_ratio = lower_wick / max(body, 0.0001)
-            reject_level = min(o, c)
+            reject_level = min(o, close)
             body_ratio = body / (h - l) if (h - l) > 0 else 0
             vol_conf = min(vol_spike / 3.0, 1.0)
-            conf = min(
-                (wick_ratio / 5) * 0.4 +
-                vol_conf * 0.35 +
-                (1 - body_ratio) * 0.25,
-                1.0
-            )
+            conf = min((wick_ratio / 5) * 0.4 + vol_conf * 0.35 + (1 - body_ratio) * 0.25, 1.0)
             if conf > 0.3 and vol_spike >= self._volume_spike_min:
                 event = SweepEvent(
                     symbol=symbol, sweep_type="low_sweep",
                     sweep_price=l, reject_price=reject_level,
                     wick_ratio=wick_ratio, volume_spike=vol_spike,
-                    timestamp=time.time(), confidence=conf,
+                    timestamp=event_ts, confidence=conf,
                 )
 
         if event:
+            by_iv = st.events_by_interval.setdefault(interval, [])
+            by_iv.append(event)
+            if len(by_iv) > 200:
+                st.events_by_interval[interval] = by_iv[-100:]
+                by_iv = st.events_by_interval[interval]
             st.events.append(event)
-            if len(st.events) > 200:
-                st.events = st.events[-100:]
-            st.recent_sweep_count = sum(1 for e in st.events if time.time() - e.timestamp < 3600)
+            if len(st.events) > 500:
+                st.events = st.events[-250:]
+            now = time.time()
+            recent = [e for e in st.events if now - e.timestamp < 3600]
+            st.recent_sweep_count = len(recent)
             st.last_sweep_side = event.sweep_type
 
         return event

@@ -363,11 +363,12 @@ class ExecutionValidationSuite:
         )
         assert not allowed, f"Should be blocked at 6% daily loss: {reason}"
 
-        # Fresh instance for position limit test
+        # Fresh instance for position limit test.
+        # Test the configured boundary rather than hard-coding an obsolete value.
         rg = RiskGuardian()
         rg.set_starting_equity(10000)
         rg.update_equity(10000)
-        rg._state.open_positions = 10
+        rg._state.open_positions = rg._max_open_positions
         allowed, reason, action = rg.check_signal(
             "BTCUSDT", "LONG", 50000, 49000, 0.002, 10, 0.85,
         )
@@ -692,32 +693,47 @@ class ExecutionValidationSuite:
 
         engine = ExecutionEngine()
 
-        # Verify all components exist
-        assert engine.exchange is not None
+        # The engine is intentionally multi-exchange: verify the canonical
+        # exchange registry and its primary Binance adapter.
+        assert isinstance(engine.exchanges, dict)
+        assert engine.exchanges
+        assert "binance" in engine.exchanges
+        assert engine.exchanges["binance"] is not None
+
+        # Verify all execution components wired by the current engine.
         assert engine.order_manager is not None
         assert engine.position_manager is not None
         assert engine.fill_manager is not None
         assert engine.audit is not None
-        assert engine.risk_guardian is not None
         assert engine.reconciler is not None
         assert engine.recovery is not None
         assert engine.monitor is not None
+        assert engine.router is not None
+        assert engine.arbitrage_engine is not None
+        assert engine.allocator is not None
 
-        # Verify stats method works
+        # Verify stats method reports the same canonical interfaces.
         stats = engine.get_stats()
-        assert "engine" in stats
-        assert "orders" in stats
-        assert "positions" in stats
-        assert "fills" in stats
-        assert "risk" in stats
-        assert "reconciler" in stats
-        assert "recovery" in stats
-        assert "monitor" in stats
-        assert "audit" in stats
-        assert "exchange" in stats
+        for section in (
+            "engine",
+            "orders",
+            "positions",
+            "fills",
+            "risk",
+            "reconciler",
+            "recovery",
+            "monitor",
+            "audit",
+            "router",
+            "arbitrage",
+            "allocator",
+            "exchange",
+        ):
+            assert section in stats, f"Missing stats section: {section}"
 
-        return True, "Execution engine integration verified: all components present and reporting", {
-            "components": 9,
+        return True, "Execution engine integration verified: multi-exchange registry, components, and stats reporting", {
+            "components": 10,
+            "exchange_count": len(engine.exchanges),
             "stats_sections": len(stats),
         }
 

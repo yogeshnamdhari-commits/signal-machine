@@ -110,7 +110,8 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
             return _factor("funding", DirectionState.NEUTRAL, 0, "funding observation unavailable", row, "markPrice", DataQuality.UNAVAILABLE, "exchange")
         # Funding is a positioning/risk modifier, not a standalone trade trigger.
         # Negative funding is long-supportive; positive funding is short-supportive.
-        state = DirectionState.BUY if value < -0.0001 else DirectionState.SELL if value > 0.0001 else DirectionState.NEUTRAL
+        # Row value is expressed in percent (raw funding rate × 100).
+        state = DirectionState.BUY if value < -0.01 else DirectionState.SELL if value > 0.01 else DirectionState.NEUTRAL
         return _factor("funding", state, min(100, 50 + min(abs(value) * 5000, 50)), f"funding={value:+.6f}%", row, "markPrice", DataQuality.LIVE, "exchange")
 
     if key == "cvd":
