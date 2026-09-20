@@ -897,41 +897,16 @@ class DeltaTerminalEngine:
                 n_ok = sum(1 for ok in results if ok)
                 self.data_freshness.record_data_update(
                     "open_interest",
-                    f"Binance direct OI ({n_ok}/{len(symbols)} symbols); no proxy)"
+                    f"Binance direct OI ({n_ok}/{len(symbols)} symbols); no proxy"
                 )
 
                 # ── Record data freshness for other polling sources ──
                 self.data_freshness.record_data_update("klines", "Binance OHLCV (1m/5m/15m/1h/4h)")
                 self.data_freshness.record_data_update("trades", "Binance Futures WebSocket Trade Stream")
 
-                # ── Exchange Flow REST fallback: fetch trades for symbols without WS flow ──
-                # Testnet WS only delivers aggTrade for ~6 active symbols.
-                # Use production REST /fapi/v1/trades for the rest.
-                try:
-                    _flow_needs = [s for s in symbols if self.exchange_flow.needs_flow_data(s, min_trades=20)]
-                    if _flow_needs:
-                        _batch_size = 10
-                        for i in range(0, len(_flow_needs), _batch_size):
-                            batch = _flow_needs[i:i+_batch_size]
-                            _tasks = [self._fetch_flow_rest(sym) for sym in batch]
-                            await asyncio.gather(*_tasks, return_exceptions=True)
-                            await asyncio.sleep(0.5)  # Rate limit
-                except Exception as e:
-                    logger.debug("Exchange flow REST fallback error: {}", e)
             except Exception as e:
                 logger.error("OI poll loop error: {}", e)
             await asyncio.sleep(60)
-
-    async def _fetch_flow_rest(self, sym: str) -> None:
-        """Fetch recent trades via REST API for exchange flow (testnet WS fallback)."""
-        try:
-            data = await self.ws._get("/fapi/v1/trades", {"symbol": sym, "limit": 500})
-            if data:
-                count = await self.exchange_flow.fetch_rest_trades(sym, data)
-                if count > 0:
-                    logger.debug("📊 Flow REST: {} processed {} trades", sym, count)
-        except Exception as e:
-            logger.debug("Flow REST error {}: {}", sym, e)
 
     async def _kline_poll_loop(self) -> None:
         """Poll 5m klines via REST every 60s, 1H klines every 5min to keep regime + HTF detection fresh."""
@@ -1132,18 +1107,6 @@ class DeltaTerminalEngine:
                 # ── DIAG: Log initial kline counts after prefetch ──
                 for _iv, _kl in sd.get("klines", {}).items():
                     logger.info("🔍 DIAG[PREFETCH] sym={} interval={} count={}", sym, _iv, len(_kl))
-                # Generate a synthetic trade from last 5m close price
-                klines_5m = sd["klines"].get("5m", [])
-                if klines_5m:
-                    last_close = klines_5m[-1].get("close", 0)
-                    if last_close > 0:
-                        sd["trades"].append({
-                            "symbol": sym,
-                            "price": last_close,
-                            "quantity": 0.001,
-                            "is_buyer_maker": False,
-                            "trade_time": int(time.time() * 1000),
-                        })
                 fetched += 1
                 await asyncio.sleep(0.1)  # Rate limit: ~10 req/s
             except Exception as e:
