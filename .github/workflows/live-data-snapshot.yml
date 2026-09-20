@@ -1,0 +1,262 @@
+name: Live Production Data Snapshot
+
+on:
+  push:
+    branches:
+      - live-data-snapshot-20260920
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      BINANCE_TESTNET: "false"
+      APP_ENV: "staging"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout snapshot branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify engine source is frozen base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD~1)" = "c7927f3e6c16aa4f6cbc1f83f0f7c18385411b40"
+          test "$(git show --format= --name-only HEAD | grep -v '^$' | grep -v '^.github/workflows/live-data-snapshot.yml$' | wc -l)" -eq 0
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 -m pip install -r requirements.txt
+
+      - name: Start canonical production market-data engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 main.py --mode engine > /tmp/deltaengine.log 2>&1 &
+          echo $! > /tmp/deltaengine.pid
+
+      - name: Wait for fresh production bridge snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+
+          bridge = Path("packages/ai-engine/data/bridge/market_data.json")
+          deadline = time.time() + 210
+
+          while time.time() < deadline:
+              if bridge.exists():
+                  try:
+                      payload = json.loads(bridge.read_text())
+                      rows = payload.get("rows", [])
+                      ts = float(payload.get("timestamp", 0))
+                      age = time.time() - ts
+                      if len(rows) >= 20 and 0 <= age <= 10:
+                          print(f"FRESH_BRIDGE rows={len(rows)} age={age:.2f}s")
+                          break
+                  except Exception:
+                      pass
+              time.sleep(2)
+          else:
+              print(Path("/tmp/deltaengine.log").read_text()[-30000:])
+              raise SystemExit("No fresh production bridge snapshot produced")
+          PY
+
+      - name: Export exact uploaded-symbol table
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 - <<'PY'
+          import csv
+          import json
+          import time
+          from pathlib import Path
+          from dashboard.live_sheet_contract import build_signal_display, display_value, live_observation_values
+
+          requested = [
+              "ZECUSDT","UNIUSDT","ONDOUSDT","龙虾USDT","XTZUSDT","PENGUUSDT",
+              "USELESSUSDT","MARSCOINUSDT","SYNUSDT","SOLUSDT","TAOUSDT","XRPUSDT",
+              "ZAMAUSDT","SUIUSDT","ONEUSDT","WLDUSDT","TRUMPUSDT","LSKUSDT",
+              "XLMUSDT","LTCUSDT","XMRUSDT","PUMPUSDT","PONSUSDT","ZILUSDT",
+              "VVVUSDT","STRKUSDT","牛来USDT","TRXUSDT","SKLUSDT","OPUSDT",
+              "PIEVERSEUSDT","ONGUSDT","XPLUSDT","UBUSDT","MYXUSDT","RAYSOLUSDT",
+              "TUSDT","SAGAUSDT","MUSDT","TIAUSDT","STXUSDT","WIFUSDT","WLFIUSDT",
+              "PENDLEUSDT","MITOUSDT","VIRTUALUSDT","ZENUSDT","POLUSDT","MORPHOUSDT",
+              "SEIUSDT","ZKUSDT","ZROUSDT","MONUSDT","VETUSDT","PTBUSDT","ORDIUSDT",
+              "RENDERUSDT","SUSDT","SANDUSDT","STABLEUSDT"
+          ]
+
+          root = Path("data/bridge")
+          bridge = json.loads((root/"market_data.json").read_text())
+          rows = {str(r.get("symbol")): dict(r) for r in bridge.get("rows", []) if r.get("symbol")}
+          signals_payload = json.loads((root/"signals.json").read_text()) if (root/"signals.json").exists() else {}
+          signals = {str(s.get("symbol")): s for s in signals_payload.get("signals", []) if s.get("symbol")}
+          snapshot_ts = float(bridge.get("timestamp", 0))
+          snapshot_age = time.time() - snapshot_ts
+
+          cols = [
+              "Symbol","Price","24h","Volume 24h","OI","OI Bias","OI Δ%","Funding","Fund Bias",
+              "Net Delta","B/S Ratio","B/S","CVD 5m","CVD Bias","Flow Strength","Flow Bias",
+              "Ex Flow","Vol Bias","Imbalance","Imb Bias","Liq Zone ↓","Liq Zone ↑","Liq Risk",
+              "Sweep","Sweep Price","FVG","FVG Price","Regime","Reg Conf","Signal",
+              "Signal Authority","Signal Reason"
+          ]
+
+          def fmt(v, suffix=""):
+              if v is None or v == "":
+                  return "UNAVAILABLE"
+              try:
+                  n = float(v)
+              except (TypeError, ValueError):
+                  return str(v)
+              a = abs(n)
+              if a >= 1e9:
+                  return f"{n/1e9:.2f}B{suffix}"
+              if a >= 1e6:
+                  return f"{n/1e6:.2f}M{suffix}"
+              if a >= 1e3:
+                  return f"{n/1e3:.2f}K{suffix}"
+              return f"{n:.4f}{suffix}"
+
+          def evidence(factor):
+              return f"{factor.get('state','NEUTRAL')} | {factor.get('quality','UNAVAILABLE')}"
+
+          out = []
+          for sym in requested:
+              row = rows.get(sym)
+              if row is None:
+                  out.append({
+                      "Symbol": sym,
+                      "Price": "UNAVAILABLE", "24h": "UNAVAILABLE", "Volume 24h": "UNAVAILABLE",
+                      "OI": "UNAVAILABLE", "OI Bias": "NEUTRAL | NOT_APPLICABLE", "OI Δ%": "UNAVAILABLE",
+                      "Funding": "UNAVAILABLE", "Fund Bias": "NEUTRAL | NOT_APPLICABLE",
+                      "Net Delta": "UNAVAILABLE", "B/S Ratio": "UNAVAILABLE", "B/S": "NEUTRAL | NOT_APPLICABLE",
+                      "CVD 5m": "UNAVAILABLE", "CVD Bias": "NEUTRAL | NOT_APPLICABLE",
+                      "Flow Strength": "UNAVAILABLE", "Flow Bias": "NEUTRAL | NOT_APPLICABLE",
+                      "Ex Flow": "UNAVAILABLE", "Vol Bias": "NEUTRAL | NOT_APPLICABLE",
+                      "Imbalance": "UNAVAILABLE", "Imb Bias": "NEUTRAL | NOT_APPLICABLE",
+                      "Liq Zone ↓": "UNAVAILABLE", "Liq Zone ↑": "UNAVAILABLE", "Liq Risk": "UNAVAILABLE",
+                      "Sweep": "NEUTRAL | NOT_APPLICABLE", "Sweep Price": "UNAVAILABLE",
+                      "FVG": "NEUTRAL | NOT_APPLICABLE", "FVG Price": "UNAVAILABLE",
+                      "Regime": "NEUTRAL | NOT_APPLICABLE", "Reg Conf": "UNAVAILABLE",
+                      "Signal": "NO_SIGNAL", "Signal Authority": "none",
+                      "Signal Reason": "symbol unavailable on Binance production universe"
+                  })
+                  continue
+
+              display = build_signal_display(signals.get(sym, {}), row)
+              obs = live_observation_values(row)
+              fvg = display["fvg"]
+
+              out.append({
+                  "Symbol": sym,
+                  "Price": fmt(display_value(row, "price"), "$"),
+                  "24h": fmt(display_value(row, "change_24h"), "%"),
+                  "Volume 24h": fmt(display_value(row, "volume_24h"), "$"),
+                  "OI": fmt(display_value(row, "open_interest"), "$"),
+                  "OI Bias": evidence(display["oi"]),
+                  "OI Δ%": fmt(display_value(row, "oi_change_pct"), "%"),
+                  "Funding": fmt(display_value(row, "funding"), "%"),
+                  "Fund Bias": evidence(display["funding"]),
+                  "Net Delta": fmt(display_value(row, "net_delta"), "$"),
+                  "B/S Ratio": fmt(display_value(row, "buy_sell_ratio")),
+                  "B/S": evidence(display["b_s_ratio"]),
+                  "CVD 5m": fmt(obs["cvd_5m"], "$"),
+                  "CVD Bias": evidence(display["cvd"]),
+                  "Flow Strength": fmt(obs["flow_strength"]),
+                  "Flow Bias": evidence(display["flow"]),
+                  "Ex Flow": fmt(obs["exchange_flow"], "$"),
+                  "Vol Bias": evidence(display["volume"]),
+                  "Imbalance": fmt(obs["imbalance"]),
+                  "Imb Bias": evidence(display["imbalance"]),
+                  "Liq Zone ↓": fmt(display_value(row, "long_liq_vol"), "$"),
+                  "Liq Zone ↑": fmt(display_value(row, "short_liq_vol"), "$"),
+                  "Liq Risk": str(display["liq_risk"] or "UNAVAILABLE").upper(),
+                  "Sweep": evidence(display["sweep"]),
+                  "Sweep Price": fmt(display["sweep_price"], "$"),
+                  "FVG": f"{fvg['state']} | {fvg['quality']}",
+                  "FVG Price": fmt(fvg["value"], "$"),
+                  "Regime": evidence(display["regime"]),
+                  "Reg Conf": fmt(display["regime_conf"], "%"),
+                  "Signal": display["signal"],
+                  "Signal Authority": display["authority"],
+                  "Signal Reason": display["signal_reason"]
+              })
+
+          outdir = Path("../../live_snapshot")
+          outdir.mkdir(parents=True, exist_ok=True)
+
+          with (outdir/"live_snapshot.csv").open("w", newline="", encoding="utf-8") as f:
+              w = csv.DictWriter(f, fieldnames=cols)
+              w.writeheader()
+              w.writerows(out)
+
+          def esc(s):
+              return str(s).replace("|", "\\|").replace("\n", " ")
+
+          with (outdir/"live_snapshot.md").open("w", encoding="utf-8") as f:
+              f.write("| " + " | ".join(cols) + " |\n")
+              f.write("| " + " | ".join(["---"]*len(cols)) + " |\n")
+              for r in out:
+                  f.write("| " + " | ".join(esc(r[c]) for c in cols) + " |\n")
+
+          status_path = root/"status.json"
+          provenance = {
+              "source_exchange": "Binance USDⓈ-M Futures",
+              "production_market_data": True,
+              "binance_testnet": False,
+              "engine_source_base_sha": "c7927f3e6c16aa4f6cbc1f83f0f7c18385411b40",
+              "bridge_timestamp_epoch": snapshot_ts,
+              "snapshot_age_seconds_at_export": round(snapshot_age, 3),
+              "bridge_rows": len(rows),
+              "requested_rows": len(requested),
+              "live_rows": sum(1 for r in out if r["Price"] != "UNAVAILABLE"),
+              "unavailable_rows": sum(1 for r in out if r["Price"] == "UNAVAILABLE"),
+              "status": json.loads(status_path.read_text()) if status_path.exists() else None
+          }
+          (outdir/"provenance.json").write_text(json.dumps(provenance, indent=2), encoding="utf-8")
+          print(json.dumps(provenance, indent=2))
+          PY
+
+      - name: Stop engine
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -f /tmp/deltaengine.pid ]]; then
+            PID="$(cat /tmp/deltaengine.pid)"
+            kill -TERM "$PID" 2>/dev/null || true
+            sleep 3
+            kill -KILL "$PID" 2>/dev/null || true
+          fi
+          mkdir -p live_snapshot
+          cp /tmp/deltaengine.log live_snapshot/engine.log 2>/dev/null || true
+
+      - name: Upload production snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-production-snapshot
+          path: |
+            live_snapshot/live_snapshot.csv
+            live_snapshot/live_snapshot.md
+            live_snapshot/provenance.json
+            live_snapshot/engine.log
+            packages/ai-engine/data/bridge/market_data.json
+            packages/ai-engine/data/bridge/data_quality.json
+          if-no-files-found: error
+          retention-days: 7
