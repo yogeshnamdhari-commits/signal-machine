@@ -129,6 +129,64 @@ class LiquidationEngine:
     async def initialize(self) -> None:
         logger.info("Liquidation analytics engine ready (clusters + heat zones + sweep + risk)")
 
+    async def process_liquidation_event(self, symbol: str, event: Dict) -> None:
+        """Process an authentic Binance forceOrder liquidation event.
+
+        This method accepts only the dedicated Binance forceOrder feed. Ordinary
+        aggTrade events are never classified as liquidations.
+        """
+        st = self._states.setdefault(symbol, LiqState(symbol=symbol))
+        price = float(event.get("price", 0) or 0)
+        qty = float(event.get("quantity", 0) or 0)
+        if price <= 0 or qty <= 0:
+            return
+        value_usd = price * qty
+
+        # Binance forceOrder side is the forced order side:
+        # SELL => long position liquidation; BUY => short position liquidation.
+        force_side = str(event.get("side", "")).upper()
+        side = "long" if force_side == "SELL" else "short" if force_side == "BUY" else ""
+        if not side:
+            return
+
+        timestamp_ms = event.get("timestamp", int(time.time() * 1000))
+        timestamp = float(timestamp_ms) / 1000 if float(timestamp_ms) > 1e10 else float(timestamp_ms)
+        liq_event = LiqEvent(
+            symbol=symbol,
+            side=side,
+            price=price,
+            quantity=qty,
+            value_usd=value_usd,
+            timestamp=timestamp,
+            is_cascade=False,
+        )
+
+        recent_events = [e for e in st.events if timestamp - e.timestamp < self._cascade_window]
+        if len(recent_events) >= self._cascade_min_events - 1:
+            liq_event.is_cascade = True
+
+        st.events.append(liq_event)
+        if len(st.events) > self._max_events:
+            st.events = st.events[-self._max_events // 2:]
+
+        if side == "long":
+            st.long_liq_vol += value_usd
+            st.long_liq_count += 1
+            st.recent_long_vol += value_usd
+            st.recent_long_count += 1
+        else:
+            st.short_liq_vol += value_usd
+            st.short_liq_count += 1
+            st.recent_short_vol += value_usd
+            st.recent_short_count += 1
+
+        self._update_clusters(st, liq_event)
+        self._detect_cascade(st, timestamp)
+        self._detect_sweep(st, price, timestamp)
+        self._compute_heat_zones(st)
+        self._compute_risk(st, timestamp)
+        self._reset_recent_if_stale(st, timestamp)
+
     async def process_trade(self, symbol: str, trade: Dict, normal_volume: float = 0) -> None:
         """Process a trade and detect liquidation events."""
         st = self._states.setdefault(symbol, LiqState(symbol=symbol))
