@@ -74,6 +74,15 @@ jobs:
         run: |
           python validate_execution.py
 
+      - name: Upload execution validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-validation-${{ github.sha }}
+          path: packages/ai-engine/data/reports/execution_validation_results.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Production validation gate
         run: |
           PYTHONPATH=packages/ai-engine python -m production_validation_gate
