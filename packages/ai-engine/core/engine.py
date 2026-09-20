@@ -959,8 +959,10 @@ class DeltaTerminalEngine:
                                     "open": kl.get("open", 0), "high": kl.get("high", 0),
                                     "low": kl.get("low", 0), "close": kl.get("close", 0),
                                     "volume": kl.get("volume", 0), "trades": kl.get("trades", 0),
-                                    "is_closed": True,
+                                    "is_closed": bool(kl.get("is_closed", False)),
                                 }
+                                if not kline_event["is_closed"]:
+                                    continue
                                 _ot = kline_event["open_time"]
                                 _is_new = False
                                 # Replace last candle if same open_time (updated close)
@@ -1021,8 +1023,10 @@ class DeltaTerminalEngine:
                                         "open": kl.get("open", 0), "high": kl.get("high", 0),
                                         "low": kl.get("low", 0), "close": kl.get("close", 0),
                                         "volume": kl.get("volume", 0), "trades": kl.get("trades", 0),
-                                        "is_closed": True,
+                                        "is_closed": bool(kl.get("is_closed", False)),
                                     }
+                                    if not kline_event["is_closed"]:
+                                        continue
                                     _ot = kline_event["open_time"]
                                     if kl_list and kl_list[-1].get("open_time") == _ot:
                                         kl_list[-1] = kline_event
@@ -1091,8 +1095,10 @@ class DeltaTerminalEngine:
                             "close": kl.get("close", 0),
                             "volume": kl.get("volume", 0),
                             "trades": kl.get("trades", 0),
-                            "is_closed": True,
+                            "is_closed": bool(kl.get("is_closed", False)),
                         }
+                        if not kline_event["is_closed"]:
+                            continue
                         _ot = kline_event["open_time"]
                         if _ot not in _existing_ot:
                             kl_list.append(kline_event)
