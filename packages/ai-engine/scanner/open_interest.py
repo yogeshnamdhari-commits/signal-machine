@@ -18,8 +18,8 @@ class OIState:
     readings: List[Dict] = field(default_factory=list)
     current_oi: float = 0
     prev_oi: float = 0
-    change_abs: float = 0
-    change_pct: float = 0
+    change_abs: Optional[float] = None
+    change_pct: Optional[float] = None
     oi_trend: float = 0  # 1 = increasing, -1 = decreasing
     price_oi_divergence: float = 0
     # Spike/flush detection
@@ -69,8 +69,13 @@ class OpenInterestEngine:
 
         st.prev_oi = st.current_oi
         st.current_oi = oi
-        st.change_abs = oi - st.prev_oi
-        st.change_pct = (st.change_abs / st.prev_oi * 100) if st.prev_oi > 0 else 0
+        if st.prev_oi > 0:
+            st.change_abs = oi - st.prev_oi
+            st.change_pct = st.change_abs / st.prev_oi * 100
+        else:
+            # First observation establishes the baseline; it is not a change observation.
+            st.change_abs = None
+            st.change_pct = None
 
         # Track peak OI
         if oi > st.peak_oi:
@@ -150,7 +155,7 @@ class OpenInterestEngine:
         price_down = price_trend < 0
 
         # Need minimum OI change to classify
-        if abs(st.change_pct) < _BUILDUP_MIN_CHANGE_PCT and not st.spike_detected and not st.flush_detected:
+        if st.change_pct is None or (abs(st.change_pct) < _BUILDUP_MIN_CHANGE_PCT and not st.spike_detected and not st.flush_detected):
             return "neutral"
 
         if oi_up and price_up:
@@ -263,7 +268,7 @@ class OpenInterestEngine:
             "avg_change_pct": round(st.avg_change_pct, 4),
             "std_change_pct": round(st.std_change_pct, 4),
             # ── Phase 5: OI Expansion & Momentum ──
-            "oi_expansion_pct": round(st.change_pct, 4),
+            "oi_expansion_pct": round(st.change_pct, 4) if st.change_pct is not None else None,
             "oi_trend_label": "RISING" if st.oi_trend > 0 else ("FALLING" if st.oi_trend < 0 else "FLAT"),
             "oi_momentum_score": round(st.oi_strength_score, 1),
         }
