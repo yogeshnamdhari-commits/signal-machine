@@ -37,6 +37,13 @@ jobs:
           python -m pip install --upgrade pip-audit
           pip-audit -r packages/ai-engine/requirements.txt
 
+      - name: Record source provenance
+        run: |
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          echo "HEAD=$(git rev-parse HEAD)"
+          test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
+          git status --short
+
       - name: Compile-check AI engine
         run: |
           python - <<'PY'
