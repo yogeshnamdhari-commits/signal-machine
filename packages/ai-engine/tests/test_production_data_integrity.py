@@ -171,3 +171,33 @@ def test_taker_flow_is_exact_five_minute_window():
     assert result["taker_buy_vol"] == 200.0
     assert result["taker_sell_vol"] == 0.0
     assert result["window_trades"] == 1
+
+
+def test_fvg_does_not_mix_candle_timeframes():
+    from scanner.fvg_detector import FVGDetect
+
+    async def run():
+        det = FVGDetect()
+        base = int(time.time() * 1000)
+        def k(iv, idx, high, low, close):
+            return {
+                "symbol": "BTCUSDT",
+                "interval": iv,
+                "open_time": base + idx * 60_000,
+                "close_time": base + idx * 60_000 + 59_999,
+                "high": high, "low": low, "close": close,
+                "is_closed": True,
+            }
+
+        # Two 5m candles, then an unrelated 1m candle with a large gap.
+        await det.process_kline("BTCUSDT", k("5m", 0, 101, 99, 100))
+        await det.process_kline("BTCUSDT", k("5m", 1, 102, 100, 101))
+        event = await det.process_kline("BTCUSDT", k("1m", 2, 120, 110, 115))
+        assert event is None
+
+        # A third 5m candle then forms only from the 5m sequence.
+        event = await det.process_kline("BTCUSDT", k("5m", 2, 108, 105, 107))
+        return event
+
+    event = asyncio.run(run())
+    assert event is None
