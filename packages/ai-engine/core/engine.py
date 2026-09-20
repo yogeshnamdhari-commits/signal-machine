@@ -707,8 +707,11 @@ class DeltaTerminalEngine:
                 # Update institutional CVD tracker (skip synthetic trades)
                 if data.get("_source") != "ticker_arr":
                     self.cvd_inst.update(
-                        sym, data.get("price", 0), data.get("quantity", 0), 
-                        data.get("is_buyer_maker", False)
+                        sym,
+                        data.get("price", 0),
+                        data.get("quantity", 0),
+                        data.get("is_buyer_maker", False),
+                        data.get("trade_time"),
                     )
                 
                 # Authentic liquidations come only from Binance forceOrder events.
