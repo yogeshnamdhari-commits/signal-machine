@@ -775,13 +775,9 @@ class DeltaTerminalEngine:
                     )
 
             elif event == "liquidation":
-                # Feed liquidation engine with trade-like data
-                liq_trade = {
-                    "price": data.get("price", 0),
-                    "quantity": data.get("quantity", 0),
-                    "is_buyer_maker": data.get("side") == "SELL",
-                }
-                await self.liquidation.process_trade(sym, liq_trade, normal_volume=5000)
+                # Dedicated Binance forceOrder feed — authentic liquidation evidence.
+                if data.get("feed") == "forceOrder" and data.get("data_quality") == "REAL":
+                    await self.liquidation.process_liquidation_event(sym, data)
 
         except Exception as exc:
             logger.error("Handler error {}: {}", sym, exc)
