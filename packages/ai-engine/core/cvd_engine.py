@@ -46,6 +46,8 @@ _TF_SECONDS = {
 
 # Max trades to keep per symbol (rolling window)
 _MAX_TRADES = 5000
+# 1-second volume/delta buckets retained for a full 4h rolling window.
+_CVD_BUCKETS = 14_500
 
 
 class CVDEngine:
@@ -81,10 +83,23 @@ class CVDEngine:
         # Last processed timestamps per symbol per TF
         self._last_tf_update: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
+        # Timestamped one-second aggregates. These are the authoritative source
+        # for CVD/buy/sell windows so 1m/5m/15m/1h/4h never use all-time totals.
+        self._flow_buckets: Dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=_CVD_BUCKETS)
+        )
+
     async def initialize(self) -> None:
         logger.info("CVDEngine ready (multi-TF: 1m, 5m, 15m, 1h, 4h)")
 
-    def update(self, symbol: str, price: float, quantity: float, is_buyer_maker: bool) -> None:
+    def update(
+        self,
+        symbol: str,
+        price: float,
+        quantity: float,
+        is_buyer_maker: bool,
+        timestamp_ms: float | int | None = None,
+    ) -> None:
         """
         Process a single trade tick. Accumulates into all active timeframes.
 
@@ -92,7 +107,14 @@ class CVDEngine:
           - m == false -> delta += qty (aggressive buy)
           - m == true  -> delta -= qty (aggressive sell)
         """
-        now = time.time()
+        received_now = time.time()
+        now = (
+            float(timestamp_ms) / 1000.0
+            if timestamp_ms is not None and float(timestamp_ms) > 10_000_000_000
+            else float(timestamp_ms)
+            if timestamp_ms is not None and float(timestamp_ms) > 0
+            else received_now
+        )
 
         # Delta per spec: qty-based
         delta = quantity if not is_buyer_maker else -quantity
@@ -112,28 +134,28 @@ class CVDEngine:
         if len(buf) > _MAX_TRADES:
             self._trades[symbol] = buf[-_MAX_TRADES // 2:]
 
-        # Accumulate into all timeframes
+        # Aggregate by exchange-receipt second. A 4h window therefore remains
+        # complete without retaining millions of individual trade ticks.
+        sec = int(now)
+        buckets = self._flow_buckets[symbol]
+        if buckets and buckets[-1]["sec"] == sec:
+            bucket = buckets[-1]
+        else:
+            bucket = {"sec": sec, "delta": 0.0, "buy_vol": 0.0, "sell_vol": 0.0}
+            buckets.append(bucket)
+        bucket["delta"] += delta
+        if is_buyer_maker:
+            bucket["sell_vol"] += value
+        else:
+            bucket["buy_vol"] += value
+
+        # Track closes for divergence (sampled: one per second max).
         for tf_name, tf_seconds in _TF_SECONDS.items():
-            # Add delta to rolling window
-            self._delta_windows[symbol][tf_name].append((delta, now))
-
-            # Accumulate buy/sell volume (value-based for ratio)
-            if is_buyer_maker:
-                self._sell_vol[symbol][tf_name] += value
-            else:
-                self._buy_vol[symbol][tf_name] += value
-
-            # Track closes for divergence (sampled: one per second max)
             last_t = self._last_tf_update[symbol][tf_name]
             if now - last_t >= 1.0:
-                # Compute CVD from rolling window for this timeframe
-                window = self._delta_windows[symbol][tf_name]
-                cutoff = now - tf_seconds
-                cvd_in_window = sum(d for d, t in window if t >= cutoff)
-
+                cvd_in_window, _, _ = self._window_stats(symbol, tf_seconds, now)
                 self._price_closes[symbol][tf_name].append(price)
                 self._cvd_closes[symbol][tf_name].append(cvd_in_window)
-                # Keep last 200 closes per TF
                 if len(self._price_closes[symbol][tf_name]) > 200:
                     self._price_closes[symbol][tf_name] = self._price_closes[symbol][tf_name][-200:]
                     self._cvd_closes[symbol][tf_name] = self._cvd_closes[symbol][tf_name][-200:]
@@ -145,15 +167,9 @@ class CVDEngine:
     def _recompute_bias(self, symbol: str) -> None:
         """Recompute 5-level CVD bias for each timeframe."""
         for tf_name in _TF_SECONDS:
-            # Compute CVD from rolling window
             now = time.time()
-            window = self._delta_windows[symbol][tf_name]
             tf_seconds = _TF_SECONDS[tf_name]
-            cutoff = now - tf_seconds
-            cvd = sum(d for d, t in window if t >= cutoff)
-
-            buy_v = self._buy_vol[symbol][tf_name]
-            sell_v = self._sell_vol[symbol][tf_name]
+            cvd, buy_v, sell_v = self._window_stats(symbol, tf_seconds, now)
             total = buy_v + sell_v
 
             if total == 0:
@@ -249,13 +265,22 @@ class CVDEngine:
 
     # ── Public API ───────────────────────────────────────────────
 
+    def _window_stats(self, symbol: str, seconds: int, now: float) -> tuple[float, float, float]:
+        """Return (CVD, buy_volume_usd, sell_volume_usd) for the exact rolling window."""
+        cutoff = now - seconds
+        cvd = buy_v = sell_v = 0.0
+        for bucket in self._flow_buckets.get(symbol, ()):
+            if bucket["sec"] >= cutoff:
+                cvd += bucket["delta"]
+                buy_v += bucket["buy_vol"]
+                sell_v += bucket["sell_vol"]
+        return cvd, buy_v, sell_v
+
     def get_cvd(self, symbol: str, timeframe: str = "1m") -> float:
-        """Return current CVD for a timeframe (from rolling window)."""
-        now = time.time()
-        window = self._delta_windows[symbol][timeframe]
-        tf_seconds = _TF_SECONDS[timeframe]
-        cutoff = now - tf_seconds
-        return sum(d for d, t in window if t >= cutoff)
+        """Return current CVD for a timestamped rolling timeframe."""
+        if timeframe not in _TF_SECONDS:
+            raise ValueError(f"Unsupported CVD timeframe: {timeframe}")
+        return self._window_stats(symbol, _TF_SECONDS[timeframe], time.time())[0]
 
     def get_bias(self, symbol: str, timeframe: str = "1m") -> str:
         """Return 5-level CVD bias for a timeframe."""
@@ -267,8 +292,9 @@ class CVDEngine:
 
     def get_buy_sell_ratio(self, symbol: str, timeframe: str = "1m") -> float:
         """Return buy/sell volume ratio for a timeframe."""
-        buy = self._buy_vol[symbol][timeframe]
-        sell = self._sell_vol[symbol][timeframe]
+        if timeframe not in _TF_SECONDS:
+            raise ValueError(f"Unsupported CVD timeframe: {timeframe}")
+        _, buy, sell = self._window_stats(symbol, _TF_SECONDS[timeframe], time.time())
         if sell == 0:
             return 1.0 if buy == 0 else float("inf")
         return buy / sell
@@ -278,16 +304,14 @@ class CVDEngine:
         Full analysis dict for the scoring pipeline.
         Returns CVD values across all timeframes + divergence + bias.
         """
-        if symbol not in self._delta_windows:
+        if symbol not in self._flow_buckets:
             return None
 
         # Primary timeframe for scoring (5m is the most balanced)
         primary_tf = "5m"
 
-        # Compute CVD from rolling window for primary TF
-        primary_cvd = self.get_cvd(symbol, primary_tf)
-        buy_5m = self._buy_vol[symbol]["5m"]
-        sell_5m = self._sell_vol[symbol]["5m"]
+        # Compute CVD and taker volumes strictly from the same 5m window.
+        primary_cvd, buy_5m, sell_5m = self._window_stats(symbol, _TF_SECONDS[primary_tf], time.time())
         total_5m = buy_5m + sell_5m
 
         result = {

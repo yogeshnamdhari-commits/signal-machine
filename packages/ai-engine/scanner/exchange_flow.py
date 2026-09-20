@@ -37,7 +37,8 @@ from loguru import logger
 
 
 # ── Configuration ────────────────────────────────────────────────
-_ROLLING_WINDOW_TRADES = 2000       # trades for rolling buy/sell accumulation
+_ROLLING_WINDOW_TRADES = 10000      # bounded storage; observations are still time-windowed
+_FLOW_WINDOW_S = 300                 # canonical 5-minute taker-flow window
 _FLOW_HISTORY_RETENTION_S = 86400   # 24 hours of net_flow snapshots for percentile
 _LARGE_TRADE_USD = 50_000           # threshold for large taker order tracking
 _FLOW_RATIO_BUY = 0.60             # flow_ratio > this → BUY signal
@@ -70,8 +71,9 @@ class FlowState:
     recent_net_delta: float = 0.0
     # ── History for percentile ranking (24h) ──
     net_flow_history: deque = field(default_factory=lambda: deque(maxlen=10000))
-    # ── Trade counter for minimum threshold ──
+    # ── Trade counters ──
     total_trades: int = 0
+    window_trades: int = 0
     # ── Debug / validation ──
     last_update_ts: float = 0.0
     source_label: str = "Binance Futures"
@@ -123,12 +125,18 @@ class ExchangeFlowEngine:
         val = price * qty
         side = "sell" if is_maker else "buy"
 
-        # ── Add to rolling window ──
-        st.flows.append({"val": val, "side": side, "ts": trade_time})
+        # ── Add to canonical 5-minute rolling window ──
+        trade_ts = trade_time / 1000.0 if trade_time > 1e10 else float(trade_time)
+        st.flows.append({"val": val, "side": side, "ts": trade_ts})
         st.total_trades += 1
-        st.last_update_ts = time.time() / 1000 if trade_time > 1e10 else trade_time
+        st.last_update_ts = trade_ts
 
-        # ── Recalculate rolling volumes from the window ──
+        cutoff = trade_ts - _FLOW_WINDOW_S
+        while st.flows and st.flows[0]["ts"] < cutoff:
+            st.flows.popleft()
+        st.window_trades = len(st.flows)
+
+        # ── Recalculate rolling volumes from the exact 5-minute window ──
         st.taker_buy_vol = sum(f["val"] for f in st.flows if f["side"] == "buy")
         st.taker_sell_vol = sum(f["val"] for f in st.flows if f["side"] == "sell")
         total = st.taker_buy_vol + st.taker_sell_vol
@@ -178,9 +186,8 @@ class ExchangeFlowEngine:
         else:
             st.flow_momentum = 0.0
 
-        # ── Rolling window stats (most recent trades) ──
-        window_size = min(500, n)
-        window = list(st.flows)[-window_size:] if window_size > 0 else []
+        # ── Recent stats are the same canonical 5-minute window ──
+        window = list(st.flows)
         st.recent_buy_vol = sum(f["val"] for f in window if f["side"] == "buy")
         st.recent_sell_vol = sum(f["val"] for f in window if f["side"] == "sell")
         st.recent_net_delta = st.recent_buy_vol - st.recent_sell_vol
@@ -206,7 +213,7 @@ class ExchangeFlowEngine:
         st.flow_strength_score = round(max(0, min(100, base_strength + vol_boost + momentum_boost)), 1)
 
         # ── 5-level flow signal (spec thresholds) ──
-        if st.total_trades < _MIN_TRADES_FOR_SIGNAL:
+        if st.window_trades < _MIN_TRADES_FOR_SIGNAL:
             st.flow_signal = "neutral"
         elif st.flow_ratio > _FLOW_RATIO_BUY:
             st.flow_signal = "buy"
@@ -292,6 +299,7 @@ class ExchangeFlowEngine:
             "recent_net_delta": round(st.recent_net_delta, 2),
             # Debug / validation
             "total_trades": st.total_trades,
+            "window_trades": st.window_trades,
             "source_label": st.source_label,
             "vol_24h": st.vol_24h,
             "vol_24h_valid": vol_24h_valid,

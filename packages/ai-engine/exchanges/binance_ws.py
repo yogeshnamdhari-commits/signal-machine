@@ -27,11 +27,13 @@ class BinanceWebSocket:
     def __init__(self) -> None:
         self._session: Optional[aiohttp.ClientSession] = None
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._public_ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._market_ws: Optional[websockets.WebSocketClientProtocol] = None
         self._callback: Optional[Callable] = None
         self._running = False
         self._connected = False
-        self._reconnect_delay = 1
-        self._max_reconnect_delay = 120
+        self._reconnect_delay = {"public": 1.0, "market": 1.0}
+        self._max_reconnect_delay = 120.0
         self._last_pong = 0.0
         self._connect_task: Optional[asyncio.Task] = None
         self._flush_task: Optional[asyncio.Task] = None
@@ -59,7 +61,7 @@ class BinanceWebSocket:
         self._callback = callback
         self._running = True
         self._ensure_session()
-        self._connect_task = asyncio.create_task(self._connect_loop(), name="ws_connect")
+        self._connect_task = asyncio.create_task(self._connect_both_loop(), name="ws_connect")
         self._flush_task = asyncio.create_task(self._flush_loop(), name="ws_flush")
         logger.info("WebSocket client started")
 
@@ -76,11 +78,12 @@ class BinanceWebSocket:
     async def stop(self) -> None:
         logger.info("WebSocket stopping…")
         self._running = False
-        if self._ws:
-            try:
-                await self._ws.close()
-            except Exception:
-                pass
+        for ws in (self._ws, self._public_ws, self._market_ws):
+            if ws:
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
         for task in (self._connect_task, self._flush_task):
             if task and not task.done():
                 task.cancel()
@@ -91,42 +94,56 @@ class BinanceWebSocket:
         if self._session and not self._session.closed:
             await self._session.close()
         self._ws = None
+        self._public_ws = None
+        self._market_ws = None
         self._session = None
         logger.info("WebSocket client stopped")
 
-    async def _connect_loop(self) -> None:
+    async def _connect_both_loop(self) -> None:
+        """Maintain separate production Public and Market websocket routes."""
+        await asyncio.gather(
+            self._connect_loop("public"),
+            self._connect_loop("market"),
+        )
+
+    async def _connect_loop(self, route: str) -> None:
         while self._running:
             try:
-                await self._connect()
+                await self._connect(route)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 self._disconnect_count += 1
-                logger.error("WS connect failed: {} — retry in {}s (disconnects={})", exc, self._reconnect_delay, self._disconnect_count)
-                await asyncio.sleep(self._reconnect_delay)
-                self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
-                if self._disconnect_count > 50:
-                    logger.warning("⚠️ WS disconnect storm ({} disconnects) — backing off 60s", self._disconnect_count)
-                    await asyncio.sleep(60)
-                    self._disconnect_count = 0
+                delay = self._reconnect_delay.get(route, 1.0)
+                logger.error(
+                    "WS {} connect failed: {} — retry in {:.1f}s (disconnects={})",
+                    route, exc, delay, self._disconnect_count,
+                )
+                await asyncio.sleep(delay)
+                self._reconnect_delay[route] = min(delay * 2.0, self._max_reconnect_delay)
 
-    async def _connect(self) -> None:
-        global_streams = list(config.scanner.global_streams) if hasattr(config.scanner, "global_streams") else []
-        all_globals = ["!ticker@arr"] + global_streams
-        streams_param = "/".join(all_globals)
-        url = f"{config.binance.ws_url}/stream?streams={streams_param}"
-        logger.info("WS connecting → {}", url)
+    async def _connect(self, route: str) -> None:
+        if route not in {"public", "market"}:
+            raise ValueError(f"Unsupported websocket route: {route}")
+
+        base = config.binance.ws_url.rstrip("/")
+        url = f"{base}/{route}/stream"
+        logger.info("WS {} connecting → {}", route.upper(), url)
 
         async with websockets.connect(url, ping_interval=30, ping_timeout=20, close_timeout=10) as ws:
             async with self._lock:
-                self._ws = ws
+                if route == "public":
+                    self._public_ws = ws
+                    self._ws = ws
+                else:
+                    self._market_ws = ws
                 self._connected = True
-            self._reconnect_delay = 1
-            self._disconnect_count = 0
+
+            self._reconnect_delay[route] = 1.0
             self._reconnect_count += 1
             self._connected_at = time.time()
             self._last_pong = time.time()
-            await self._subscribe_all()
+            await self._subscribe_route(ws, route)
 
             async for raw in ws:
                 if not self._running:
@@ -135,34 +152,54 @@ class BinanceWebSocket:
                     msg = json.loads(raw)
                     await self._dispatch(msg)
                 except json.JSONDecodeError:
-                    pass
+                    logger.warning("WS {} non-JSON message ignored", route)
                 except Exception as exc:
-                    logger.error("WS message error: {}", exc)
+                    logger.error("WS {} message error: {}", route, exc)
 
             async with self._lock:
-                self._connected = False
-            logger.warning("WS disconnected")
+                if route == "public":
+                    self._public_ws = None
+                else:
+                    self._market_ws = None
+                self._connected = bool(self._public_ws or self._market_ws)
+            logger.warning("WS {} disconnected", route.upper())
 
-    async def _subscribe_all(self) -> None:
+    async def _subscribe_route(self, ws: websockets.WebSocketClientProtocol, route: str) -> None:
         from database import db
 
         symbols = await db.get_active_symbols()
-        stream_types: List[str] = list(config.scanner.ws_streams)
+        configured = list(config.scanner.ws_streams)
+
+        if route == "public":
+            stream_types = [s for s in configured if s in {"bookTicker", "depth20@100ms", "depth"}]
+        else:
+            stream_types = [s for s in configured if s in {"aggTrade", "trade", "openInterest"}]
+
         names: List[str] = []
         for s in symbols[: config.scanner.max_symbols]:
             sym = s["symbol"].lower()
             for st in stream_types:
                 names.append(f"{sym}@{st}")
 
+        if route == "market":
+            global_streams = ["!ticker@arr"]
+            if hasattr(config.scanner, "global_streams"):
+                global_streams.extend(list(config.scanner.global_streams))
+            names.extend(global_streams)
+
         for i in range(0, len(names), 200):
             batch = names[i : i + 200]
-            await self._ws.send(json.dumps({
+            await ws.send(json.dumps({
                 "method": "SUBSCRIBE",
                 "params": batch,
                 "id": i + 1,
             }))
-        subscribed = len(names) // len(stream_types) if stream_types else 0
-        logger.info("Subscribed to {} streams for {} symbols ({} streams/symbol)", len(names), subscribed, len(stream_types))
+
+        subscribed_symbols = len(symbols[: config.scanner.max_symbols])
+        logger.info(
+            "Subscribed {} route: {} streams for {} symbols ({} per-symbol stream types)",
+            route.upper(), len(names), subscribed_symbols, len(stream_types),
+        )
 
     async def _dispatch(self, msg: Dict) -> None:
         stream = msg.get("stream", "")
@@ -202,6 +239,8 @@ class BinanceWebSocket:
             "quantity": float(d["q"]),
             "is_buyer_maker": d["m"],
             "trade_time": d["T"],
+            "exchange_event_time": d.get("E", d["T"]),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "aggTrade",
             "data_quality": "REAL",
@@ -217,7 +256,9 @@ class BinanceWebSocket:
             "symbol": d["s"],
             "bids": [[d["b"], d["B"]]],
             "asks": [[d["a"], d["A"]]],
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(d.get("E", time.time() * 1000)),
+            "exchange_event_time": int(d.get("E", time.time() * 1000)),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "bookTicker",
             "depth_quality": "L1",
@@ -231,10 +272,15 @@ class BinanceWebSocket:
             "symbol": d["s"],
             "bids": d.get("b", []),
             "asks": d.get("a", []),
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(d.get("E", time.time() * 1000)),
+            "exchange_event_time": int(d.get("E", time.time() * 1000)),
+            "received_time": int(time.time() * 1000),
+            "last_update_id": int(d.get("u", 0) or 0),
+            "first_update_id": int(d.get("U", 0) or 0),
+            "previous_update_id": int(d.get("pu", 0) or 0),
             "source": "binance",
-            "feed": "depth",
-            "depth_quality": "L2",
+            "feed": "depth20@100ms",
+            "depth_quality": "L2_TOP20_SNAPSHOT",
             "synthetic": False,
         }
         if self._callback:
@@ -274,7 +320,9 @@ class BinanceWebSocket:
             "index_price": index_price,
             "funding_rate": funding_rate,
             "next_funding_time": d.get("T", 0),
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(d.get("E", time.time() * 1000)),
+            "exchange_event_time": int(d.get("E", time.time() * 1000)),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "markPrice",
             "data_quality": "REAL",
@@ -288,7 +336,9 @@ class BinanceWebSocket:
             "mark_price": mark_price,
             "index_price": index_price,
             "estimated_settle_price": 0,
-            "timestamp": int(time.time() * 1000),
+            "timestamp": int(d.get("E", time.time() * 1000)),
+            "exchange_event_time": int(d.get("E", time.time() * 1000)),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "markPrice",
             "data_quality": "REAL",
@@ -305,6 +355,8 @@ class BinanceWebSocket:
             "quantity": float(order["q"]),
             "order_type": order.get("o", "MARKET"),
             "timestamp": order.get("T", int(time.time() * 1000)),
+            "exchange_event_time": order.get("E", order.get("T", int(time.time() * 1000))),
+            "received_time": int(time.time() * 1000),
             "source": "binance",
             "feed": "forceOrder",
             "data_quality": "REAL",
@@ -335,6 +387,7 @@ class BinanceWebSocket:
                 "open": float(t.get("o", 0) or 0),
                 "count": int(t.get("n", 0) or 0),
                 "last_update": time.time(),
+                "exchange_event_time": int(t.get("E", time.time() * 1000)),
                 "data_quality": "REAL",
                 "source": "binance",
                 "feed": "ticker24h",
@@ -459,11 +512,13 @@ class BinanceWebSocket:
         data = await self._get("/fapi/v1/klines", {"symbol": symbol, "interval": interval, "limit": limit})
         if not data:
             return []
+        now_ms = int(time.time() * 1000)
         return [
             {
                 "open_time": k[0], "open": float(k[1]), "high": float(k[2]),
                 "low": float(k[3]), "close": float(k[4]), "volume": float(k[5]),
                 "close_time": k[6], "quote_volume": float(k[7]), "trades": k[8],
+                "is_closed": int(k[6]) <= now_ms,
                 "source": "binance", "feed": "klines", "data_quality": "REAL",
             }
             for k in data
@@ -480,7 +535,9 @@ class BinanceWebSocket:
         if oi <= 0:
             return
 
-        now = time.time()
+        received_ms = int(time.time() * 1000)
+        event_ms = int(d.get("E", received_ms) or received_ms)
+        event_ts = event_ms / 1000.0
         cached = self._oi_cache.get(sym)
         if cached:
             prev_oi = cached.get("oi", 0)
@@ -493,7 +550,9 @@ class BinanceWebSocket:
             "oi": oi,
             "prev_oi": prev_oi,
             "change_pct": change_pct,
-            "ts": now,
+            "ts": event_ts,
+            "exchange_event_time": event_ms,
+            "received_time": received_ms,
             "source": "binance",
             "feed": "openInterest",
             "data_quality": "REAL",
@@ -504,7 +563,9 @@ class BinanceWebSocket:
                 "symbol": sym,
                 "open_interest": oi,
                 "change_pct": change_pct,
-                "timestamp": int(now * 1000),
+                "timestamp": event_ms,
+                "exchange_event_time": event_ms,
+                "received_time": received_ms,
                 "source": "binance",
                 "feed": "openInterest",
                 "data_quality": "REAL",
@@ -523,9 +584,12 @@ class BinanceWebSocket:
                 "symbol": symbol,
                 "open_interest": cached["oi"],
                 "change_pct": cached.get("change_pct", 0),
+                "change_5m_pct": None,
                 "source": "websocket",
                 "data_quality": "REAL",
                 "timestamp": int(cached.get("ts", time.time()) * 1000),
+                "exchange_event_time": int(cached.get("exchange_event_time", cached.get("ts", time.time()) * 1000)),
+                "received_time": int(time.time() * 1000),
             }
         data = await self._get("/fapi/v1/openInterest", {"symbol": symbol}, use_data_url=True)
         if not data:
@@ -534,9 +598,54 @@ class BinanceWebSocket:
             "symbol": data["symbol"],
             "open_interest": float(data["openInterest"]),
             "change_pct": 0,
+            "change_5m_pct": None,
             "source": "rest",
             "data_quality": "REAL",
             "timestamp": int(time.time() * 1000),
+        }
+
+    async def get_open_interest_5m_change(self, symbol: str) -> Optional[Dict]:
+        """Return authentic 5-minute OI change from Binance Open Interest Statistics.
+
+        This endpoint is historical aggregate data, not a flow/price proxy. If the
+        exchange does not return two valid 5m observations, the change is unavailable.
+        """
+        data = await self._get(
+            "/futures/data/openInterestHist",
+            {"symbol": symbol, "period": "5m", "limit": 2},
+            use_data_url=True,
+        )
+        if not isinstance(data, list) or len(data) < 2:
+            return None
+
+        rows = []
+        for item in data:
+            try:
+                oi = float(item.get("sumOpenInterest", 0))
+                ts = int(item.get("timestamp", 0))
+            except (TypeError, ValueError):
+                continue
+            if oi > 0 and ts > 0:
+                rows.append((ts, oi))
+        rows.sort()
+
+        if len(rows) < 2 or rows[-2][1] <= 0:
+            return None
+
+        prev_ts, prev_oi = rows[-2]
+        latest_ts, latest_oi = rows[-1]
+        change_pct = (latest_oi - prev_oi) / prev_oi * 100.0
+        return {
+            "symbol": symbol,
+            "period": "5m",
+            "change_pct": change_pct,
+            "previous_oi": prev_oi,
+            "latest_oi": latest_oi,
+            "previous_timestamp": prev_ts,
+            "latest_timestamp": latest_ts,
+            "source": "binance",
+            "feed": "openInterestHist",
+            "data_quality": "REAL",
         }
 
     async def get_funding_rate(self, symbol: str, limit: int = 10) -> List[Dict]:
