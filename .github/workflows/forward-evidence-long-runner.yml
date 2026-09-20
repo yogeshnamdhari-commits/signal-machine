@@ -31,6 +31,10 @@ jobs:
           git -C "$ROOT" fetch --no-tags origin "$TARGET_SHA"
           git -C "$ROOT" checkout --detach "$TARGET_SHA"
           cd "$ROOT/packages/ai-engine"
+          if [[ "$(git -C "$ROOT" rev-parse HEAD)" != "$TARGET_SHA" ]]; then exit 1; fi
+          if [[ ! -f "data/reports/forward_sessions/session_C.json" ]]; then
+            rm -f data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
+          fi
           python3 -m pip install -r requirements.txt
           python3 run_forward_session.py --session C --hours 100 --create-freeze
 
@@ -90,7 +94,7 @@ jobs:
           p = Path("data/reports/forward_sessions/session_C.json")
           a = json.loads(p.read_text())
           assert a["status"] == "COMPLETED", a
-          assert a["code_commit_sha"] == "d86f5a127b43650bc9d8e145cd02729ba522ead7", a
+          assert a["code_commit_sha"] == "${{ github.sha }}", a
           assert a["real_orders"] is False, a
           assert a["orders_policy"] == "NO_REAL_ORDERS", a
           print("Session C immutable completion verified.")
@@ -120,6 +124,10 @@ jobs:
           mkdir -p "$ROOT/packages/ai-engine/data"
           cp -f "$CROOT/packages/ai-engine/data/parameter_freeze.json" "$ROOT/packages/ai-engine/data/parameter_freeze.json"
           cd "$ROOT/packages/ai-engine"
+          if [[ "$(git -C "$ROOT" rev-parse HEAD)" != "$TARGET_SHA" ]]; then exit 1; fi
+          if [[ ! -f "data/reports/forward_sessions/session_D.json" ]]; then
+            rm -f data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
+          fi
           python3 scanner/parameter_freeze.py
           python3 run_forward_session.py --session D --hours 100
 
@@ -182,13 +190,13 @@ jobs:
           for session in ("C", "D"):
               artifact = json.loads((root / f"session_{session}.json").read_text())
               assert artifact["status"] == "COMPLETED", artifact
-              assert artifact["code_commit_sha"] == "d86f5a127b43650bc9d8e145cd02729ba522ead7", artifact
+              assert artifact["code_commit_sha"] == "${{ github.sha }}", artifact
               assert artifact["real_orders"] is False, artifact
               assert artifact["orders_policy"] == "NO_REAL_ORDERS", artifact
 
           report = verify_forward_evidence_report(
               root / "forward_aggregate.json",
-              expected_commit="d86f5a127b43650bc9d8e145cd02729ba522ead7",
+              expected_commit="${{ github.sha }}",
           )
           print("Immutable C/D aggregate verified.")
           print(json.dumps({
@@ -217,7 +225,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-evidence-d86f5a127b43650bc9d8e145cd02729ba522ead7
+          name: forward-evidence-${{ github.sha }}
           path: forward-evidence-archive
           if-no-files-found: error
           retention-days: 90
