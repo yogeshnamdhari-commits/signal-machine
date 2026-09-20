@@ -77,174 +77,166 @@ class FVGDetect:
 
     async def process_kline(self, symbol: str, kline: Dict) -> Optional[FVGEvent]:
         """
-        Process a new closed kline and check for FVG formation.
-        Needs at least 3 consecutive closed candles to detect FVGs.
+        Process one closed Binance kline in its own timeframe.
+        FVG detection never mixes 1m/5m/15m/1h/4h candles.
         """
         if not kline.get("is_closed", False):
             return None
 
         st = self._states.setdefault(symbol, FVGState(symbol=symbol))
+        interval = str(kline.get("interval", "5m"))
+        candles = st.recent_candles_by_interval.setdefault(interval, [])
+        candles.append(kline)
+        if len(candles) > 50:
+            st.recent_candles_by_interval[interval] = candles[-50:]
+            candles = st.recent_candles_by_interval[interval]
 
-        # Store recent closes for FVG detection
-        if not hasattr(st, '_recent_candles'):
-            st._recent_candles = []
-        st._recent_candles.append(kline)
-        if len(st._recent_candles) > 50:
-            st._recent_candles = st._recent_candles[-50:]
-
-        # Need at least 3 candles to detect FVG
-        if len(st._recent_candles) < 3:
+        if len(candles) < 3:
             return None
 
-        candles = st._recent_candles
-        c_prev = candles[-3]  # Candle i-1
-        c_mid = candles[-2]   # Candle i (the middle/filling candle)
-        c_curr = candles[-1]  # Candle i+1 (current candle)
+        c_prev = candles[-3]
+        c_mid = candles[-2]
+        c_curr = candles[-1]
 
-        o_prev, h_prev, l_prev, c_prev_v = (
-            c_prev.get("open", 0), c_prev.get("high", 0),
-            c_prev.get("low", 0), c_prev.get("close", 0)
-        )
-        o_mid, h_mid, l_mid, c_mid_v = (
-            c_mid.get("open", 0), c_mid.get("high", 0),
-            c_mid.get("low", 0), c_mid.get("close", 0)
-        )
-        o_curr, h_curr, l_curr, c_curr_v = (
-            c_curr.get("open", 0), c_curr.get("high", 0),
-            c_curr.get("low", 0), c_curr.get("close", 0)
-        )
+        h_prev = float(c_prev.get("high", 0) or 0)
+        l_prev = float(c_prev.get("low", 0) or 0)
+        l_curr = float(c_curr.get("low", 0) or 0)
+        h_curr = float(c_curr.get("high", 0) or 0)
+        c_mid_v = float(c_mid.get("close", 0) or 0)
+        c_curr_v = float(c_curr.get("close", 0) or 0)
 
         if any(v <= 0 for v in [h_prev, l_prev, h_curr, l_curr]):
             return None
 
-        # Price for % calculation
         price = c_mid_v if c_mid_v > 0 else c_curr_v
         if price <= 0:
             return None
 
-        # ── Bullish FVG: gap between prev high and curr low ──
-        # Candle i-1 high < Candle i+1 low → demand imbalance (gap up)
+        bull_list = st.unfilled_bullish_by_interval.setdefault(interval, [])
+        bear_list = st.unfilled_bearish_by_interval.setdefault(interval, [])
+
+        def event_timestamp() -> float:
+            close_ms = float(kline.get("close_time", 0) or 0)
+            if close_ms > 0:
+                return close_ms / 1000.0
+            open_ms = float(kline.get("open_time", 0) or 0)
+            return open_ms / 1000.0 if open_ms > 0 else time.time()
+
+        # Bullish FVG.
         if l_curr > h_prev:
             gap_size = l_curr - h_prev
-            gap_pct = (gap_size / price) * 100
-
+            gap_pct = (gap_size / price) * 100.0
             if gap_pct >= _MIN_GAP_PCT:
-                # Strength: gap_size / ATR (use recent candle range as ATR proxy)
                 avg_range = np.mean([
-                    max(c.get("high", 0) - c.get("low", 0), 0.001)
-                    for c in candles[-10:]
+                    max(float(cc.get("high", 0) or 0) - float(cc.get("low", 0) or 0), 0.001)
+                    for cc in candles[-10:]
                 ]) if len(candles) >= 5 else gap_size
                 strength = min(gap_size / max(avg_range, 0.001), 1.0)
-
-                interval = kline.get("interval", "5m")
                 event = FVGEvent(
                     symbol=symbol,
                     fvg_type="bullish",
-                    gap_high=l_curr,   # Upper boundary of gap
-                    gap_low=h_prev,    # Lower boundary of gap
+                    gap_high=l_curr,
+                    gap_low=h_prev,
                     gap_size=gap_size,
                     gap_pct=gap_pct,
                     strength=strength,
-                    timestamp=time.time(),
+                    timestamp=event_timestamp(),
                     interval=interval,
                     filled=False,
                     fill_pct=0.0,
-                    origin_candle_idx=len(st._recent_candles) - 2,
+                    origin_candle_idx=len(candles) - 2,
                 )
                 st.events.append(event)
+                bull_list.append(event)
                 st.unfilled_bullish.append(event)
                 st.last_fvg_side = "bullish"
-
+                self._trim_interval_lists(st, interval)
                 self._trim_events(st)
-                logger.debug("🟢 BULLISH FVG: {} {} gap={:.4f} ({:.3f}%) strength={:.2f}",
-                             symbol, interval, gap_size, gap_pct, strength)
                 return event
 
-        # ── Bearish FVG: gap between prev low and curr high ──
-        # Candle i-1 low > Candle i+1 high → supply imbalance (gap down)
+        # Bearish FVG.
         elif h_curr < l_prev:
             gap_size = l_prev - h_curr
-            gap_pct = (gap_size / price) * 100
-
+            gap_pct = (gap_size / price) * 100.0
             if gap_pct >= _MIN_GAP_PCT:
                 avg_range = np.mean([
-                    max(c.get("high", 0) - c.get("low", 0), 0.001)
-                    for c in candles[-10:]
+                    max(float(cc.get("high", 0) or 0) - float(cc.get("low", 0) or 0), 0.001)
+                    for cc in candles[-10:]
                 ]) if len(candles) >= 5 else gap_size
                 strength = min(gap_size / max(avg_range, 0.001), 1.0)
-
-                interval = kline.get("interval", "5m")
                 event = FVGEvent(
                     symbol=symbol,
                     fvg_type="bearish",
-                    gap_high=l_prev,   # Upper boundary of gap
-                    gap_low=h_curr,    # Lower boundary of gap
+                    gap_high=l_prev,
+                    gap_low=h_curr,
                     gap_size=gap_size,
                     gap_pct=gap_pct,
                     strength=strength,
-                    timestamp=time.time(),
+                    timestamp=event_timestamp(),
                     interval=interval,
                     filled=False,
                     fill_pct=0.0,
-                    origin_candle_idx=len(st._recent_candles) - 2,
+                    origin_candle_idx=len(candles) - 2,
                 )
                 st.events.append(event)
+                bear_list.append(event)
                 st.unfilled_bearish.append(event)
                 st.last_fvg_side = "bearish"
-
+                self._trim_interval_lists(st, interval)
                 self._trim_events(st)
-                logger.debug("🔴 BEARISH FVG: {} {} gap={:.4f} ({:.3f}%) strength={:.2f}",
-                             symbol, interval, gap_size, gap_pct, strength)
                 return event
 
-        # ── Update fill status for existing unfilled FVGs ──
-        self._update_fills(st, l_curr, h_curr)
-
+        self._update_fills(st, interval, l_curr, h_curr)
         return None
 
-    def _update_fills(self, st: FVGState, current_low: float, current_high: float) -> None:
-        """Check if current price action has filled any existing FVGs."""
+    def _update_fills(self, st: FVGState, interval: str, current_low: float, current_high: float) -> None:
+        """Update only FVGs created on the same authenticated timeframe."""
         now = time.time()
+        bull = st.unfilled_bullish_by_interval.setdefault(interval, [])
+        bear = st.unfilled_bearish_by_interval.setdefault(interval, [])
 
-        for fvg_list in [st.unfilled_bullish, st.unfilled_bearish]:
-            filled_indices = []
-            for i, fvg in enumerate(fvg_list):
-                # Expire old FVGs
+        for fvg_list in (bull, bear):
+            keep = []
+            for fvg in fvg_list:
                 if now - fvg.timestamp > _FVG_EXPIRY:
-                    filled_indices.append(i)
                     continue
-
-                # Check fill: price enters the gap zone
                 if fvg.fvg_type == "bullish":
-                    # Bullish FVG fills when price drops into the gap (gap_low to gap_high)
                     if current_low <= fvg.gap_high:
                         if current_low <= fvg.gap_low:
                             fvg.fill_pct = 100.0
                             fvg.filled = True
                         else:
-                            # Partial fill
-                            fill_depth = fvg.gap_high - current_low
-                            fvg.fill_pct = min((fill_depth / fvg.gap_size) * 100, 100.0)
-                            if fvg.fill_pct >= 90:
+                            depth = fvg.gap_high - current_low
+                            fvg.fill_pct = min((depth / fvg.gap_size) * 100.0, 100.0)
+                            if fvg.fill_pct >= 90.0:
                                 fvg.filled = True
                 else:
-                    # Bearish FVG fills when price rises into the gap (gap_low to gap_high)
                     if current_high >= fvg.gap_low:
                         if current_high >= fvg.gap_high:
                             fvg.fill_pct = 100.0
                             fvg.filled = True
                         else:
-                            fill_depth = current_high - fvg.gap_low
-                            fvg.fill_pct = min((fill_depth / fvg.gap_size) * 100, 100.0)
-                            if fvg.fill_pct >= 90:
+                            depth = current_high - fvg.gap_low
+                            fvg.fill_pct = min((depth / fvg.gap_size) * 100.0, 100.0)
+                            if fvg.fill_pct >= 90.0:
                                 fvg.filled = True
+                if not fvg.filled:
+                    keep.append(fvg)
+            fvg_list[:] = keep
 
-            # Remove filled/expired FVGs
-            for i in sorted(filled_indices, reverse=True):
-                fvg_list.pop(i)
+        st.unfilled_bullish = [e for vals in st.unfilled_bullish_by_interval.values() for e in vals]
+        st.unfilled_bearish = [e for vals in st.unfilled_bearish_by_interval.values() for e in vals]
+        st.events = [e for e in st.events if not e.filled and (now - e.timestamp) < _FVG_EXPIRY]
 
-        # Remove from main events list too
-        st.events = [f for f in st.events if not f.filled and (now - f.timestamp) < _FVG_EXPIRY]
+    def _trim_interval_lists(self, st: FVGState, interval: str) -> None:
+        bull = st.unfilled_bullish_by_interval.setdefault(interval, [])
+        bear = st.unfilled_bearish_by_interval.setdefault(interval, [])
+        if len(bull) > 50:
+            bull[:] = bull[-25:]
+        if len(bear) > 50:
+            bear[:] = bear[-25:]
+        st.unfilled_bullish = [e for vals in st.unfilled_bullish_by_interval.values() for e in vals]
+        st.unfilled_bearish = [e for vals in st.unfilled_bearish_by_interval.values() for e in vals]
 
     def _trim_events(self, st: FVGState) -> None:
         """Keep event lists bounded."""
