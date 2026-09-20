@@ -5640,6 +5640,60 @@ class DeltaTerminalEngine:
                     "sweep": "none", "sweep_events": 0,
                     "total_trades": ef_data.get("total_trades", 0),
                 }
+        # ── Authentic derived display metrics ───────────────────────────────
+        # 1h/4h changes come only from closed Binance candles. No placeholder zeros.
+        def _closed_change(interval: str) -> float | None:
+            kl = sd.get("klines", {}).get(interval, [])
+            if len(kl) < 2:
+                return None
+            try:
+                prev = float(kl[-2].get("close", 0) or 0)
+                cur = float(kl[-1].get("close", 0) or 0)
+                if prev <= 0 or cur <= 0:
+                    return None
+                return (cur - prev) / prev * 100.0
+            except (TypeError, ValueError):
+                return None
+
+        change_1h = _closed_change("1h")
+        change_4h = _closed_change("4h")
+
+        # L1 spread comes from the most recent real bookTicker/depth event.
+        book = sd.get("orderbook", {})
+        spread = None
+        try:
+            bids = book.get("bids", [])
+            asks = book.get("asks", [])
+            if bids and asks:
+                bb = float(bids[0][0]); ba = float(asks[0][0])
+                if bb > 0 and ba >= bb:
+                    spread = ba - bb
+        except (TypeError, ValueError, IndexError):
+            spread = None
+
+        # Observed liquidation clusters come only from real forceOrder events.
+        # They are historical observed clusters, not a prediction of future liquidations.
+        liq_cluster_down = None
+        liq_cluster_up = None
+        try:
+            clusters = (liq_data or {}).get("clusters", [])
+            below = [
+                float(x.get("price", 0))
+                for x in clusters
+                if float(x.get("price", 0) or 0) > 0 and float(x.get("price", 0)) < float(price or 0)
+            ]
+            above = [
+                float(x.get("price", 0))
+                for x in clusters
+                if float(x.get("price", 0) or 0) > float(price or 0)
+            ]
+            if below:
+                liq_cluster_down = max(below)
+            if above:
+                liq_cluster_up = min(above)
+        except (TypeError, ValueError, AttributeError):
+            pass
+
         # Convert OI from contracts to USD: contracts × mark_price = USD value
         # Use cached mark price (more accurate than last trade price for valuation)
         mark = self._mark_prices.get(sym, 0)
@@ -5660,16 +5714,27 @@ class DeltaTerminalEngine:
             "volume": vol,
             # ── Binance full market data (API returns strings, cast to float) ──
             # Use dynamic precision to preserve accuracy for low-price tokens
-            "mark_price": _price_round(float(self._premium_data.get(sym, {}).get("mark_price", 0)), price) if sym in self._premium_data else _price_round(price, price),
-            "index_price": _price_round(float(self._premium_data.get(sym, {}).get("index_price", 0)), price) if sym in self._premium_data else _price_round(price, price),
-            "funding_countdown": max(0, int((self._premium_data.get(sym, {}).get("next_funding_time", 0) - int(time.time() * 1000)) / 1000)) if sym in self._premium_data and self._premium_data.get(sym, {}).get("next_funding_time", 0) > 0 else 0,
-            "high_24h": _price_round(float(_eff_ticker.get("high") or 0), price),
-            "low_24h": _price_round(float(_eff_ticker.get("low") or 0), price),
-            "volume_btc": round(float(_eff_ticker.get("volume") or 0), 2),
-            "change_24h": round(float(_eff_ticker.get("change_pct") or 0), 2),
-            "change_24h_raw": round(float(_eff_ticker.get("price_change") or 0), 4),
-            "open_24h": _price_round(float(_eff_ticker.get("open") or 0), price),
-            "trades_24h": int(_eff_ticker.get("count") or 0),
+            "mark_price": (
+                _price_round(float(self._premium_data.get(sym, {}).get("mark_price")), price)
+                if self._premium_data.get(sym, {}).get("mark_price") is not None
+                and float(self._premium_data.get(sym, {}).get("mark_price") or 0) > 0 else None
+            ),
+            "index_price": (
+                _price_round(float(self._premium_data.get(sym, {}).get("index_price")), price)
+                if self._premium_data.get(sym, {}).get("index_price") is not None
+                and float(self._premium_data.get(sym, {}).get("index_price") or 0) > 0 else None
+            ),
+            "funding_countdown": (
+                max(0, int((self._premium_data.get(sym, {}).get("next_funding_time", 0) - int(time.time() * 1000)) / 1000))
+                if self._premium_data.get(sym, {}).get("next_funding_time", 0) > 0 else None
+            ),
+            "high_24h": _price_round(float(_eff_ticker.get("high")), price) if _eff_ticker.get("high") else None,
+            "low_24h": _price_round(float(_eff_ticker.get("low")), price) if _eff_ticker.get("low") else None,
+            "volume_btc": round(float(_eff_ticker.get("volume")), 2) if _eff_ticker.get("volume") else None,
+            "change_24h": round(float(_eff_ticker.get("change_pct")), 2) if _eff_ticker.get("change_pct") is not None else None,
+            "change_24h_raw": round(float(_eff_ticker.get("price_change")), 4) if _eff_ticker.get("price_change") is not None else None,
+            "open_24h": _price_round(float(_eff_ticker.get("open")), price) if _eff_ticker.get("open") else None,
+            "trades_24h": int(_eff_ticker.get("count")) if _eff_ticker.get("count") is not None else None,
             "signal": signal_side,
             "regime": regime,
             # Regime — multi-timeframe fields
@@ -5746,14 +5811,16 @@ class DeltaTerminalEngine:
             "of_absorption": of.get("absorption", "none") if of else "none",
             "of_sweep": of.get("sweep", "none") if of else "none",
             # End orderflow debug
-            "cascade_active": liq_data.get("cascade_active", False) if liq_data else False,
-            "cascade_side": liq_data.get("cascade_side", "") if liq_data else "",
+            "cascade_active": liq_data.get("cascade_active") if liq_data else None,
+            "cascade_side": liq_data.get("cascade_side") if liq_data else None,
             # Liquidation — enhanced fields
-            "long_liq_vol": round(liq_data.get("long_liq_vol", 0), 2) if liq_data else 0,
-            "short_liq_vol": round(liq_data.get("short_liq_vol", 0), 2) if liq_data else 0,
-            "long_liq_count": liq_data.get("long_liq_count", 0) if liq_data else 0,
-            "short_liq_count": liq_data.get("short_liq_count", 0) if liq_data else 0,
-            "cascade_intensity": round(liq_data.get("cascade_intensity", 0), 3) if liq_data else 0,
+            "observed_liq_cluster_down_price": _price_round(liq_cluster_down, price) if liq_cluster_down else None,
+            "observed_liq_cluster_up_price": _price_round(liq_cluster_up, price) if liq_cluster_up else None,
+            "long_liq_vol": round(liq_data.get("long_liq_vol", 0), 2) if liq_data else None,
+            "short_liq_vol": round(liq_data.get("short_liq_vol", 0), 2) if liq_data else None,
+            "long_liq_count": liq_data.get("long_liq_count", 0) if liq_data else None,
+            "short_liq_count": liq_data.get("short_liq_count", 0) if liq_data else None,
+            "cascade_intensity": round(liq_data.get("cascade_intensity", 0), 3) if liq_data else None,
             "cluster_count": liq_data.get("cluster_count", 0) if liq_data else 0,
             "sweep_detected": bool(sweep_det_data and sweep_det_data.get("recent_sweep_count", 0) > 0),
             "sweep_direction": ("up" if sweep_det_data and sweep_det_data.get("last_sweep_side") == "low_sweep"
@@ -5789,9 +5856,9 @@ class DeltaTerminalEngine:
             "timestamp": ts,
             # ── Additional dashboard fields ──
             "volume_24h": round(vol, 2) if vol > 0 else None,
-            "change_1h": 0.0,  # computed from klines below
-            "change_4h": 0.0,  # computed from klines below
-            "spread": 0.0,  # computed from best bid/ask if available
+            "change_1h": round(change_1h, 4) if change_1h is not None else None,
+            "change_4h": round(change_4h, 4) if change_4h is not None else None,
+            "spread": round(spread, 8) if spread is not None else None,
             "confidence": round(sig.get("confidence", 0) if sig else 0, 3),
             "institutional_score": round(sig.get("institutional_score", 0) if sig else 0, 1),
             "absorption_score": round(of.get("absorption_score", 0) if of else 0, 2),
