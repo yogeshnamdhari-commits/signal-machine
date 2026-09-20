@@ -669,10 +669,27 @@ class DeltaTerminalEngine:
         if not sym or sym not in self.active_symbols:
             return
         sd = self.symbol_data.setdefault(
-            sym, {"trades": [], "orderbook": {"bids": [], "asks": []}, "klines": {}, "ts": 0}
+            sym,
+            {
+                "trades": [],
+                "orderbook": {"bids": [], "asks": []},
+                "klines": {},
+                "ts": 0,
+                "source_times": {},
+            },
         )
+        sd.setdefault("source_times", {})
         sd["ts"] = time.time()
+        # Per-source exchange timestamps are maintained separately from the row
+        # snapshot time so the presentation layer can suppress stale metrics.
         try:
+            event_ms = data.get("exchange_event_time", data.get("timestamp"))
+            if event_ms:
+                try:
+                    event_sec = float(event_ms) / 1000.0 if float(event_ms) > 10_000_000_000 else float(event_ms)
+                    sd["source_times"][event] = event_sec
+                except (TypeError, ValueError):
+                    pass
             # ── Record data freshness tick ──
             if event in ("trade", "depth", "kline"):
                 self.data_freshness.record_tick("binance")
@@ -740,6 +757,12 @@ class DeltaTerminalEngine:
                     await self.absorption.process_trades(sym, sd["trades"][-20:], sd["orderbook"])
             elif event == "kline":
                 iv = data.get("interval", "5m")
+                if not data.get("is_closed", True):
+                    return
+                # Use the candle close time as the freshness anchor for derived
+                # regime/FVG metrics, never local process time.
+                if data.get("close_time"):
+                    sd["source_times"][f"kline_{iv}"] = float(data["close_time"]) / 1000.0
                 kl = sd["klines"].setdefault(iv, [])
                 # ── DIAG-1: Duplicate kline detection ──
                 _new_ot = data.get("open_time", 0)
