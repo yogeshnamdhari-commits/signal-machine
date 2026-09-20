@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_SHA: \${{ github.sha }}
+  TARGET_SHA: ${{ github.sha }}
   REPO_URL: https://github.com/yogeshnamdhari-commits/signal-machine.git
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-c-state-1-\${{ github.run_id }}
+          name: forward-c-state-1-${{ github.run_id }}
           path: |
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
@@ -60,7 +60,7 @@ jobs:
       - name: Download C segment 1 state
         uses: actions/download-artifact@v4
         with:
-          name: forward-c-state-1-\${{ github.run_id }}
+          name: forward-c-state-1-${{ github.run_id }}
           path: state-in
       - name: Resume C segment 2
         shell: bash
@@ -84,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-c-state-2-\${{ github.run_id }}
+          name: forward-c-state-2-${{ github.run_id }}
           path: |
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
@@ -103,7 +103,7 @@ jobs:
       - name: Download C segment 2 state
         uses: actions/download-artifact@v4
         with:
-          name: forward-c-state-2-\${{ github.run_id }}
+          name: forward-c-state-2-${{ github.run_id }}
           path: state-in
       - name: Resume C segment 3
         shell: bash
@@ -127,7 +127,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-c-state-3-\${{ github.run_id }}
+          name: forward-c-state-3-${{ github.run_id }}
           path: |
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
@@ -146,7 +146,7 @@ jobs:
       - name: Download C segment 3 state
         uses: actions/download-artifact@v4
         with:
-          name: forward-c-state-3-\${{ github.run_id }}
+          name: forward-c-state-3-${{ github.run_id }}
           path: state-in
       - name: Finalize C
         shell: bash
@@ -171,7 +171,7 @@ jobs:
           from pathlib import Path
           a = json.loads(Path("data/reports/forward_sessions/session_C.json").read_text())
           assert a["status"] == "COMPLETED", a
-          assert a["code_commit_sha"] == "\${{ github.sha }}", a
+          assert a["code_commit_sha"] == "${{ github.sha }}", a
           assert a["real_orders"] is False, a
           assert a["orders_policy"] == "NO_REAL_ORDERS", a
           print("Session C immutable completion verified.")
@@ -180,7 +180,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-c-final-\${{ github.run_id }}
+          name: forward-c-final-${{ github.run_id }}
           path: |
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/parameter_freeze.json
             $GITHUB_WORKSPACE/forward-runtime/C/repo/packages/ai-engine/data/reports/paper_trading_state.json
@@ -200,7 +200,7 @@ jobs:
       - name: Download completed C state
         uses: actions/download-artifact@v4
         with:
-          name: forward-c-final-\${{ github.run_id }}
+          name: forward-c-final-${{ github.run_id }}
           path: c-state
       - name: Run D segment 1
         shell: bash
@@ -225,7 +225,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-d-state-1-\${{ github.run_id }}
+          name: forward-d-state-1-${{ github.run_id }}
           path: |
             $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/parameter_freeze.json
             $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
@@ -246,7 +246,7 @@ jobs:
       - name: Download D segment 1 state
         uses: actions/download-artifact@v4
         with:
-          name: forward-d-state-1-\${{ github.run_id }}
+          name: forward-d-state-1-${{ github.run_id }}
           path: state-in
       - name: Resume D segment 2
         shell: bash
@@ -272,7 +272,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-d-state-2-\${{ github.run_id }}
+          name: forward-d-state-2-${{ github.run_id }}
           path: |
             $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/parameter_freeze.json
             $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
@@ -293,7 +293,7 @@ jobs:
       - name: Download D segment 2 state
         uses: actions/download-artifact@v4
         with:
-          name: forward-d-state-2-\${{ github.run_id }}
+          name: forward-d-state-2-${{ github.run_id }}
           path: state-in
       - name: Resume D segment 3
         shell: bash
@@ -319,7 +319,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-d-state-3-\${{ github.run_id }}
+          name: forward-d-state-3-${{ github.run_id }}
           path: |
             $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/parameter_freeze.json
             $GITHUB_WORKSPACE/forward-runtime/D/repo/packages/ai-engine/data/reports/paper_trading_state.json
@@ -339,7 +339,7 @@ jobs:
       - name: Download D segment 3 state
         uses: actions/download-artifact@v4
         with:
-          name: forward-d-state-3-\${{ github.run_id }}
+          name: forward-d-state-3-${{ github.run_id }}
           path: state-in
       - name: Finalize D and verify aggregate
         shell: bash
@@ -369,10 +369,10 @@ jobs:
           for session in ("C", "D"):
               artifact = json.loads((root / f"session_{session}.json").read_text())
               assert artifact["status"] == "COMPLETED", artifact
-              assert artifact["code_commit_sha"] == "\${{ github.sha }}", artifact
+              assert artifact["code_commit_sha"] == "${{ github.sha }}", artifact
               assert artifact["real_orders"] is False, artifact
               assert artifact["orders_policy"] == "NO_REAL_ORDERS", artifact
-          report = verify_forward_evidence_report(root / "forward_aggregate.json", expected_commit="\${{ github.sha }}")
+          report = verify_forward_evidence_report(root / "forward_aggregate.json", expected_commit="${{ github.sha }}")
           print("Immutable C/D aggregate verified.")
           print(json.dumps({
               "total_signals": report["total_signals"],
@@ -387,7 +387,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forward-evidence-\${{ github.sha }}
+          name: forward-evidence-${{ github.sha }}
           path: forward-runtime/D/repo/packages/ai-engine/data/reports/forward_sessions
           if-no-files-found: error
           retention-days: 90
