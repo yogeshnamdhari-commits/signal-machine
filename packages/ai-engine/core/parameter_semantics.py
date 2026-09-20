@@ -127,7 +127,7 @@ def direction_for_parameter(name: str, row: Dict[str, Any]) -> DirectionalFactor
         if value is None or observed_at <= 0:
             return _factor("imbalance", DirectionState.NEUTRAL, 0, "order-book imbalance unavailable", row, "depth", DataQuality.UNAVAILABLE, "exchange")
         state = DirectionState.BUY if value > 0.05 else DirectionState.SELL if value < -0.05 else DirectionState.NEUTRAL
-        return _factor("imbalance", state, min(100, 50 + abs(value) * 100), f"book imbalance={value:+.3f}", row, "depth", DataQuality.LIVE, "exchange")
+        return _factor("imbalance", state, min(100, 50 + abs(value) * 100), f"book imbalance={value:+.3f}", row, "depth", DataQuality.CALCULATED, "exchange")
 
     if key == "sweep":
         detected = bool(row.get("sweep_detected"))
