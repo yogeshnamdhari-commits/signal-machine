@@ -69,7 +69,6 @@ jobs:
           INPUT_PREVIOUS_RUN_ID: ${{inputs.previous_run_id}}
         run: |
           set -euo pipefail
-
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             PHASE="$INPUT_PHASE"
             SEGMENT="$INPUT_SEGMENT"
@@ -85,12 +84,10 @@ jobs:
             PREVIOUS_SEGMENT=""
             PREVIOUS_RUN_ID=""
           fi
-
           [[ "$PHASE" == "C" || "$PHASE" == "D" ]]
           [[ "$SEGMENT" =~ ^[0-9]+$ ]]
           (( SEGMENT >= 1 && SEGMENT <= 58 ))
-          [[ "$TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
-
+          [[ "$TARGET_SHA" =~ ^[0-9a-fA-F]{40}$"]]
           {
             echo "phase=$PHASE"
             echo "segment=$SEGMENT"
@@ -108,16 +105,55 @@ jobs:
           run-id: ${{steps.resolve.outputs.previous_run_id}}
           github-token: ${{github.token}}
           path: state-in
+
       - name: Checkout exact candidate source
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{steps.resolve.outputs.target_sha}}
+
       - name: Verify exact source provenance
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{steps.resolve.outputs.target_sha}}"
+
+      - name: Verify previous immutable state before handoff
+        if: ${{steps.resolve.outputs.previous_run_id != ''}}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/ai-engine
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          phase = "${{steps.resolve.outputs.phase}}"
+          segment = int("${{steps.resolve.outputs.segment}}")
+          previous_phase = "${{steps.resolve.outputs.previous_phase}}"
+          previous_segment = int("${{steps.resolve.outputs.previous_segment}}")
+          target = "${{steps.resolve.outputs.target_sha}}"
+          root = Path("../../state-in")
+          session_path = root / f"session_{previous_phase}.json"
+          assert session_path.is_file(), f"missing immutable session artifact: {session_path}"
+          artifact = json.loads(session_path.read_text(encoding="utf-8"))
+          assert artifact["code_commit_sha"] == target, artifact
+          assert artifact["real_orders"] is False, artifact
+          assert artifact["orders_policy"] == "NO_REAL_ORDERS", artifact
+          if phase == "C":
+              assert previous_phase == "C", (phase, previous_phase)
+              assert previous_segment == segment - 1, (previous_segment, segment)
+              assert artifact["status"] == "RUNNING", artifact
+          else:
+              assert phase == "D", phase
+              assert previous_phase == "C" and previous_segment == 58, (previous_phase, previous_segment)
+              assert artifact["status"] == "COMPLETED", artifact
+              evidence = root / "session_C_evidence"
+              assert evidence.is_dir() and any(evidence.iterdir()), f"missing completed C evidence: {evidence}"
+          for required in ("parameter_freeze.json", "paper_trading_state.json", "paper_trading_trades.csv", "paper_trading_signals.csv"):
+              assert (root / required).is_file(), f"missing immutable state file: {required}"
+          print(f"Verified immutable predecessor {previous_phase}{previous_segment} before starting {phase}{segment} for {target}.")
+          PY
+
       - name: Install AI engine dependencies
         shell: bash
         env:
@@ -126,19 +162,14 @@ jobs:
           set -euo pipefail
           cd packages/ai-engine
           python3 -m pip install -r requirements.txt
-      - name: Prepare C segment state
-        shell: bash
-        run: |
-      - name: Prepare C segment state
+
+      - name: Prepare C bootstrap state
         if: ${{steps.resolve.outputs.phase == 'C' && steps.resolve.outputs.segment == '1'}}
         shell: bash
         run: |
           set -euo pipefail
           cd packages/ai-engine
-          rm -f data/parameter_freeze.json
-          rm -f data/reports/paper_trading_state.json
-          rm -f data/reports/paper_trading_trades.csv
-          rm -f data/reports/paper_trading_signals.csv
+          rm -f data/parameter_freeze.json data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
           rm -rf data/reports/forward_sessions
           mkdir -p data/reports/forward_sessions
 
@@ -148,27 +179,25 @@ jobs:
         run: |
           set -euo pipefail
           cd packages/ai-engine
-          cp state-in/parameter_freeze.json data/parameter_freeze.json
-          cp state-in/paper_trading_state.json data/reports/paper_trading_state.json
-          cp state-in/paper_trading_trades.csv data/reports/paper_trading_trades.csv
-          cp state-in/paper_trading_signals.csv data/reports/paper_trading_signals.csv
-          cp state-in/session_C.json data/reports/forward_sessions/session_C.json
+          cp ../../state-in/parameter_freeze.json data/parameter_freeze.json
+          cp ../../state-in/paper_trading_state.json data/reports/paper_trading_state.json
+          cp ../../state-in/paper_trading_trades.csv data/reports/paper_trading_trades.csv
+          cp ../../state-in/paper_trading_signals.csv data/reports/paper_trading_signals.csv
+          cp ../../state-in/session_C.json data/reports/forward_sessions/session_C.json
           python3 scanner/parameter_freeze.py
 
-      - name: Restore D segment state
+      - name: Start D with fresh trading state while retaining C evidence
         if: ${{steps.resolve.outputs.phase == 'D'}}
         shell: bash
         run: |
           set -euo pipefail
           cd packages/ai-engine
-          cp state-in/parameter_freeze.json data/parameter_freeze.json
-          cp state-in/paper_trading_state.json data/reports/paper_trading_state.json
-          cp state-in/paper_trading_trades.csv data/reports/paper_trading_trades.csv
-          cp state-in/paper_trading_signals.csv data/reports/paper_trading_signals.csv
-          cp state-in/session_C.json data/reports/forward_sessions/session_C.json
-          rm -rf data/reports/forward_sessions/session_C_evidence
-          cp -a state-in/session_C_evidence data/reports/forward_sessions/
-          if [[ -f state-in/session_D.json ]]; then cp state-in/session_D.json data/reports/forward_sessions/session_D.json; fi
+          cp ../../state-in/parameter_freeze.json data/parameter_freeze.json
+          cp ../../state-in/session_C.json data/reports/forward_sessions/session_C.json
+          rm -f data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
+          rm -f data/reports/forward_sessions/session_D.json data/reports/forward_sessions/forward_aggregate.json
+          rm -rf data/reports/forward_sessions/session_D_evidence data/reports/forward_sessions/session_C_evidence
+          cp -a ../../state-in/session_C_evidence data/reports/forward_sessions/
           python3 scanner/parameter_freeze.py
 
       - name: Run authentic forward segment
@@ -261,31 +290,14 @@ jobs:
           elif [[ "$PHASE" == "C" && "$SEGMENT" -eq 58 ]]; then NEXT_PHASE="D"; NEXT_SEGMENT=1; PREVIOUS_PHASE="C"; PREVIOUS_SEGMENT=58;
           elif [[ "$PHASE" == "D" && "$SEGMENT" -lt 58 ]]; then NEXT_SEGMENT=$((SEGMENT+1));
           else exit 0; fi
-
-          python3 - <<'PY'
-          import json, os
-          payload = {
-              "ref": "candidate-next-8d1b6b5",
-              "inputs": {
-                  "phase": os.environ["NEXT_PHASE"],
-                  "segment": os.environ["NEXT_SEGMENT"],
-                  "target_sha": os.environ["TARGET_SHA"],
-                  "previous_phase": os.environ["PREVIOUS_PHASE"],
-                  "previous_segment": os.environ["PREVIOUS_SEGMENT"],
-                  "previous_run_id": os.environ["PREVIOUS_RUN_ID"],
-              }
-          }
-          print(json.dumps(payload))
-          PY
-          payload=$(python3 - <<PY
+          payload=$(python3 - <<'PY'
           import json, os
           print(json.dumps({"ref":"candidate-next-8d1b6b5","inputs":{"phase":os.environ["NEXT_PHASE"],"segment":os.environ["NEXT_SEGMENT"],"target_sha":os.environ["TARGET_SHA"],"previous_phase":os.environ["PREVIOUS_PHASE"],"previous_segment":os.environ["PREVIOUS_SEGMENT"],"previous_run_id":os.environ["PREVIOUS_RUN_ID"]}}))
           PY
           )
-
-          curl --fail-with-body --silent --show-error -X POST
-            -H "Accept: application/vnd.github+json"
-            -H "Authorization: Bearer $GH_TOKEN"
-            -H "X-GitHub-Api-Version: 2026-03-10"
-            "https://api.github.com/repos/$REPOSITORY/actions/workflows/forward-evidence-long-runner.yml/dispatches"
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/$REPOSITORY/actions/workflows/forward-evidence-long-runner.yml/dispatches" \
             -d "$payload"
