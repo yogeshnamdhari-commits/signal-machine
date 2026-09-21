@@ -1,0 +1,237 @@
+name: Long-Run Forward Evidence
+
+on:
+  push:
+    branches: [candidate-next-8d1b6b5]
+  workflow_dispatch:
+    inputs:
+      phase:
+        required: true
+        type: choice
+        options: [C, D]
+        default: C
+      segment:
+        required: true
+        type: string
+        default: "1"
+      target_sha:
+        required: true
+        type: string
+      previous_phase:
+        required: false
+        type: string
+        default: ""
+      previous_segment:
+        required: false
+        type: string
+        default: ""
+      previous_run_id:
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: signal-machine-forward-evidence-chain
+  cancel-in-progress: false
+
+env:
+  SEGMENT_HOURS: "5.8666666667"
+
+jobs:
+  forward-segment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Resolve provenance
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PHASE: ${{ inputs.phase }}
+          INPUT_SEGMENT: ${{ inputs.segment }}
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
+          INPUT_PREVIOUS_PHASE: ${{ inputs.previous_phase }}
+          INPUT_PREVIOUS_SEGMENT: ${{ inputs.previous_segment }}
+          INPUT_PREVIOUS_RUN_ID: ${{ inputs.previous_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            PHASE="$INPUT_PHASE"; SEGMENT="$INPUT_SEGMENT"; TARGET_SHA="$INPUT_TARGET_SHA"
+            PREVIOUS_PHASE="$INPUT_PREVIOUS_PHASE"; PREVIOUS_SEGMENT="$INPUT_PREVIOUS_SEGMENT"; PREVIOUS_RUN_ID="$INPUT_PREVIOUS_RUN_ID"
+          else
+            PHASE=C; SEGMENT=1; TARGET_SHA="$GITHUB_SHA"; PREVIOUS_PHASE=; PREVIOUS_SEGMENT=; PREVIOUS_RUN_ID=
+          fi
+          [[ "$PHASE" == C || "$PHASE" == D ]]
+          [[ "$SEGMENT" =~ ^[0-9]+$ ]] && ((SEGMENT >= 1 && SEGMENT <= 58))
+          [[ "$TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+          {
+            echo "phase=$PHASE"; echo "segment=$SEGMENT"; echo "target_sha=$TARGET_SHA"
+            echo "previous_phase=$PREVIOUS_PHASE"; echo "previous_segment=$PREVIOUS_SEGMENT"; echo "previous_run_id=$PREVIOUS_RUN_ID"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download predecessor artifact
+        if: ${{ steps.resolve.outputs.previous_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: forward-${{ steps.resolve.outputs.previous_phase }}-state-${{ steps.resolve.outputs.previous_segment }}-${{ steps.resolve.outputs.previous_run_id }}
+          run-id: ${{ steps.resolve.outputs.previous_run_id }}
+          github-token: ${{ github.token }}
+          path: state-in
+
+      - name: Checkout frozen candidate
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.resolve.outputs.target_sha }}
+
+      - name: Verify predecessor before handoff
+        if: ${{ steps.resolve.outputs.previous_run_id != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          phase='${{ steps.resolve.outputs.phase }}'; seg=int('${{ steps.resolve.outputs.segment }}')
+          prev='${{ steps.resolve.outputs.previous_phase }}'; prev_seg=int('${{ steps.resolve.outputs.previous_segment }}')
+          target='${{ steps.resolve.outputs.target_sha }}'; root=Path('state-in')
+          p=root/f'session_{prev}.json'; assert p.is_file(), p
+          a=json.loads(p.read_text())
+          assert a['code_commit_sha']==target, a
+          assert a['real_orders'] is False and a['orders_policy']=='NO_REAL_ORDERS', a
+          if phase=='C':
+              assert prev=='C' and prev_seg==seg-1 and a['status']=='RUNNING', a
+          else:
+              assert prev=='C' and prev_seg==58 and a['status']=='COMPLETED', a
+              e=root/'session_C_evidence'; assert e.is_dir() and any(e.iterdir()), e
+          for n in ('parameter_freeze.json','paper_trading_state.json','paper_trading_trades.csv','paper_trading_signals.csv'):
+              assert (root/n).is_file(), n
+          print('Immutable predecessor verified before handoff:', prev, prev_seg)
+          PY
+
+      - name: Verify frozen checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ steps.resolve.outputs.target_sha }}"
+
+      - name: Install dependencies
+        working-directory: packages/ai-engine
+        run: python3 -m pip install -r requirements.txt
+
+      - name: Bootstrap C segment 1
+        if: ${{ steps.resolve.outputs.phase == 'C' && steps.resolve.outputs.segment == '1' }}
+        working-directory: packages/ai-engine
+        run: |
+          rm -f data/parameter_freeze.json data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
+          rm -rf data/reports/forward_sessions
+          mkdir -p data/reports/forward_sessions
+
+      - name: Restore C continuation state
+        if: ${{ steps.resolve.outputs.phase == 'C' && steps.resolve.outputs.segment != '1' }}
+        working-directory: packages/ai-engine
+        run: |
+          cp ../../state-in/parameter_freeze.json data/parameter_freeze.json
+          cp ../../state-in/paper_trading_state.json data/reports/paper_trading_state.json
+          cp ../../state-in/paper_trading_trades.csv data/reports/paper_trading_trades.csv
+          cp ../../state-in/paper_trading_signals.csv data/reports/paper_trading_signals.csv
+          cp ../../state-in/session_C.json data/reports/forward_sessions/session_C.json
+          python3 scanner/parameter_freeze.py
+
+      - name: Start D with fresh ledger and C evidence
+        if: ${{ steps.resolve.outputs.phase == 'D' }}
+        working-directory: packages/ai-engine
+        run: |
+          cp ../../state-in/parameter_freeze.json data/parameter_freeze.json
+          cp ../../state-in/session_C.json data/reports/forward_sessions/session_C.json
+          rm -f data/reports/paper_trading_state.json data/reports/paper_trading_trades.csv data/reports/paper_trading_signals.csv
+          rm -f data/reports/forward_sessions/session_D.json data/reports/forward_sessions/forward_aggregate.json
+          rm -rf data/reports/forward_sessions/session_D_evidence data/reports/forward_sessions/session_C_evidence
+          cp -a ../../state-in/session_C_evidence data/reports/forward_sessions/
+          python3 scanner/parameter_freeze.py
+
+      - name: Run authentic forward segment
+        working-directory: packages/ai-engine
+        env:
+          BINANCE_TESTNET: "false"
+        run: |
+          FLAGS=""
+          if [[ "${{ steps.resolve.outputs.phase }}" == C && "${{ steps.resolve.outputs.segment }}" == 1 ]]; then FLAGS="$FLAGS --create-freeze"; fi
+          if [[ "${{ steps.resolve.outputs.segment }}" == 58 ]]; then FLAGS="$FLAGS --finalize"; fi
+          python3 run_forward_session.py --session "${{ steps.resolve.outputs.phase }}" --hours "$SEGMENT_HOURS" $FLAGS
+
+      - name: Verify produced immutable state
+        working-directory: packages/ai-engine
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          s='${{ steps.resolve.outputs.phase }}'; seg=int('${{ steps.resolve.outputs.segment }}'); target='${{ steps.resolve.outputs.target_sha }}'
+          a=json.loads((Path('data/reports/forward_sessions')/f'session_{s}.json').read_text())
+          assert a['code_commit_sha']==target and a['real_orders'] is False and a['orders_policy']=='NO_REAL_ORDERS', a
+          assert a['status']==('COMPLETED' if seg==58 else 'RUNNING'), a
+          print('Immutable state verified:', s, seg, target)
+          PY
+
+      - name: Upload immutable segment state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-${{ steps.resolve.outputs.phase }}-state-${{ steps.resolve.outputs.segment }}-${{ github.run_id }}
+          path: |
+            packages/ai-engine/data/parameter_freeze.json
+            packages/ai-engine/data/reports/paper_trading_state.json
+            packages/ai-engine/data/reports/paper_trading_trades.csv
+            packages/ai-engine/data/reports/paper_trading_signals.csv
+            packages/ai-engine/data/reports/forward_sessions/session_C.json
+            packages/ai-engine/data/reports/forward_sessions/session_C_evidence/**
+            packages/ai-engine/data/reports/forward_sessions/session_D.json
+            packages/ai-engine/data/reports/forward_sessions/session_D_evidence/**
+            packages/ai-engine/data/reports/forward_sessions/forward_aggregate.json
+          if-no-files-found: error
+          retention-days: ${{ steps.resolve.outputs.segment == '58' && 90 || 2 }}
+
+      - name: Verify final aggregate
+        if: ${{ steps.resolve.outputs.phase == 'D' && steps.resolve.outputs.segment == '58' }}
+        working-directory: packages/ai-engine
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from validation.forward_evidence_binding import verify_forward_evidence_report
+          root=Path('data/reports/forward_sessions')
+          for s in ('C','D'):
+              a=json.loads((root/f'session_{s}.json').read_text())
+              assert a['status']=='COMPLETED' and a['code_commit_sha']=='${{ steps.resolve.outputs.target_sha }}' and a['real_orders'] is False and a['orders_policy']=='NO_REAL_ORDERS', a
+          r=verify_forward_evidence_report(root/'forward_aggregate.json', expected_commit='${{ steps.resolve.outputs.target_sha }}')
+          print(json.dumps({k:r[k] for k in ('total_signals','total_closed_trades','profit_factor','expectancy','net_pnl','aggregate_sha256')}, indent=2))
+          PY
+
+      - name: Dispatch next segment only after successful verification
+        if: ${{ success() && !(steps.resolve.outputs.phase == 'D' && steps.resolve.outputs.segment == '58') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PHASE: ${{ steps.resolve.outputs.phase }}
+          SEGMENT: ${{ steps.resolve.outputs.segment }}
+          TARGET_SHA: ${{ steps.resolve.outputs.target_sha }}
+          PREVIOUS_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          NEXT_PHASE="$PHASE"; NEXT_SEGMENT="$SEGMENT"; PREVIOUS_PHASE="$PHASE"; PREVIOUS_SEGMENT="$SEGMENT"
+          if [[ "$PHASE" == C && "$SEGMENT" -lt 58 ]]; then NEXT_SEGMENT=$((SEGMENT+1));
+          elif [[ "$PHASE" == C && "$SEGMENT" -eq 58 ]]; then NEXT_PHASE=D; NEXT_SEGMENT=1; PREVIOUS_PHASE=C; PREVIOUS_SEGMENT=58;
+          elif [[ "$PHASE" == D && "$SEGMENT" -lt 58 ]]; then NEXT_SEGMENT=$((SEGMENT+1)); else exit 0; fi
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({'ref':'candidate-next-8d1b6b5','inputs':{'phase':os.environ['NEXT_PHASE'],'segment':os.environ['NEXT_SEGMENT'],'target_sha':os.environ['TARGET_SHA'],'previous_phase':os.environ['PREVIOUS_PHASE'],'previous_segment':os.environ['PREVIOUS_SEGMENT'],'previous_run_id':os.environ['PREVIOUS_RUN_ID']}}))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "https://api.github.com/repos/$REPOSITORY/actions/workflows/forward-evidence-long-runner.yml/dispatches" \
+            -d "$payload"

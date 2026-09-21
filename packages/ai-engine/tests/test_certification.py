@@ -1,7 +1,87 @@
+import hashlib
+import json
+
 from validation.certification import CertificationState, generate_certification
 from validation.evidence_manifest import EvidenceManifest
 from validation.statistical_validation import ResearchDecision
 from config.schema import config_fingerprint
+
+
+
+
+def _forward_evidence_file(tmp_path, commit="abc"):
+    report = {
+        "schema_version": 1,
+        "status": "EVIDENCE_VALID",
+        "authorization": "NOT_A_LIVE_CERTIFICATION",
+        "sessions": ["C", "D"],
+        "code_commit_sha": commit,
+        "parameter_hash": "param-1",
+        "total_signals": 500,
+        "total_closed_trades": 100,
+        "win_rate": 0.55,
+        "profit_factor": 1.50,
+        "expectancy": 1.25,
+        "net_pnl": 125.0,
+        "total_gross_pnl": 200.0,
+        "total_fees": 50.0,
+        "total_funding_pnl": -5.0,
+        "total_slippage": 20.0,
+        "max_drawdown_pct": 8.0,
+        "session_c_trade_count": 50,
+        "session_d_trade_count": 50,
+        "bundle_roots": {"C": "session_C_evidence", "D": "session_D_evidence"},
+    }
+    session_manifests = {}
+    evidence_manifests = {}
+    for session in ("C", "D"):
+        bundle_root = tmp_path / f"session_{session}_evidence"
+        bundle_root.mkdir(exist_ok=True)
+        evidence_manifests[session] = {}
+        for name, payload in {
+            "trades": b"id,signal_id\nT-1,S-1\n",
+            "signals": b"id\nS-1\n",
+            "summary": b"{}",
+        }.items():
+            filename = {
+                "trades": "paper_trading_trades.csv",
+                "signals": "paper_trading_signals.csv",
+                "summary": "summary.canonical.json",
+            }[name]
+            path = bundle_root / filename
+            path.write_bytes(payload)
+            evidence_manifests[session][name] = {
+                "path": str(path.relative_to(tmp_path)),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "bytes": len(payload),
+            }
+
+        artifact = {
+            "schema_version": 1,
+            "session": session,
+            "status": "COMPLETED",
+            "code_commit_sha": commit,
+            "parameter_hash": "param-1",
+        }
+        artifact_path = tmp_path / f"session_{session}.json"
+        artifact_payload = json.dumps(artifact, sort_keys=True).encode("utf-8")
+        artifact_path.write_bytes(artifact_payload)
+        session_manifests[session] = {
+            "path": artifact_path.name,
+            "sha256": hashlib.sha256(artifact_payload).hexdigest(),
+            "bytes": len(artifact_payload),
+        }
+
+    report["session_artifacts"] = session_manifests
+    report["evidence_files"] = evidence_manifests
+    report["artifact_root"] = "."
+    report["aggregate_sha256"] = hashlib.sha256(
+        json.dumps(report, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    path = tmp_path / "forward_aggregate.json"
+    payload = json.dumps(report, sort_keys=True, indent=2).encode("utf-8")
+    path.write_bytes(payload)
+    return path
 
 
 def _manifest():
@@ -112,3 +192,63 @@ def test_future_evidence_manifest_cannot_certify_research():
 
     assert artifact.state is CertificationState.ENGINEERING_VALID
     assert "evidence_not_yet_valid" in artifact.failures
+
+
+def test_live_eligibility_requires_forward_evidence(tmp_path):
+    decision = ResearchDecision(True, ())
+    artifact = generate_certification(
+        config={},
+        commit_sha="abc",
+        checks=("research",),
+        failures=(),
+        research_decision=decision,
+        research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=1_500.0,
+        live_eligible=True,
+    )
+
+    assert artifact.state is CertificationState.ENGINEERING_VALID
+    assert "missing_forward_evidence" in artifact.failures
+
+
+def test_live_eligibility_binds_forward_evidence_hash(tmp_path):
+    decision = ResearchDecision(True, ())
+    evidence_path = _forward_evidence_file(tmp_path, "abc")
+    artifact = generate_certification(
+        config={},
+        commit_sha="abc",
+        checks=("research",),
+        failures=(),
+        research_decision=decision,
+        research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=1_500.0,
+        live_eligible=True,
+        forward_evidence_path=evidence_path,
+    )
+
+    expected = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    assert artifact.state is CertificationState.LIVE_ELIGIBLE
+    assert artifact.forward_evidence_sha256 == expected
+    assert artifact.failures == ()
+
+
+def test_live_eligibility_rejects_wrong_forward_evidence_commit(tmp_path):
+    decision = ResearchDecision(True, ())
+    evidence_path = _forward_evidence_file(tmp_path, "different-commit")
+    artifact = generate_certification(
+        config={},
+        commit_sha="abc",
+        checks=("research",),
+        failures=(),
+        research_decision=decision,
+        research_validated=True,
+        evidence_manifest=_manifest(),
+        evidence_now_ts=1_500.0,
+        live_eligible=True,
+        forward_evidence_path=evidence_path,
+    )
+
+    assert artifact.state is CertificationState.ENGINEERING_VALID
+    assert any(reason.startswith("forward_evidence_invalid:") for reason in artifact.failures)
