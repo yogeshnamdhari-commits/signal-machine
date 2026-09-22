@@ -7,6 +7,10 @@ from typing import Tuple
 
 from config.schema import config_fingerprint
 from validation.evidence_manifest import EvidenceManifest, verify_evidence_manifest
+from validation.forward_evidence_binding import (
+    ForwardEvidenceBindingError,
+    verify_forward_evidence_report,
+)
 from validation.statistical_validation import ResearchDecision
 
 
@@ -25,6 +29,7 @@ class CertificationArtifact:
     failures: Tuple[str, ...]
     issued_at: float = 0.0
     expires_at: float = 0.0
+    forward_evidence_sha256: str = ""
 
     @property
     def valid(self) -> bool:
@@ -42,6 +47,7 @@ def generate_certification(
     research_decision: ResearchDecision | None = None,
     evidence_manifest: EvidenceManifest | None = None,
     evidence_now_ts: float | None = None,
+    forward_evidence_path=None,
 ) -> CertificationArtifact:
     """Create a certification artifact, failing closed on absent/stale evidence.
 
@@ -93,6 +99,21 @@ def generate_certification(
                 )
 
     research_ready = research_validated and research_approved and manifest_approved
+
+    forward_evidence_sha256 = ""
+    if live_eligible:
+        if forward_evidence_path is None:
+            failure_list.append("missing_forward_evidence")
+        else:
+            try:
+                evidence = verify_forward_evidence_report(
+                    forward_evidence_path,
+                    expected_commit=commit_sha,
+                )
+                forward_evidence_sha256 = evidence["_file_sha256"]
+            except (ForwardEvidenceBindingError, OSError, ValueError) as exc:
+                failure_list.append(f"forward_evidence_invalid:{exc}")
+
     if live_eligible and not research_ready:
         failure_list.append("live_requires_research_validation")
 
@@ -118,4 +139,5 @@ def generate_certification(
         failures=failures_tuple,
         issued_at=issued_at,
         expires_at=expires_at,
+        forward_evidence_sha256=forward_evidence_sha256,
     )

@@ -32,6 +32,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r packages/ai-engine/requirements.txt
 
+      - name: Audit Python dependencies
+        run: |
+          python -m pip install --upgrade pip-audit
+          pip-audit -r packages/ai-engine/requirements.txt
+
+      - name: Record source provenance
+        run: |
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          echo "HEAD=$(git rev-parse HEAD)"
+          test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
+          git status --short
+
       - name: Compile-check AI engine
         run: |
           python - <<'PY'
@@ -63,6 +75,20 @@ jobs:
         working-directory: packages/ai-engine
         run: |
           python -m pytest -q
+
+      - name: Execution layer validation
+        working-directory: packages/ai-engine
+        run: |
+          python validate_execution.py
+
+      - name: Upload execution validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-validation-${{ github.sha }}
+          path: packages/ai-engine/data/reports/execution_validation_results.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Production validation gate
         run: |

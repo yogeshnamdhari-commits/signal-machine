@@ -8,7 +8,9 @@ def test_zero_funding_is_neutral_not_forced_sell():
         {"funding": 0.0, "mark_price": 100.0, "timestamp": 1_700_000_000},
     )
     assert factor.state is DirectionState.NEUTRAL
-    assert factor.quality is DataQuality.LIVE
+    # Funding direction is derived from the observed mark-price/funding pair;
+    # it is not a raw trade-tape observation.
+    assert factor.quality is DataQuality.CALCULATED
 
 
 def test_missing_trade_tape_does_not_become_neutral_vote():

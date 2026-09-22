@@ -161,8 +161,8 @@ class RegimeState:
     """Per-symbol regime state across all timeframes."""
     symbol: str
     tf_states: Dict[str, TFState] = field(default_factory=dict)
-    composite_regime: str = Regime.RANGE
-    confidence_pct: float = 50.0  # 0-100
+    composite_regime: str = ""
+    confidence_pct: float = 0.0  # 0-100; zero means unavailable
     alignment_score: float = 0.0  # -1 (bearish) to +1 (bullish)
     last_update: float = 0.0
     history: List[Tuple[str, float, float]] = field(default_factory=list)  # (regime, conf, ts)
@@ -366,8 +366,9 @@ class MarketRegimeDetector:
             regime_counts[r] = regime_counts.get(r, 0) + 1
 
         if not regime_votes:
-            state.composite_regime = Regime.RANGE
-            state.confidence_pct = 50.0
+            # No sufficient multi-timeframe history: do not invent RANGE/50%.
+            state.composite_regime = ""
+            state.confidence_pct = 0.0
             state.alignment_score = 0.0
             return
 

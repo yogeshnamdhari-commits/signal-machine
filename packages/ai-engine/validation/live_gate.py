@@ -9,6 +9,11 @@ from pathlib import Path
 
 from config import config
 from config.schema import config_fingerprint
+from validation.forward_evidence_binding import (
+    DEFAULT_FORWARD_EVIDENCE_PATH,
+    ForwardEvidenceBindingError,
+    verify_forward_evidence_report,
+)
 
 
 class LiveCertificationError(RuntimeError):
@@ -62,6 +67,19 @@ def verify_live_certification(
     failures = artifact.get("failures") or []
     if failures:
         raise LiveCertificationError("Certification artifact contains failures: " + ", ".join(map(str, failures)))
+
+    forward_evidence_sha256 = artifact.get("forward_evidence_sha256")
+    if not isinstance(forward_evidence_sha256, str) or not forward_evidence_sha256:
+        raise LiveCertificationError("Live certification is not bound to immutable C/D forward evidence")
+    try:
+        evidence = verify_forward_evidence_report(
+            DEFAULT_FORWARD_EVIDENCE_PATH,
+            expected_commit=running_commit,
+        )
+    except ForwardEvidenceBindingError as exc:
+        raise LiveCertificationError(f"Forward evidence binding failed: {exc}") from exc
+    if evidence["_file_sha256"] != forward_evidence_sha256:
+        raise LiveCertificationError("Forward evidence aggregate hash does not match certification")
 
     issued_at = artifact.get("issued_at")
     expires_at = artifact.get("expires_at")
