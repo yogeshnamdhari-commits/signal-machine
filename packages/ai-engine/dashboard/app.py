@@ -60,14 +60,27 @@ def evidence(factor):
 market_data = bridge_reader.read_market_data()
 signals = bridge_reader.read_signals()
 fresh = bridge_reader.read_market_data_freshness()
+engine_health = bridge_reader.read_engine_health()
 snapshot_ts = float(fresh.get("timestamp", 0) or 0)
 state = freshness_state(snapshot_ts, max_age=60)
 signal_lookup = {str(s.get("symbol")): s for s in signals if s.get("symbol")} if state == "LIVE" else {}
+liq_feed = engine_health.get("liquidation_feed", {}) if isinstance(engine_health, dict) else {}
+liq_feed_status = str(liq_feed.get("status", "UNAVAILABLE"))
+liq_event_count = int(liq_feed.get("observed_event_count", 0) or 0)
+liq_last_age = liq_feed.get("last_event_age_sec")
+if liq_last_age is None:
+    liq_last_text = "none observed"
+else:
+    liq_last_text = f"{float(liq_last_age):.0f}s ago"
 
 st.title("📡 DeltaTerminal — Canonical Live Data")
 st.caption(
     f"Snapshot: {state} · age {fresh.get('age', 0):.1f}s · symbols {fresh.get('rows', 0)} · "
     "Signal authority: Python engine"
+)
+st.caption(
+    f"Liquidation feed: {liq_feed_status} · observed forceOrder events: {liq_event_count} · "
+    f"last event: {liq_last_text}"
 )
 
 rows = []
