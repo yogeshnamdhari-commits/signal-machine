@@ -1,6 +1,9 @@
 name: Pull Request Validation
 
 on:
+  push:
+    branches:
+      - forward-preflight-hardening-20260922
   pull_request:
     branches:
       - main
