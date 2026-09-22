@@ -6336,20 +6336,25 @@ class DeltaTerminalEngine:
                 if row is not None:
                     market_rows.append(row)
 
-            # ── Normalize liq_risk to percentile rank across all symbols ──
-            # This produces differentiated risk values even when absolute scores are similar
+            # ── Normalize liq_risk to percentile rank across observed numeric risks ──
+            # Missing liquidation evidence is intentionally represented as None and
+            # must remain UNAVAILABLE; sorting None with numeric values raises a
+            # TypeError and can suppress the entire market-data bridge write.
             if market_rows:
-                raw_risks = [(i, r.get("liq_risk", 0)) for i, r in enumerate(market_rows)]
+                raw_risks = []
+                for i, row in enumerate(market_rows):
+                    risk = row.get("liq_risk")
+                    if isinstance(risk, (int, float)):
+                        import math
+                        if math.isfinite(float(risk)):
+                            raw_risks.append((i, float(risk)))
+
                 sorted_risks = sorted(raw_risks, key=lambda x: x[1])
                 n = len(sorted_risks)
                 for rank, (idx, _) in enumerate(sorted_risks):
                     # Percentile rank: 0 (lowest) to 100 (highest)
-                    if n > 1:
-                        pct = rank / (n - 1) * 100
-                    else:
-                        pct = 50
+                    pct = rank / (n - 1) * 100 if n > 1 else 50
                     market_rows[idx]["liq_risk"] = round(pct, 1)
-                    # Update risk level based on normalized percentile
                     if pct >= 70:
                         market_rows[idx]["liq_risk_level"] = "high"
                     elif pct >= 30:
