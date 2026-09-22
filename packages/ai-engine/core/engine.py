@@ -780,7 +780,7 @@ class DeltaTerminalEngine:
             elif event == "liquidation":
                 # Dedicated Binance forceOrder feed — authentic liquidation evidence.
                 if data.get("feed") == "forceOrder" and data.get("data_quality") == "REAL":
-                    await self.liquidation.process_liquidation_event(sym, data)
+                    self.liquidation.process_liquidation_event(sym, data)
 
         except Exception as exc:
             logger.error("Handler error {}: {}", sym, exc)
@@ -6426,6 +6426,10 @@ class DeltaTerminalEngine:
                         continue
 
                 sm = self.smart_money.get_analysis(sym)
+                # Exchange-flow analysis for the smart-money bridge row. This must be
+                # resolved in this scope; ef_data from the live-sheet builder is local to
+                # that separate function and must not be referenced here.
+                ef_data = self.exchange_flow.get_analysis(sym) or {}
                 # Merge patterns from both scoring engine + real detector
                 inst_scoring = self.institutional.get_patterns(sym)
                 inst_detect = self.institutional_detector.get_patterns(sym)
