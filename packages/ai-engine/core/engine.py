@@ -6276,6 +6276,23 @@ class DeltaTerminalEngine:
         try:
             health = self.perf_tracker.health_monitor.get_health()
             forward = self.perf_tracker.forward_tracker.get_forward_stats()
+            ws_health = self.ws.get_stats()
+            last_liq_ms = ws_health.get("last_force_order_event_ms", 0) or 0
+            last_liq_age = (
+                max(time.time() - float(last_liq_ms) / 1000.0, 0.0)
+                if last_liq_ms > 0 else None
+            )
+            liq_errors = (
+                ws_health.get("subscription_error_count", {}) or {}
+            ).get("market", 0)
+            if ws_health.get("force_order_subscribed"):
+                liq_feed_status = "SUBSCRIBED"
+            elif liq_errors:
+                liq_feed_status = "ERROR"
+            elif ws_health.get("connected"):
+                liq_feed_status = "AWAITING_CONFIRMATION"
+            else:
+                liq_feed_status = "DISCONNECTED"
             bridge_writer.write_engine_health({
                 "signals_generated_today": health["signals_generated"],
                 "signals_rejected_today": health["signals_rejected"],
@@ -6291,6 +6308,17 @@ class DeltaTerminalEngine:
                 "dynamic_threshold": self.perf_tracker.dynamic_threshold.get_threshold(
                     self._last_regime if hasattr(self, '_last_regime') else "range", 0.5
                 ),
+                "liquidation_feed": {
+                    "status": liq_feed_status,
+                    "subscribed": bool(ws_health.get("force_order_subscribed", False)),
+                    "observed_event_count": int(ws_health.get("force_order_event_count", 0) or 0),
+                    "last_event_age_sec": round(last_liq_age, 1) if last_liq_age is not None else None,
+                    "subscription_ack_count": (
+                        ws_health.get("subscription_ack_count", {}) or {}
+                    ).get("market", 0),
+                    "subscription_error_count": liq_errors,
+                    "last_subscription_error": ws_health.get("last_subscription_error", {}).get("market"),
+                },
             })
         except Exception as e:
             logger.debug("Bridge sync error (health): {}", e)
