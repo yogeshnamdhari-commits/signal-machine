@@ -48,6 +48,14 @@ class BinanceWebSocket:
         self._ws_symbols_cache: List[str] = []
         self._ws_mark_prices: Dict[str, float] = {}
         self._ws_premium_cache: Dict[str, Dict] = {}
+        # Read-only runtime diagnostics for control-stream health. These never
+        # synthesize market observations and never affect execution decisions.
+        self._subscription_ack_count: Dict[str, int] = {"public": 0, "market": 0}
+        self._subscription_error_count: Dict[str, int] = {"public": 0, "market": 0}
+        self._last_subscription_error: Dict[str, Dict[str, Any]] = {}
+        self._force_order_subscribed = False
+        self._force_order_event_count = 0
+        self._last_force_order_event_ms = 0
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -73,6 +81,12 @@ class BinanceWebSocket:
             "reconnect_count": self._reconnect_count,
             "uptime_seconds": round(uptime, 1),
             "uptime_pct": round(uptime / max(time.time() - (self._connected_at - uptime), 1) * 100, 1) if self._connected_at > 0 else 0,
+            "force_order_subscribed": self._force_order_subscribed,
+            "force_order_event_count": self._force_order_event_count,
+            "last_force_order_event_ms": self._last_force_order_event_ms,
+            "subscription_ack_count": dict(self._subscription_ack_count),
+            "subscription_error_count": dict(self._subscription_error_count),
+            "last_subscription_error": dict(self._last_subscription_error),
         }
 
     async def stop(self) -> None:
@@ -150,7 +164,7 @@ class BinanceWebSocket:
                     break
                 try:
                     msg = json.loads(raw)
-                    await self._dispatch(msg)
+                    await self._dispatch(msg, route)
                 except json.JSONDecodeError:
                     logger.warning("WS {} non-JSON message ignored", route)
                 except Exception as exc:
@@ -195,13 +209,53 @@ class BinanceWebSocket:
                 "id": i + 1,
             }))
 
+        # Confirm the server's actual subscription set. This is especially
+        # important for the global forceOrder feed because an accepted socket
+        # connection alone does not prove the stream was subscribed.
+        if route == "market":
+            await ws.send(json.dumps({
+                "method": "LIST_SUBSCRIPTIONS",
+                "id": 990001,
+            }))
+
         subscribed_symbols = len(symbols[: config.scanner.max_symbols])
         logger.info(
             "Subscribed {} route: {} streams for {} symbols ({} per-symbol stream types)",
             route.upper(), len(names), subscribed_symbols, len(stream_types),
         )
 
-    async def _dispatch(self, msg: Dict) -> None:
+    async def _dispatch(self, msg: Dict, route: str = "unknown") -> None:
+        # Control-plane responses do not contain a stream payload. Preserve
+        # them explicitly so subscription failures cannot become silent.
+        if "code" in msg and "msg" in msg:
+            if route in self._subscription_error_count:
+                self._subscription_error_count[route] += 1
+                self._last_subscription_error[route] = {
+                    "code": msg.get("code"),
+                    "msg": msg.get("msg"),
+                    "id": msg.get("id"),
+                    "timestamp": time.time(),
+                }
+            logger.error(
+                "WS {} control error id={} code={} msg={}",
+                route.upper(), msg.get("id"), msg.get("code"), msg.get("msg"),
+            )
+            return
+
+        if "id" in msg and "result" in msg:
+            result = msg.get("result")
+            if route in self._subscription_ack_count and result is None:
+                self._subscription_ack_count[route] += 1
+                return
+            if route == "market" and isinstance(result, list):
+                self._force_order_subscribed = "!forceOrder@arr" in result
+                logger.info(
+                    "WS MARKET subscriptions confirmed: count={} forceOrder={}",
+                    len(result), self._force_order_subscribed,
+                )
+                return
+            return
+
         stream = msg.get("stream", "")
         data = msg.get("data")
         if not data or not self._callback:
@@ -346,6 +400,11 @@ class BinanceWebSocket:
             "feed": "forceOrder",
             "data_quality": "REAL",
         }
+        self._force_order_event_count += 1
+        self._last_force_order_event_ms = int(liq["timestamp"])
+        # An observed authentic event is conclusive evidence that the feed is
+        # active even if LIST_SUBSCRIPTIONS has not yet been acknowledged.
+        self._force_order_subscribed = True
         if self._callback:
             await self._callback("liquidation", liq)
 
