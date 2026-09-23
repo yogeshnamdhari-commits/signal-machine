@@ -170,15 +170,33 @@ class RangeReversalEngine:
 
         # ── 4. OI Expansion Score (0-100) ──
         if oi_data:
-            oi_change_pct = oi_data.get("change_pct", 0)
+            oi_change_pct = oi_data.get("change_pct")
             oi_regime = oi_data.get("oi_regime", "neutral_oi")
 
-            if side == "LONG" and oi_change_pct > self.OI_EXPANSION_PCT * 100:
+            # OI can legitimately be unavailable. Do not convert missing or
+            # malformed values into a directional signal; fail closed and
+            # preserve the regime-only fallback below.
+            try:
+                oi_change_pct_num = float(oi_change_pct) if oi_change_pct is not None else None
+            except (TypeError, ValueError):
+                oi_change_pct_num = None
+
+            if (
+                oi_change_pct_num is not None
+                and np.isfinite(oi_change_pct_num)
+                and side == "LONG"
+                and oi_change_pct_num > self.OI_EXPANSION_PCT * 100
+            ):
                 # OI expanding while near support = new longs entering
-                setup.oi_expansion_score = min(100, oi_change_pct * 10 + 40)
-            elif side == "SHORT" and oi_change_pct > self.OI_EXPANSION_PCT * 100:
+                setup.oi_expansion_score = min(100, oi_change_pct_num * 10 + 40)
+            elif (
+                oi_change_pct_num is not None
+                and np.isfinite(oi_change_pct_num)
+                and side == "SHORT"
+                and oi_change_pct_num > self.OI_EXPANSION_PCT * 100
+            ):
                 # OI expanding while near resistance = new shorts entering
-                setup.oi_expansion_score = min(100, oi_change_pct * 10 + 40)
+                setup.oi_expansion_score = min(100, oi_change_pct_num * 10 + 40)
             elif oi_regime in ("bullish_oi", "bearish_oi"):
                 setup.oi_expansion_score = 35
 
