@@ -275,6 +275,9 @@ class PipelineIntegrity:
         cross_down = _c("cross_down")
         buy_mode_created = _c("buy_mode_created")
         sell_mode_created = _c("sell_mode_created")
+        buy_mode_restored = _c("buy_mode_restored")
+        sell_mode_restored = _c("sell_mode_restored")
+        waiting_pullback_restored = _c("waiting_pullback_restored")
         pullback_entered = _c("pullback_entered")
         regime_lost_pre = _c("regime_lost_pre")
         expired_pre = _c("expired_pre")
@@ -328,10 +331,13 @@ class PipelineIntegrity:
         #   - Expired before pullback (policy-driven, currently 0)
         #   - Still live in BUY_MODE (in-flight, not yet terminal)
         # ══════════════════════════════════════════════════════════════════
-        buy_mode_accounted = pullback_entered + regime_lost_pre + expired_pre + buy_mode_live
+        buy_mode_accounted = (
+            pullback_entered + regime_lost_pre + expired_pre + buy_mode_live
+        )
+        buy_mode_sources = buy_mode_created + buy_mode_restored
         id3 = self._check_eq(
             "BUY_MODE accounting",
-            "buy_mode_created", buy_mode_created,
+            "buy_mode_created+restored", buy_mode_sources,
             "pullback+regime_lost+expired+live", buy_mode_accounted,
             severity=self.IDENTITY_SEVERITY["buy_mode_accounting"],
             identity_key="buy_mode_accounting",
@@ -347,10 +353,13 @@ class PipelineIntegrity:
         #   - Timed out waiting for candle confirmation (policy-driven)
         #   - Still live in WAITING_PULLBACK (in-flight, not yet terminal)
         # ══════════════════════════════════════════════════════════════════
-        pullback_accounted = candle_evaluated + regime_lost_in_pull + timeout_in_pull + waiting_pullback_live
+        pullback_accounted = (
+            candle_evaluated + regime_lost_in_pull + timeout_in_pull + waiting_pullback_live
+        )
+        pullback_sources = pullback_entered + waiting_pullback_restored
         id4 = self._check_eq(
             "Pullback accounting",
-            "pullback_entered", pullback_entered,
+            "pullback_entered+restored", pullback_sources,
             "candle+regime_lost+timeout+live", pullback_accounted,
             severity=self.IDENTITY_SEVERITY["pullback_accounting"],
             identity_key="pullback_accounting",
@@ -415,7 +424,6 @@ class PipelineIntegrity:
             observed=state_violations,
             missing=state_violations,
         )
-        report.results.append(id7)
         report.results.append(id7)
 
         # ══════════════════════════════════════════════════════════════════
