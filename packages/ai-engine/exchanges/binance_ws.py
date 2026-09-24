@@ -149,7 +149,8 @@ class BinanceWebSocket:
             raise ValueError(f"Unsupported websocket route: {route}")
 
         base = config.binance.ws_url.rstrip("/")
-        url = f"{base}/{route}/stream"
+        # Binance combined stream endpoint is /stream for both public and market streams
+        url = f"{base}/stream"
         logger.info("WS {} connecting → {}", route.upper(), url)
 
         async with websockets.connect(url, ping_interval=20, ping_timeout=30, close_timeout=15, max_size=2**20) as ws:
@@ -288,12 +289,14 @@ class BinanceWebSocket:
                 return
             if route == "market" and isinstance(result, list):
                 self._force_order_subscribed = "!forceOrder@arr" in result
+                # Binance stream format: !openInterest@arr (contains "openInterest@" not "@openInterest")
                 self._open_interest_subscribed = any(
-                    "@openInterest" in s for s in result
+                    "openInterest@" in s for s in result
                 )
+                global_in_result = [s for s in result if s.startswith("!")]
                 logger.info(
-                    "WS MARKET subscriptions confirmed: count={} forceOrder={} openInterest={}",
-                    len(result), self._force_order_subscribed, self._open_interest_subscribed,
+                    "WS MARKET subscriptions confirmed: count={} forceOrder={} openInterest={} global_streams={}",
+                    len(result), self._force_order_subscribed, self._open_interest_subscribed, global_in_result,
                 )
                 return
             return
@@ -318,7 +321,11 @@ class BinanceWebSocket:
             else:
                 await self._on_mark_price(data)
         elif "@openInterest" in stream:
-            await self._on_open_interest(data)
+            if isinstance(data, list):
+                for item in data:
+                    await self._on_open_interest(item)
+            else:
+                await self._on_open_interest(data)
         elif "@forceOrder" in stream or "forceOrder" in stream:
             if isinstance(data, dict) and "o" in data:
                 await self._on_force_order(data)
