@@ -56,6 +56,9 @@ class BinanceWebSocket:
         self._force_order_subscribed = False
         self._force_order_event_count = 0
         self._last_force_order_event_ms = 0
+        self._open_interest_subscribed = False
+        self._open_interest_event_count = 0
+        self._last_open_interest_event_ms = 0
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -84,6 +87,10 @@ class BinanceWebSocket:
             "force_order_subscribed": self._force_order_subscribed,
             "force_order_event_count": self._force_order_event_count,
             "last_force_order_event_ms": self._last_force_order_event_ms,
+            "open_interest_subscribed": self._open_interest_subscribed,
+            "open_interest_event_count": self._open_interest_event_count,
+            "last_open_interest_event_ms": self._last_open_interest_event_ms,
+            "open_interest_cache_size": len(self._oi_cache),
             "subscription_ack_count": dict(self._subscription_ack_count),
             "subscription_error_count": dict(self._subscription_error_count),
             "last_subscription_error": dict(self._last_subscription_error),
@@ -188,7 +195,7 @@ class BinanceWebSocket:
         if route == "public":
             stream_types = [s for s in configured if s in {"bookTicker", "depth@100ms", "depth"}]
         else:
-            stream_types = [s for s in configured if s in {"aggTrade", "trade", "kline_5m", "kline"}]
+            stream_types = [s for s in configured if s in {"aggTrade", "trade", "kline_5m", "kline", "openInterest"}]
 
         names: List[str] = []
         for s in symbols[: config.scanner.max_symbols]:
@@ -250,9 +257,12 @@ class BinanceWebSocket:
                 return
             if route == "market" and isinstance(result, list):
                 self._force_order_subscribed = "!forceOrder@arr" in result
+                self._open_interest_subscribed = any(
+                    "@openInterest" in s for s in result
+                )
                 logger.info(
-                    "WS MARKET subscriptions confirmed: count={} forceOrder={}",
-                    len(result), self._force_order_subscribed,
+                    "WS MARKET subscriptions confirmed: count={} forceOrder={} openInterest={}",
+                    len(result), self._force_order_subscribed, self._open_interest_subscribed,
                 )
                 return
             return
@@ -579,6 +589,9 @@ class BinanceWebSocket:
         if oi <= 0:
             return
 
+        self._open_interest_event_count += 1
+        self._last_open_interest_event_ms = int(time.time() * 1000)
+
         now = time.time()
         cached = self._oi_cache.get(sym)
         if cached:
@@ -626,6 +639,11 @@ class BinanceWebSocket:
                 "data_quality": "REAL",
                 "timestamp": int(cached.get("ts", time.time()) * 1000),
             }
+        # REST fallback is disabled when the OI WebSocket stream is subscribed
+        # and producing events.  Falling back silently would mask a missing or
+        # stalled WS OI feed and falsely present REST-sourced data as real-time.
+        if self._open_interest_subscribed and self._open_interest_event_count > 0:
+            return None
         data = await self._get("/fapi/v1/openInterest", {"symbol": symbol}, use_data_url=True)
         if not data:
             return None
