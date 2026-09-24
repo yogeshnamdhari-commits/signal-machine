@@ -118,6 +118,7 @@ class BinanceWebSocket:
         self._public_ws = None
         self._market_ws = None
         self._session = None
+        self._ping_monitor_task: Optional[asyncio.Task] = None
         logger.info("WebSocket client stopped")
 
     async def _connect_both_loop(self) -> None:
@@ -151,7 +152,7 @@ class BinanceWebSocket:
         url = f"{base}/{route}/stream"
         logger.info("WS {} connecting → {}", route.upper(), url)
 
-        async with websockets.connect(url, ping_interval=30, ping_timeout=20, close_timeout=10) as ws:
+        async with websockets.connect(url, ping_interval=20, ping_timeout=30, close_timeout=15, max_size=2**20) as ws:
             async with self._lock:
                 if route == "public":
                     self._public_ws = ws
@@ -166,6 +167,9 @@ class BinanceWebSocket:
             self._last_pong = time.time()
             await self._subscribe_route(ws, route)
 
+            # Start ping monitor for this connection
+            ping_monitor = asyncio.create_task(self._ping_monitor(ws, route), name=f"ws_ping_{route}")
+
             async for raw in ws:
                 if not self._running:
                     break
@@ -178,6 +182,12 @@ class BinanceWebSocket:
                     import traceback
                     logger.error("WS {} message error: {}\n{}", route, exc, traceback.format_exc())
 
+            ping_monitor.cancel()
+            try:
+                await ping_monitor
+            except asyncio.CancelledError:
+                pass
+
             async with self._lock:
                 if route == "public":
                     self._public_ws = None
@@ -185,6 +195,27 @@ class BinanceWebSocket:
                     self._market_ws = None
                 self._connected = bool(self._public_ws or self._market_ws)
             logger.warning("WS {} disconnected", route.upper())
+
+    async def _ping_monitor(self, ws: websockets.WebSocketClientProtocol, route: str) -> None:
+        """Monitor connection health with explicit ping/pong."""
+        while self._running:
+            try:
+                await asyncio.sleep(15)
+                if not self._running:
+                    break
+                # Send explicit ping to verify connection
+                pong_waiter = await ws.ping()
+                await asyncio.wait_for(pong_waiter, timeout=10)
+                self._last_pong = time.time()
+            except asyncio.TimeoutError:
+                logger.warning("WS {} ping timeout — closing connection", route.upper())
+                await ws.close()
+                break
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug("WS {} ping monitor error: {}", route.upper(), exc)
+                break
 
     async def _subscribe_route(self, ws: websockets.WebSocketClientProtocol, route: str) -> None:
         from database import db
