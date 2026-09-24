@@ -777,6 +777,21 @@ class DeltaTerminalEngine:
                         sym, data.get("funding_rate", 0), data.get("timestamp", 0) / 1000
                     )
 
+            elif event == "open_interest":
+                # Real-time OI from WS !openInterest@arr stream
+                if data.get("feed") == "openInterest" and data.get("data_quality") == "REAL":
+                    oi = data.get("open_interest", 0)
+                    if oi > 0:
+                        price = self._mark_prices.get(sym, 0)
+                        if price > 0:
+                            self.data_quality.validate_oi(sym, oi, price)
+                            await self.oi.process_oi(
+                                sym,
+                                oi,
+                                price,
+                                data.get("timestamp", 0) / 1000,
+                            )
+
             elif event == "liquidation":
                 # Dedicated Binance forceOrder feed — authentic liquidation evidence.
                 if data.get("feed") == "forceOrder" and data.get("data_quality") == "REAL":
@@ -820,6 +835,13 @@ class DeltaTerminalEngine:
                 except Exception as e:
                     logger.debug("Premium index fetch error: {}", e)
 
+                # Merge WS markPrice stream cache for real-time mark/index/funding (updated every ~1s)
+                ws_premium = getattr(self.ws, '_ws_premium_cache', {})
+                if ws_premium:
+                    for sym, pi in ws_premium.items():
+                        if pi.get("mark_price", 0) > 0:
+                            premium_map[sym] = pi
+
                 # Feed real-time funding rates into engine + cache mark prices for OI valuation
                 for sym in self.active_symbols:
                     if sym in premium_map:
@@ -840,8 +862,29 @@ class DeltaTerminalEngine:
                 symbols = list(self.active_symbols)
                 sem = asyncio.Semaphore(_POLL_CONCURRENCY)
 
-                # ── OI DATA: production REST only; no proxy estimates ──
+                # ── OI DATA: Use WS !openInterest@arr cache first, then REST fallback ──
                 _oi_ok_count = 0
+
+                # First, process all symbols from WS OI cache (real-time, no REST needed)
+                ws_oi_cache = getattr(self.ws, 'get_all_cached_oi', lambda: {})()
+                for sym in symbols:
+                    if sym in ws_oi_cache:
+                        cached = ws_oi_cache[sym]
+                        oi = cached.get("oi", 0)
+                        if oi > 0:
+                            price = self._mark_prices.get(sym, 0)
+                            if price > 0:
+                                self.data_quality.validate_oi(sym, oi, price)
+                                await self.oi.process_oi(
+                                    sym,
+                                    oi,
+                                    price,
+                                    cached.get("ts", time.time()),
+                                )
+                                _oi_ok_count += 1
+
+                # Then, REST fallback only for symbols missing from WS cache
+                _missing_symbols = [s for s in symbols if s not in ws_oi_cache]
 
                 async def _poll_one(sym: str) -> bool:
                     nonlocal _oi_ok_count
@@ -864,16 +907,17 @@ class DeltaTerminalEngine:
                             logger.debug("OI REST poll error {}: {}", sym, e)
                         return False
 
-                await asyncio.gather(*[_poll_one(s) for s in symbols])
+                if _missing_symbols:
+                    await asyncio.gather(*[_poll_one(s) for s in _missing_symbols])
                 if _oi_ok_count:
                     self.data_freshness.record_data_update(
                         "open_interest",
-                        f"Binance REST /fapi/v1/openInterest ({_oi_ok_count}/{len(symbols)} symbols)",
+                        f"Binance WS !openInterest@arr + REST /fapi/v1/openInterest ({_oi_ok_count}/{len(symbols)} symbols)",
                     )
                 else:
                     self.data_freshness.record_data_update(
                         "open_interest",
-                        "UNAVAILABLE — Binance REST /fapi/v1/openInterest did not return production data",
+                        "UNAVAILABLE — Binance WS !openInterest@arr and REST /fapi/v1/openInterest did not return production data",
                     )
 
                 # ── Record data freshness for other polling sources ──
@@ -1136,6 +1180,14 @@ class DeltaTerminalEngine:
                         self._mark_prices[sym] = mp
                     self._premium_data[sym] = pi
                 logger.info("📥 Pre-fetched premium index: {} symbols", len(premium_map))
+            # Merge WS premium cache for real-time mark/index/funding
+            ws_premium = getattr(self.ws, '_ws_premium_cache', {})
+            if ws_premium:
+                for sym, pi in ws_premium.items():
+                    if pi.get("mark_price", 0) > 0:
+                        self._mark_prices[sym] = pi["mark_price"]
+                        self._premium_data[sym] = pi
+                logger.info("📥 WS premium cache merged: {} symbols", len(ws_premium))
             # Also use WS mark price cache directly (faster, no REST needed)
             ws_mp = getattr(self.ws, '_ws_mark_prices', {})
             if ws_mp:

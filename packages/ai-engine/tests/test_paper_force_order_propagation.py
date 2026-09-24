@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -11,7 +11,7 @@ async def test_force_order_reaches_liquidation_engine() -> None:
     engine.active_symbols = {"BTCUSDT"}
     engine.symbol_data = {}
     engine.liquidation = Mock()
-    engine.liquidation.process_liquidation_event = AsyncMock()
+    engine.liquidation.process_liquidation_event = Mock()
     engine.health_monitor = Mock()
 
     event = {
@@ -27,7 +27,7 @@ async def test_force_order_reaches_liquidation_engine() -> None:
 
     await engine._on_market_data("liquidation", event)
 
-    engine.liquidation.process_liquidation_event.assert_awaited_once_with(
+    engine.liquidation.process_liquidation_event.assert_called_once_with(
         "BTCUSDT", event
     )
 
@@ -38,7 +38,7 @@ async def test_non_force_order_liquidation_is_rejected_fail_closed() -> None:
     engine.active_symbols = {"BTCUSDT"}
     engine.symbol_data = {}
     engine.liquidation = Mock()
-    engine.liquidation.process_liquidation_event = AsyncMock()
+    engine.liquidation.process_liquidation_event = Mock()
     engine.health_monitor = Mock()
 
     event = {
@@ -54,4 +54,4 @@ async def test_non_force_order_liquidation_is_rejected_fail_closed() -> None:
 
     await engine._on_market_data("liquidation", event)
 
-    engine.liquidation.process_liquidation_event.assert_not_awaited()
+    engine.liquidation.process_liquidation_event.assert_not_called()

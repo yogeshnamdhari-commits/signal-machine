@@ -168,7 +168,8 @@ class BinanceWebSocket:
                 except json.JSONDecodeError:
                     logger.warning("WS {} non-JSON message ignored", route)
                 except Exception as exc:
-                    logger.error("WS {} message error: {}", route, exc)
+                    import traceback
+                    logger.error("WS {} message error: {}\n{}", route, exc, traceback.format_exc())
 
             async with self._lock:
                 if route == "public":
@@ -284,6 +285,7 @@ class BinanceWebSocket:
                 await self._on_force_order({"o": data})
         elif "!ticker@arr" in stream or "ticker@arr" in stream:
             if isinstance(data, list):
+                print(f"DEBUG: _on_ticker_arr = {self._on_ticker_arr}, type = {type(self._on_ticker_arr)}", flush=True)
                 await self._on_ticker_arr(data)
 
     async def _on_trade(self, d: Dict) -> None:
@@ -410,6 +412,7 @@ class BinanceWebSocket:
 
     async def _on_ticker_arr(self, tickers: list) -> None:
         """Cache real 24h ticker observations; never fabricate trade events."""
+        print(f"DEBUG: _on_ticker_arr called with {len(tickers) if tickers else 0} tickers", flush=True)
         if not self._callback:
             return
         for t in tickers:

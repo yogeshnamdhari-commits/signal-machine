@@ -1,22 +1,22 @@
 {
   "EDGEUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302982.2081769,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147091.244116,
+    "previous": "BUY_MODE"
   },
   "IDUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.3901608,
+    "last_update": 1790147522.6235762,
     "previous": "NO_TREND"
   },
   "1000LUNCUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303025.344552,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790112313.5540638,
+    "previous": "NO_TREND"
   },
   "EIGENUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784297291.1639528,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147356.730112,
     "previous": "WAITING_PULLBACK"
   },
   "COMPUSDT": {
@@ -51,18 +51,18 @@
   },
   "AEROUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784297853.3890529,
+    "last_update": 1790147317.944433,
     "previous": "WAITING_PULLBACK"
   },
   "DASHUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.257015,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790132214.336125,
+    "previous": "BUY_MODE"
   },
   "1000SHIBUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.122015,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147446.130177,
+    "previous": "WAITING_PULLBACK"
   },
   "CLOUSDT": {
     "state": "NO_TREND",
@@ -71,7 +71,7 @@
   },
   "GENIUSUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784002016.777874,
+    "last_update": 1790147481.136787,
     "previous": "WAITING_PULLBACK"
   },
   "INXUSDT": {
@@ -80,13 +80,13 @@
     "previous": "WAITING_PULLBACK"
   },
   "DOTUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.490114,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "NO_TREND",
+    "last_update": 1790147008.825098,
+    "previous": "BUY_MODE"
   },
   "CRVUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784294924.972229,
+    "last_update": 1790139546.646101,
     "previous": "WAITING_PULLBACK"
   },
   "BSBUSDT": {
@@ -95,9 +95,9 @@
     "previous": "NO_TREND"
   },
   "CHIPUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.762985,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.5253818,
+    "previous": "WAITING_PULLBACK"
   },
   "HYPERUSDT": {
     "state": "NO_TREND",
@@ -105,9 +105,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "ENSOUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302896.615304,
-    "previous": "SELL_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.532918,
+    "previous": "WAITING_PULLBACK"
   },
   "INUSDT": {
     "state": "NO_TREND",
@@ -115,38 +115,38 @@
     "previous": "SELL_MODE"
   },
   "HMSTRUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.200935,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112637.724552,
+    "previous": "WAITING_PULLBACK"
   },
   "BERAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302652.51029,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147540.591851,
     "previous": "WAITING_PULLBACK"
   },
   "ARKMUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783288239.715932,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147511.121134,
     "previous": "WAITING_PULLBACK"
   },
   "DOGEUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296922.697365,
+    "last_update": 1790146897.869535,
     "previous": "WAITING_PULLBACK"
   },
   "HUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784290266.385487,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790113810.1945238,
+    "previous": "WAITING_CONFIRMATION"
   },
   "BNBUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.6895301,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.545454,
+    "previous": "WAITING_PULLBACK"
   },
   "1000BONKUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302982.18975,
+    "state": "BUY_MODE",
+    "last_update": 1790147446.16523,
     "previous": "NO_TREND"
   },
   "GUAUSDT": {
@@ -155,14 +155,14 @@
     "previous": "SELL_MODE"
   },
   "ARBUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301521.20023,
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147430.843554,
     "previous": "NO_TREND"
   },
   "INJUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.429782,
-    "previous": "NO_TREND"
+    "last_update": 1790147299.270379,
+    "previous": "BUY_MODE"
   },
   "BASEDUSDT": {
     "state": "NO_TREND",
@@ -171,8 +171,8 @@
   },
   "ENAUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.295095,
-    "previous": "WAITING_CONFIRMATION"
+    "last_update": 1790147444.346544,
+    "previous": "NO_TREND"
   },
   "BELUSDT": {
     "state": "NO_TREND",
@@ -185,9 +185,9 @@
     "previous": "SELL_MODE"
   },
   "APEUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302662.065255,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147465.827809,
+    "previous": "WAITING_CONFIRMATION"
   },
   "BABYUSDT": {
     "state": "NO_TREND",
@@ -200,38 +200,38 @@
     "previous": "WAITING_PULLBACK"
   },
   "ETHUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.37835,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790133887.798361,
+    "previous": "BUY_MODE"
   },
   "ADAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784297087.915664,
-    "previous": "WAITING_PULLBACK"
-  },
-  "FILUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.974498,
-    "previous": "WAITING_CONFIRMATION"
-  },
-  "FARTCOINUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302987.9150982,
+    "last_update": 1790147430.750435,
     "previous": "NO_TREND"
   },
-  "GRASSUSDT": {
+  "FILUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784302258.0679371,
+    "last_update": 1790147441.825112,
     "previous": "WAITING_PULLBACK"
   },
+  "FARTCOINUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790132659.2995389,
+    "previous": "WAITING_PULLBACK"
+  },
+  "GRASSUSDT": {
+    "state": "BUY_MODE",
+    "last_update": 1790147518.883209,
+    "previous": "NO_TREND"
+  },
   "ALGOUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784303014.70082,
-    "previous": "SELL_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.5838652,
+    "previous": "WAITING_PULLBACK"
   },
   "CAKEUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784302285.423271,
+    "last_update": 1790147315.0403252,
     "previous": "WAITING_PULLBACK"
   },
   "GUNUSDT": {
@@ -241,8 +241,8 @@
   },
   "FETUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302878.0516732,
-    "previous": "NO_TREND"
+    "last_update": 1790147444.224882,
+    "previous": "WAITING_CONFIRMATION"
   },
   "HEIUSDT": {
     "state": "BUY_MODE",
@@ -251,13 +251,13 @@
   },
   "EPICUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784301747.765804,
+    "last_update": 1790147464.0510561,
     "previous": "WAITING_PULLBACK"
   },
   "FOLKSUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302681.780479,
-    "previous": "BUY_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.595192,
+    "previous": "WAITING_PULLBACK"
   },
   "CTRUSDT": {
     "state": "NO_TREND",
@@ -266,8 +266,8 @@
   },
   "AINUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783705471.645055,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790147082.291859,
+    "previous": "BUY_MODE"
   },
   "BRUSDT": {
     "state": "NO_TREND",
@@ -276,7 +276,7 @@
   },
   "EGLDUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296662.66595,
+    "last_update": 1790147511.962066,
     "previous": "WAITING_PULLBACK"
   },
   "1000RATSUSDT": {
@@ -285,13 +285,13 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "EVAAUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784286837.259686,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147492.489682,
+    "previous": "SELL_MODE"
   },
   "CHZUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.45666,
+    "state": "BUY_MODE",
+    "last_update": 1790147048.125684,
     "previous": "NO_TREND"
   },
   "CARVUSDT": {
@@ -305,14 +305,14 @@
     "previous": "NO_TREND"
   },
   "AVAXUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.95731,
-    "previous": "NO_TREND"
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147413.55409,
+    "previous": "WAITING_PULLBACK"
   },
   "ALLOUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784284225.699119,
-    "previous": "SELL_MODE"
+    "last_update": 1790147463.942782,
+    "previous": "WAITING_PULLBACK"
   },
   "BILLUSDT": {
     "state": "SELL_MODE",
@@ -325,19 +325,19 @@
     "previous": "NO_TREND"
   },
   "EDENUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784297547.29986,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147520.432864,
+    "previous": "NO_TREND"
   },
   "ARUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301735.781918,
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147464.103144,
     "previous": "NO_TREND"
   },
   "ENJUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296184.9617841,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147200.298213,
+    "previous": "NO_TREND"
   },
   "BUSDT": {
     "state": "BUY_MODE",
@@ -350,14 +350,14 @@
     "previous": "NO_TREND"
   },
   "BICOUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302995.349397,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147511.486036,
+    "previous": "WAITING_PULLBACK"
   },
   "BIOUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302661.330482,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147520.401286,
+    "previous": "NO_TREND"
   },
   "EDUUSDT": {
     "state": "NO_TREND",
@@ -376,8 +376,8 @@
   },
   "ATOMUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296157.799007,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790147096.3481522,
+    "previous": "BUY_MODE"
   },
   "BANUSDT": {
     "state": "BUY_MODE",
@@ -390,8 +390,8 @@
     "previous": "WAITING_PULLBACK"
   },
   "ICPUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296818.120258,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147326.886684,
     "previous": "WAITING_PULLBACK"
   },
   "GWEIUSDT": {
@@ -400,9 +400,9 @@
     "previous": "NO_TREND"
   },
   "1000FLOKIUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.3631911,
-    "previous": "NO_TREND"
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147539.7909372,
+    "previous": "WAITING_PULLBACK"
   },
   "COAIUSDT": {
     "state": "NO_TREND",
@@ -415,18 +415,18 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "BCHUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301734.997555,
+    "state": "BUY_MODE",
+    "last_update": 1790146924.753425,
     "previous": "NO_TREND"
   },
   "BEATUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302632.170757,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147480.934918,
+    "previous": "WAITING_CONFIRMATION"
   },
   "ASTERUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296818.190006,
+    "last_update": 1790146897.891306,
     "previous": "WAITING_PULLBACK"
   },
   "0GUSDT": {
@@ -440,19 +440,19 @@
     "previous": "WAITING_PULLBACK"
   },
   "AVNTUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303027.081012,
-    "previous": "WAITING_PULLBACK"
+    "state": "NO_TREND",
+    "last_update": 1790112212.621259,
+    "previous": "WAITING_CONFIRMATION"
   },
   "CCUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302991.60238,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147189.592418,
+    "previous": "SELL_MODE"
   },
   "APRUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303031.7001479,
-    "previous": "WAITING_PULLBACK"
+    "state": "NO_TREND",
+    "last_update": 1790112212.6303601,
+    "previous": "WAITING_CONFIRMATION"
   },
   "BASUSDT": {
     "state": "NO_TREND",
@@ -461,42 +461,42 @@
   },
   "HYPEUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296763.3579361,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790132214.2764192,
+    "previous": "BUY_MODE"
   },
   "BOMEUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296682.168913,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147312.01058,
+    "previous": "WAITING_CONFIRMATION"
   },
   "4USDT": {
     "state": "NO_TREND",
-    "last_update": 1783624770.6197171,
+    "last_update": 1790113328.606431,
     "previous": "WAITING_PULLBACK"
   },
   "CFGUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302987.965256,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.6381912,
+    "previous": "WAITING_PULLBACK"
   },
   "BTWUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784294430.725496,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147462.311403,
+    "previous": "NO_TREND"
   },
   "ETCUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296652.939256,
+    "last_update": 1790147511.97927,
     "previous": "WAITING_PULLBACK"
   },
   "HBARUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784299331.685905,
-    "previous": "SELL_MODE"
+    "last_update": 1790146897.895794,
+    "previous": "WAITING_PULLBACK"
   },
   "AXSUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.160386,
+    "last_update": 1790147522.120662,
     "previous": "NO_TREND"
   },
   "SPKUSDT": {
@@ -505,14 +505,14 @@
     "previous": "NO_TREND"
   },
   "FFUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302332.26395,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147200.5328379,
+    "previous": "SELL_MODE"
   },
   "BTCUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296922.849747,
-    "previous": "WAITING_CONFIRMATION"
+    "last_update": 1790133885.462893,
+    "previous": "BUY_MODE"
   },
   "BLESSUSDT": {
     "state": "NO_TREND",
@@ -520,13 +520,13 @@
     "previous": "WAITING_PULLBACK"
   },
   "DEXEUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.4985359,
-    "previous": "BUY_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147522.5968919,
+    "previous": "NO_TREND"
   },
   "DYDXUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784255557.3722749,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147492.336749,
     "previous": "WAITING_PULLBACK"
   },
   "ALICEUSDT": {
@@ -535,34 +535,34 @@
     "previous": "NO_TREND"
   },
   "IOUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302896.4697118,
-    "previous": "SELL_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147522.4493032,
+    "previous": "NO_TREND"
   },
   "ENSUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302878.578475,
-    "previous": "BUY_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790147318.129499,
+    "previous": "WAITING_PULLBACK"
   },
   "GIGGLEUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302652.020204,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147466.908224,
+    "previous": "NO_TREND"
   },
   "APTUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784303010.4636722,
-    "previous": "WAITING_CONFIRMATION"
+    "last_update": 1790147518.7262201,
+    "previous": "NO_TREND"
   },
   "JTOUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302877.6219919,
+    "state": "NO_TREND",
+    "last_update": 1790113328.6199129,
     "previous": "WAITING_CONFIRMATION"
   },
   "LITUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784002016.8700612,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790147462.241488,
+    "previous": "BUY_MODE"
   },
   "SEIUSDT": {
     "state": "NO_TREND",
@@ -570,24 +570,24 @@
     "previous": "SELL_MODE"
   },
   "PAXGUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784301735.129102,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790132259.844249,
+    "previous": "BUY_MODE"
   },
   "STGUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784303025.390694,
-    "previous": "SELL_MODE"
+    "last_update": 1790147509.611287,
+    "previous": "BUY_MODE"
   },
   "PARTIUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.1043782,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.687233,
+    "previous": "WAITING_PULLBACK"
   },
   "RIVERUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302889.043445,
-    "previous": "SELL_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147096.4048882,
+    "previous": "NO_TREND"
   },
   "RECALLUSDT": {
     "state": "NO_TREND",
@@ -596,7 +596,7 @@
   },
   "TRBUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296683.0147,
+    "last_update": 1790114383.578017,
     "previous": "WAITING_PULLBACK"
   },
   "SOONUSDT": {
@@ -625,9 +625,9 @@
     "previous": "BUY_MODE"
   },
   "ETHFIUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.751195,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147082.575225,
+    "previous": "BUY_MODE"
   },
   "DOGSUSDT": {
     "state": "NO_TREND",
@@ -641,13 +641,13 @@
   },
   "1000PEPEUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.414422,
+    "last_update": 1790147425.695542,
     "previous": "NO_TREND"
   },
   "GALAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296662.704371,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147104.987753,
+    "previous": "NO_TREND"
   },
   "USDCUSDT": {
     "state": "NO_TREND",
@@ -661,12 +661,12 @@
   },
   "WLDUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784302368.8368351,
+    "last_update": 1790139546.731721,
     "previous": "WAITING_PULLBACK"
   },
   "XPLUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.3365812,
+    "last_update": 1790147520.5635881,
     "previous": "NO_TREND"
   },
   "IPUSDT": {
@@ -685,13 +685,13 @@
     "previous": "WAITING_PULLBACK"
   },
   "KAIAUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1782500054.679042,
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.5236301,
     "previous": "NO_TREND"
   },
   "TRUMPUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784290977.852944,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147540.2199428,
     "previous": "WAITING_PULLBACK"
   },
   "UBUSDT": {
@@ -701,13 +701,13 @@
   },
   "SUIUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.273907,
+    "last_update": 1790147519.552162,
     "previous": "NO_TREND"
   },
   "\u5e01\u5b89\u4eba\u751fUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302988.1382542,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.728522,
+    "previous": "WAITING_PULLBACK"
   },
   "MOVEUSDT": {
     "state": "NO_TREND",
@@ -715,64 +715,64 @@
     "previous": "WAITING_PULLBACK"
   },
   "MOODENGUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783962601.066742,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147519.0012622,
+    "previous": "NO_TREND"
   },
   "UAIUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784301058.908556,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147518.67211,
+    "previous": "NO_TREND"
   },
   "QNTUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302987.8816042,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.734538,
+    "previous": "WAITING_PULLBACK"
   },
   "DOODUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783018157.050524,
-    "previous": "WAITING_PULLBACK"
-  },
-  "BULLAUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303014.787664,
-    "previous": "WAITING_PULLBACK"
-  },
-  "KITEUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301174.2626402,
+    "state": "BUY_MODE",
+    "last_update": 1790112344.255417,
     "previous": "NO_TREND"
   },
+  "BULLAUSDT": {
+    "state": "SELL_MODE",
+    "last_update": 1790147200.2433438,
+    "previous": "NO_TREND"
+  },
+  "KITEUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147091.094883,
+    "previous": "SELL_MODE"
+  },
   "SLXUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.264283,
+    "state": "BUY_MODE",
+    "last_update": 1790147520.583315,
     "previous": "NO_TREND"
   },
   "MAGMAUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784303010.2683809,
-    "previous": "SELL_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147141.685964,
+    "previous": "NO_TREND"
   },
   "OPUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302878.075721,
-    "previous": "WAITING_CONFIRMATION"
+    "last_update": 1790147294.54949,
+    "previous": "BUY_MODE"
   },
   "UNIUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301174.144695,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790146897.907445,
+    "previous": "WAITING_PULLBACK"
   },
   "ORDIUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784295564.863632,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790147315.724747,
+    "previous": "WAITING_CONFIRMATION"
   },
   "KAITOUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302982.3072588,
-    "previous": "NO_TREND"
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147520.7058098,
+    "previous": "WAITING_PULLBACK"
   },
   "HFTUSDT": {
     "state": "NO_TREND",
@@ -781,8 +781,8 @@
   },
   "SUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784292184.211547,
-    "previous": "BUY_MODE"
+    "last_update": 1790147048.2528589,
+    "previous": "SELL_MODE"
   },
   "MMTUSDT": {
     "state": "NO_TREND",
@@ -795,9 +795,9 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "ZKUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303014.672259,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147494.9040158,
+    "previous": "BUY_MODE"
   },
   "SKRUSDT": {
     "state": "NO_TREND",
@@ -825,14 +825,14 @@
     "previous": "WAITING_PULLBACK"
   },
   "PIPPINUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296817.310886,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147216.390538,
+    "previous": "NO_TREND"
   },
   "GRTUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783509189.027339,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790113851.964105,
+    "previous": "NO_TREND"
   },
   "NFPUSDT": {
     "state": "BUY_MODE",
@@ -840,8 +840,8 @@
     "previous": "NO_TREND"
   },
   "VELVETUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784301174.355653,
+    "state": "SELL_MODE",
+    "last_update": 1790147522.895988,
     "previous": "NO_TREND"
   },
   "OUSDT": {
@@ -850,29 +850,29 @@
     "previous": "WAITING_PULLBACK"
   },
   "WIFUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.126505,
+    "state": "SELL_MODE",
+    "last_update": 1790147008.843412,
     "previous": "NO_TREND"
   },
   "JASMYUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302982.5069618,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147343.816763,
+    "previous": "WAITING_PULLBACK"
   },
   "MORPHOUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301339.466008,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147082.6339872,
+    "previous": "SELL_MODE"
   },
   "RIFUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784294921.36011,
-    "previous": "SELL_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147216.0904279,
+    "previous": "NO_TREND"
   },
   "POPCATUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783264321.171317,
-    "previous": "SELL_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147206.3357792,
+    "previous": "NO_TREND"
   },
   "ZBTUSDT": {
     "state": "SELL_MODE",
@@ -891,7 +891,7 @@
   },
   "SKYUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.813012,
+    "last_update": 1790147522.429926,
     "previous": "NO_TREND"
   },
   "TRIAUSDT": {
@@ -905,24 +905,24 @@
     "previous": "SELL_MODE"
   },
   "SOLUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302992.442576,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790133885.348078,
+    "previous": "SELL_MODE"
   },
   "VVVUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784297547.4459698,
+    "last_update": 1790139546.760111,
     "previous": "WAITING_PULLBACK"
   },
   "SIRENUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302992.508658,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112347.702424,
+    "previous": "SELL_MODE"
   },
   "MEGAUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301255.049999,
-    "previous": "NO_TREND"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147497.152384,
+    "previous": "SELL_MODE"
   },
   "GPSUSDT": {
     "state": "BUY_MODE",
@@ -940,24 +940,24 @@
     "previous": "WAITING_PULLBACK"
   },
   "AAVEUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296818.269728,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147444.171336,
+    "previous": "NO_TREND"
   },
   "XMRUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302995.417344,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790114383.595547,
+    "previous": "WAITING_PULLBACK"
   },
   "TIAUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301030.0562,
-    "previous": "NO_TREND"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147299.6179242,
+    "previous": "BUY_MODE"
   },
   "RENDERUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302992.520383,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147462.1739619,
+    "previous": "BUY_MODE"
   },
   "PUNDIXUSDT": {
     "state": "NO_TREND",
@@ -965,8 +965,8 @@
     "previous": "WAITING_PULLBACK"
   },
   "SKYAIUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303025.375114,
+    "state": "NO_TREND",
+    "last_update": 1790113328.639786,
     "previous": "WAITING_PULLBACK"
   },
   "MEMEUSDT": {
@@ -980,14 +980,14 @@
     "previous": "WAITING_PULLBACK"
   },
   "MANTAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784219145.201238,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147542.800811,
     "previous": "WAITING_PULLBACK"
   },
   "METUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303031.7165701,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147463.831337,
+    "previous": "BUY_MODE"
   },
   "AERGOUSDT": {
     "state": "NO_TREND",
@@ -1000,9 +1000,9 @@
     "previous": "NO_TREND"
   },
   "CYBERUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783288239.932278,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147511.701313,
+    "previous": "WAITING_CONFIRMATION"
   },
   "LUMIAUSDT": {
     "state": "NO_TREND",
@@ -1010,13 +1010,13 @@
     "previous": "SELL_MODE"
   },
   "TACUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302988.1004312,
-    "previous": "SELL_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.8062458,
+    "previous": "WAITING_PULLBACK"
   },
   "PORTALUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783346470.745207,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147540.7507992,
     "previous": "WAITING_PULLBACK"
   },
   "ESPUSDT": {
@@ -1025,13 +1025,13 @@
     "previous": "WAITING_PULLBACK"
   },
   "IOTAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783705471.885501,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147189.111457,
+    "previous": "NO_TREND"
   },
   "LAUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.133576,
+    "state": "BUY_MODE",
+    "last_update": 1790147492.622644,
     "previous": "NO_TREND"
   },
   "GMTUSDT": {
@@ -1046,8 +1046,8 @@
   },
   "AGTUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783967333.608643,
-    "previous": "BUY_MODE"
+    "last_update": 1790115099.888545,
+    "previous": "WAITING_PULLBACK"
   },
   "POLYXUSDT": {
     "state": "NO_TREND",
@@ -1056,23 +1056,23 @@
   },
   "XRPUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.546695,
-    "previous": "SELL_MODE"
-  },
-  "WLFIUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.2176352,
+    "last_update": 1790147518.812918,
     "previous": "NO_TREND"
   },
+  "WLFIUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790112212.829401,
+    "previous": "WAITING_PULLBACK"
+  },
   "OPNUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302886.5898082,
-    "previous": "BUY_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.8349912,
+    "previous": "WAITING_PULLBACK"
   },
   "AIXBTUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783705471.899652,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147216.430412,
+    "previous": "NO_TREND"
   },
   "HIVEUSDT": {
     "state": "NO_TREND",
@@ -1081,27 +1081,27 @@
   },
   "ZENUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296846.542769,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790147014.736934,
+    "previous": "BUY_MODE"
   },
   "ZROUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303014.729963,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.567032,
+    "previous": "NO_TREND"
   },
   "TNSRUSDT": {
-    "state": "WAITING_CONFIRMATION",
-    "last_update": 1784303031.734255,
-    "previous": "WAITING_PULLBACK"
+    "state": "NO_TREND",
+    "last_update": 1790112212.845953,
+    "previous": "WAITING_CONFIRMATION"
   },
   "JUPUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296818.071321,
-    "previous": "WAITING_CONFIRMATION"
+    "last_update": 1790147512.0797162,
+    "previous": "WAITING_PULLBACK"
   },
   "LDOUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302988.03994,
+    "last_update": 1790147519.324058,
     "previous": "NO_TREND"
   },
   "WAXPUSDT": {
@@ -1111,8 +1111,8 @@
   },
   "SNXUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.690759,
-    "previous": "NO_TREND"
+    "last_update": 1790147510.9112582,
+    "previous": "BUY_MODE"
   },
   "ORCAUSDT": {
     "state": "NO_TREND",
@@ -1130,9 +1130,9 @@
     "previous": "ACTIVE_SELL"
   },
   "MONUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302992.001445,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147105.04066,
+    "previous": "BUY_MODE"
   },
   "STOUSDT": {
     "state": "NO_TREND",
@@ -1140,9 +1140,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "PNUTUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302038.346519,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.305751,
+    "previous": "NO_TREND"
   },
   "SPACEUSDT": {
     "state": "BUY_MODE",
@@ -1150,49 +1150,49 @@
     "previous": "NO_TREND"
   },
   "SYNUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302995.4418502,
+    "state": "SELL_MODE",
+    "last_update": 1790147091.295511,
     "previous": "NO_TREND"
   },
   "SANDUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302661.313049,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147141.727956,
+    "previous": "NO_TREND"
   },
   "STRKUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302995.241846,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112312.1228118,
+    "previous": "SELL_MODE"
   },
   "PYTHUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.788168,
+    "last_update": 1790147518.6257331,
     "previous": "NO_TREND"
   },
   "TAOUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784302374.97542,
+    "last_update": 1790115099.9018219,
     "previous": "WAITING_PULLBACK"
   },
   "VETUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296846.111954,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147483.165889,
+    "previous": "BUY_MODE"
   },
   "HOTUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.405764,
-    "previous": "NO_TREND"
-  },
-  "REUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784301724.290879,
+    "last_update": 1790112212.881372,
     "previous": "WAITING_PULLBACK"
   },
-  "ONDOUSDT": {
+  "REUSDT": {
     "state": "BUY_MODE",
-    "last_update": 1784302987.936825,
+    "last_update": 1790147141.548055,
     "previous": "NO_TREND"
+  },
+  "ONDOUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147008.7075279,
+    "previous": "BUY_MODE"
   },
   "STORJUSDT": {
     "state": "SELL_MODE",
@@ -1200,18 +1200,18 @@
     "previous": "NO_TREND"
   },
   "SPXUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302439.8029451,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.664874,
+    "previous": "NO_TREND"
   },
   "LSKUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783624770.841551,
+    "last_update": 1790147512.110962,
     "previous": "WAITING_PULLBACK"
   },
   "BSVUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784002016.925098,
+    "last_update": 1790139546.794378,
     "previous": "WAITING_PULLBACK"
   },
   "JSTUSDT": {
@@ -1220,14 +1220,14 @@
     "previous": "WAITING_PULLBACK"
   },
   "USELESSUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302992.42944,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147008.855569,
+    "previous": "BUY_MODE"
   },
   "MYXUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784287031.81648,
-    "previous": "BUY_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147206.543311,
+    "previous": "NO_TREND"
   },
   "SOMIUSDT": {
     "state": "NO_TREND",
@@ -1235,9 +1235,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "LTCUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784301161.357891,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147433.5650718,
+    "previous": "BUY_MODE"
   },
   "BROCCOLIF3BUSDT": {
     "state": "NO_TREND",
@@ -1245,14 +1245,14 @@
     "previous": "WAITING_PULLBACK"
   },
   "ZAMAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784297853.415211,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147294.3866482,
+    "previous": "BUY_MODE"
   },
   "LUNA2USDT": {
-    "state": "NO_TREND",
-    "last_update": 1783509189.1956549,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147479.7616708,
+    "previous": "NO_TREND"
   },
   "MOVRUSDT": {
     "state": "NO_TREND",
@@ -1265,24 +1265,24 @@
     "previous": "WAITING_PULLBACK"
   },
   "POWERUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296846.032207,
-    "previous": "SELL_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147189.663706,
+    "previous": "NO_TREND"
   },
   "FUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783288240.009985,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147509.950502,
+    "previous": "BUY_MODE"
   },
   "XLMUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784223962.446877,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147294.33155,
+    "previous": "BUY_MODE"
   },
   "CVCUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1782690779.058181,
-    "previous": "ACTIVE_SELL"
+    "state": "BUY_MODE",
+    "last_update": 1790147200.1612082,
+    "previous": "NO_TREND"
   },
   "GLMUSDT": {
     "state": "BUY_MODE",
@@ -1290,43 +1290,43 @@
     "previous": "NO_TREND"
   },
   "WALUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783288240.017052,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.406692,
+    "previous": "NO_TREND"
   },
   "PENDLEUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784297290.956096,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790132659.384863,
+    "previous": "WAITING_CONFIRMATION"
   },
   "SAGAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783705471.948095,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147462.433135,
+    "previous": "BUY_MODE"
   },
   "VIRTUALUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784219145.3237,
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147425.495965,
     "previous": "WAITING_CONFIRMATION"
   },
   "WUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.534616,
-    "previous": "NO_TREND"
-  },
-  "ZECUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784296266.2280772,
+    "last_update": 1790112212.8868039,
     "previous": "WAITING_PULLBACK"
   },
-  "LINKUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.3250072,
+  "ZECUSDT": {
+    "state": "BUY_MODE",
+    "last_update": 1790146924.784916,
     "previous": "NO_TREND"
   },
+  "LINKUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790146897.9277709,
+    "previous": "WAITING_PULLBACK"
+  },
   "PENGUUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301174.435483,
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.385579,
     "previous": "NO_TREND"
   },
   "STABLEUSDT": {
@@ -1335,14 +1335,14 @@
     "previous": "WAITING_PULLBACK"
   },
   "CAPUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784301507.191112,
-    "previous": "BUY_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147520.761579,
+    "previous": "NO_TREND"
   },
   "USUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302992.474276,
-    "previous": "NO_TREND"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147339.595844,
+    "previous": "BUY_MODE"
   },
   "ARKUSDT": {
     "state": "BUY_MODE",
@@ -1365,9 +1365,9 @@
     "previous": "BUY_MODE"
   },
   "SAHARAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302661.6444008,
-    "previous": "SELL_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147188.87032,
+    "previous": "NO_TREND"
   },
   "MUSDT": {
     "state": "BUY_MODE",
@@ -1375,19 +1375,19 @@
     "previous": "NO_TREND"
   },
   "KASUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783624770.899342,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147492.723294,
+    "previous": "NO_TREND"
   },
   "NEARUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.349321,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "NO_TREND",
+    "last_update": 1790137368.144588,
+    "previous": "WAITING_PULLBACK"
   },
   "POWRUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783624770.9040582,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147216.068178,
+    "previous": "NO_TREND"
   },
   "KATUSDT": {
     "state": "SELL_MODE",
@@ -1396,8 +1396,8 @@
   },
   "SUSHIUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302988.06862,
-    "previous": "NO_TREND"
+    "last_update": 1790147481.118032,
+    "previous": "WAITING_CONFIRMATION"
   },
   "PLAYUSDT": {
     "state": "NO_TREND",
@@ -1415,24 +1415,24 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "NEIROUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302691.807041,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147540.1673741,
     "previous": "WAITING_PULLBACK"
   },
   "TURBOUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783623333.281974,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147206.515431,
+    "previous": "NO_TREND"
   },
   "PUMPUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784288811.2086651,
-    "previous": "WAITING_PULLBACK"
+    "state": "SELL_MODE",
+    "last_update": 1790147442.043103,
+    "previous": "NO_TREND"
   },
   "POLUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784295412.443379,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147082.3982248,
+    "previous": "NO_TREND"
   },
   "RAVEUSDT": {
     "state": "NO_TREND",
@@ -1440,14 +1440,14 @@
     "previous": "WAITING_PULLBACK"
   },
   "PLUMEUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.351298,
+    "state": "BUY_MODE",
+    "last_update": 1790147142.11449,
     "previous": "NO_TREND"
   },
   "LPTUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1782689925.8985898,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147216.77699,
+    "previous": "NO_TREND"
   },
   "ACTUSDT": {
     "state": "NO_TREND",
@@ -1470,14 +1470,14 @@
     "previous": "SELL_MODE"
   },
   "CYSUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1782933937.6281369,
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147519.3851252,
     "previous": "NO_TREND"
   },
   "NIGHTUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.375406,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.919348,
+    "previous": "WAITING_PULLBACK"
   },
   "JCTUSDT": {
     "state": "NO_TREND",
@@ -1486,7 +1486,7 @@
   },
   "DRIFTUSDT": {
     "state": "NO_TREND",
-    "last_update": 1782936845.272274,
+    "last_update": 1790113328.686192,
     "previous": "WAITING_PULLBACK"
   },
   "CATIUSDT": {
@@ -1496,23 +1496,23 @@
   },
   "TUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783962601.182859,
+    "last_update": 1790132659.428405,
     "previous": "WAITING_PULLBACK"
   },
   "1000XECUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784301735.518207,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147189.543595,
+    "previous": "BUY_MODE"
   },
   "COOKIEUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783288240.062931,
+    "last_update": 1790113328.693844,
     "previous": "WAITING_PULLBACK"
   },
   "LABUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784296928.952119,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147047.69473,
+    "previous": "SELL_MODE"
   },
   "GASUSDT": {
     "state": "BUY_MODE",
@@ -1525,14 +1525,14 @@
     "previous": "BUY_MODE"
   },
   "ZORAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784293580.588725,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147200.509755,
+    "previous": "NO_TREND"
   },
   "XAUTUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784301018.083023,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147006.725184,
+    "previous": "BUY_MODE"
   },
   "XANUSDT": {
     "state": "SELL_MODE",
@@ -1560,9 +1560,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "MAGICUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783288240.072151,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147218.01891,
+    "previous": "NO_TREND"
   },
   "TRADOORUSDT": {
     "state": "NO_TREND",
@@ -1605,9 +1605,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "NEOUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1782847688.814177,
-    "previous": "NO_TREND"
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147542.950795,
+    "previous": "WAITING_PULLBACK"
   },
   "TAIKOUSDT": {
     "state": "NO_TREND",
@@ -1646,8 +1646,8 @@
   },
   "PHAUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783288240.1039329,
-    "previous": "WAITING_CONFIRMATION"
+    "last_update": 1790147467.1534579,
+    "previous": "BUY_MODE"
   },
   "JELLYJELLYUSDT": {
     "state": "NO_TREND",
@@ -1655,24 +1655,24 @@
     "previous": "BUY_MODE"
   },
   "CFXUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302995.3049889,
-    "previous": "NO_TREND"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147341.460576,
+    "previous": "BUY_MODE"
   },
   "NILUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1783959185.4938638,
-    "previous": "NO_TREND"
-  },
-  "\u9f99\u867eUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783705472.018635,
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147540.8605282,
     "previous": "WAITING_PULLBACK"
   },
-  "COLLECTUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302982.112457,
+  "\u9f99\u867eUSDT": {
+    "state": "BUY_MODE",
+    "last_update": 1790146970.796048,
     "previous": "NO_TREND"
+  },
+  "COLLECTUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790112212.928206,
+    "previous": "WAITING_PULLBACK"
   },
   "TRUTHUSDT": {
     "state": "NO_TREND",
@@ -1685,9 +1685,9 @@
     "previous": "NO_TREND"
   },
   "BATUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1782936009.647447,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147523.0425391,
+    "previous": "NO_TREND"
   },
   "ICXUSDT": {
     "state": "SELL_MODE",
@@ -1720,9 +1720,9 @@
     "previous": "BUY_MODE"
   },
   "STXUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296683.166734,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147325.537239,
+    "previous": "SELL_MODE"
   },
   "TAUSDT": {
     "state": "NO_TREND",
@@ -1735,14 +1735,14 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "STARUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784296321.8733928,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147216.3363771,
+    "previous": "NO_TREND"
   },
   "PTBUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784302228.601621,
-    "previous": "BUY_MODE"
+    "state": "BUY_MODE",
+    "last_update": 1790147091.47203,
+    "previous": "NO_TREND"
   },
   "TLMUSDT": {
     "state": "BUY_MODE",
@@ -1750,14 +1750,14 @@
     "previous": "NO_TREND"
   },
   "MINAUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.576585,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790113328.701288,
+    "previous": "WAITING_CONFIRMATION"
   },
   "THEUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302897.174248,
-    "previous": "SELL_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.9407291,
+    "previous": "WAITING_PULLBACK"
   },
   "PIXELUSDT": {
     "state": "NO_TREND",
@@ -1765,9 +1765,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "SXTUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784302991.80339,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790113328.709871,
+    "previous": "WAITING_PULLBACK"
   },
   "SHELLUSDT": {
     "state": "NO_TREND",
@@ -1775,9 +1775,9 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "MUBARAKUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1784301735.027168,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790146897.9395258,
+    "previous": "WAITING_PULLBACK"
   },
   "DEEPUSDT": {
     "state": "NO_TREND",
@@ -1795,9 +1795,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "ERAUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302896.401673,
-    "previous": "SELL_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.946433,
+    "previous": "WAITING_PULLBACK"
   },
   "BANKUSDT": {
     "state": "NO_TREND",
@@ -1806,8 +1806,8 @@
   },
   "RAYSOLUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783129911.1569548,
-    "previous": "WAITING_PULLBACK"
+    "last_update": 1790147047.647476,
+    "previous": "BUY_MODE"
   },
   "BLUAIUSDT": {
     "state": "NO_TREND",
@@ -1815,14 +1815,14 @@
     "previous": "BUY_MODE"
   },
   "MERLUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783095474.434349,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147215.5969799,
+    "previous": "BUY_MODE"
   },
   "BARDUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302693.231356,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "NO_TREND",
+    "last_update": 1790112212.9524858,
+    "previous": "WAITING_PULLBACK"
   },
   "ALLUSDT": {
     "state": "NO_TREND",
@@ -1840,8 +1840,8 @@
     "previous": "WAITING_PULLBACK"
   },
   "AKEUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784301018.3037398,
+    "state": "SELL_MODE",
+    "last_update": 1790147446.061601,
     "previous": "NO_TREND"
   },
   "RSRUSDT": {
@@ -1860,9 +1860,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "SENTUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784293706.602231,
-    "previous": "BUY_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.7767181,
+    "previous": "NO_TREND"
   },
   "GTCUSDT": {
     "state": "SELL_MODE",
@@ -1875,9 +1875,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "IMXUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783618840.685131,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147219.127328,
+    "previous": "NO_TREND"
   },
   "ZKCUSDT": {
     "state": "NO_TREND",
@@ -1905,14 +1905,14 @@
     "previous": "WAITING_PULLBACK"
   },
   "CHILLGUYUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1783958872.6662169,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790147518.919728,
+    "previous": "WAITING_CONFIRMATION"
   },
   "API3USDT": {
-    "state": "NO_TREND",
-    "last_update": 1783503622.309394,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147343.677801,
+    "previous": "WAITING_CONFIRMATION"
   },
   "MASKUSDT": {
     "state": "NO_TREND",
@@ -1945,9 +1945,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "PEOPLEUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1784218177.56205,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.692648,
+    "previous": "NO_TREND"
   },
   "NOTUSDT": {
     "state": "NO_TREND",
@@ -1955,9 +1955,9 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "OGNUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302889.033098,
-    "previous": "BUY_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.9589021,
+    "previous": "WAITING_PULLBACK"
   },
   "VANRYUSDT": {
     "state": "NO_TREND",
@@ -1975,8 +1975,8 @@
     "previous": "WAITING_PULLBACK"
   },
   "REZUSDT": {
-    "state": "SELL_MODE",
-    "last_update": 1783263444.500776,
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147216.8149529,
     "previous": "NO_TREND"
   },
   "SUNUSDT": {
@@ -1985,9 +1985,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "SPELLUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302682.413056,
-    "previous": "SELL_MODE"
+    "state": "NO_TREND",
+    "last_update": 1790112212.965942,
+    "previous": "WAITING_PULLBACK"
   },
   "2ZUSDT": {
     "state": "NO_TREND",
@@ -2005,9 +2005,9 @@
     "previous": "WAITING_CONFIRMATION"
   },
   "ZETAUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783360631.34163,
-    "previous": "BUY_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.5035641,
+    "previous": "NO_TREND"
   },
   "KSMUSDT": {
     "state": "NO_TREND",
@@ -2026,7 +2026,7 @@
   },
   "FORMUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783346470.94701,
+    "last_update": 1790139546.849597,
     "previous": "WAITING_PULLBACK"
   },
   "OGUSDT": {
@@ -2035,9 +2035,9 @@
     "previous": "NO_TREND"
   },
   "MANTRAUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302992.3968298,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.974963,
+    "previous": "WAITING_PULLBACK"
   },
   "ARPAUSDT": {
     "state": "NO_TREND",
@@ -2045,14 +2045,14 @@
     "previous": "BUY_MODE"
   },
   "ATHUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783361275.171977,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "BUY_MODE",
+    "last_update": 1790147141.830789,
+    "previous": "NO_TREND"
   },
   "TSTUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783690848.7306309,
-    "previous": "SELL_MODE"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147520.740684,
+    "previous": "NO_TREND"
   },
   "RUNEUSDT": {
     "state": "NO_TREND",
@@ -2060,24 +2060,24 @@
     "previous": "WAITING_PULLBACK"
   },
   "GOATUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783406441.311001,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147341.378328,
+    "previous": "BUY_MODE"
   },
   "KMNOUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783624770.972707,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147216.63908,
+    "previous": "NO_TREND"
   },
   "TAKEUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783509189.4131541,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "BUY_MODE",
+    "last_update": 1790147082.1619809,
+    "previous": "NO_TREND"
   },
   "LYNUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784217331.842391,
-    "previous": "NO_TREND"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147511.663856,
+    "previous": "WAITING_CONFIRMATION"
   },
   "USTCUSDT": {
     "state": "NO_TREND",
@@ -2085,19 +2085,19 @@
     "previous": "WAITING_PULLBACK"
   },
   "ZESTUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783621028.557504,
-    "previous": "WAITING_PULLBACK"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147340.148303,
+    "previous": "BUY_MODE"
   },
   "PROVEUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783621390.733139,
-    "previous": "WAITING_CONFIRMATION"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147497.7225962,
+    "previous": "BUY_MODE"
   },
   "TAGUSDT": {
-    "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.7297878,
-    "previous": "NO_TREND"
+    "state": "NO_TREND",
+    "last_update": 1790112212.982209,
+    "previous": "WAITING_PULLBACK"
   },
   "MAVUSDT": {
     "state": "NO_TREND",
@@ -2131,7 +2131,7 @@
   },
   "TUTUSDT": {
     "state": "NO_TREND",
-    "last_update": 1783705472.115999,
+    "last_update": 1790113040.780701,
     "previous": "WAITING_PULLBACK"
   },
   "AXLUSDT": {
@@ -2145,9 +2145,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "PROMUSDT": {
-    "state": "NO_TREND",
-    "last_update": 1783962601.2237818,
-    "previous": "WAITING_PULLBACK"
+    "state": "BUY_MODE",
+    "last_update": 1790147091.4468522,
+    "previous": "NO_TREND"
   },
   "AZTECUSDT": {
     "state": "NO_TREND",
@@ -2180,9 +2180,9 @@
     "previous": "WAITING_PULLBACK"
   },
   "AVAAIUSDT": {
-    "state": "BUY_MODE",
-    "last_update": 1784302991.629906,
-    "previous": "NO_TREND"
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147218.7168798,
+    "previous": "BUY_MODE"
   },
   "TOWNSUSDT": {
     "state": "BUY_MODE",
@@ -2191,12 +2191,117 @@
   },
   "FLOCKUSDT": {
     "state": "NO_TREND",
-    "last_update": 1784302404.0345101,
+    "last_update": 1790147442.000721,
     "previous": "SELL_MODE"
   },
   "TREEUSDT": {
     "state": "WAITING_PULLBACK",
-    "last_update": 1784302991.637984,
+    "last_update": 1790147216.249815,
+    "previous": "NO_TREND"
+  },
+  "ONEUSDT": {
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147522.876599,
+    "previous": "NO_TREND"
+  },
+  "CHRUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147448.9049642,
+    "previous": "BUY_MODE"
+  },
+  "CUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147200.125033,
+    "previous": "BUY_MODE"
+  },
+  "CLANKERUSDT": {
+    "state": "BUY_MODE",
+    "last_update": 1790112831.912619,
+    "previous": "NO_TREND"
+  },
+  "B2USDT": {
+    "state": "NO_TREND",
+    "last_update": 1790112954.6602309,
+    "previous": "BUY_MODE"
+  },
+  "\u725b\u6765USDT": {
+    "state": "NO_TREND",
+    "last_update": 1790139546.8655622,
+    "previous": "WAITING_PULLBACK"
+  },
+  "KERNELUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147295.650615,
+    "previous": "WAITING_PULLBACK"
+  },
+  "COTIUSDT": {
+    "state": "BUY_MODE",
+    "last_update": 1790147519.5044658,
+    "previous": "NO_TREND"
+  },
+  "MARSCOINUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790139546.873467,
+    "previous": "WAITING_PULLBACK"
+  },
+  "PONSUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147006.8635871,
+    "previous": "BUY_MODE"
+  },
+  "IOSTUSDT": {
+    "state": "WAITING_CONFIRMATION",
+    "last_update": 1790147462.342473,
+    "previous": "WAITING_PULLBACK"
+  },
+  "SUPERUSDT": {
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147519.136066,
+    "previous": "NO_TREND"
+  },
+  "CELRUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147479.6342368,
+    "previous": "WAITING_PULLBACK"
+  },
+  "ACEUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147482.965565,
+    "previous": "BUY_MODE"
+  },
+  "BBUSDT": {
+    "state": "BUY_MODE",
+    "last_update": 1790147141.6060538,
+    "previous": "NO_TREND"
+  },
+  "\u6211\u8e0f\u9a6c\u6765\u4e86USDT": {
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147354.59725,
+    "previous": "BUY_MODE"
+  },
+  "AKTUSDT": {
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147341.484431,
+    "previous": "BUY_MODE"
+  },
+  "FLOWUSDT": {
+    "state": "BUY_MODE",
+    "last_update": 1790147200.796499,
+    "previous": "NO_TREND"
+  },
+  "MEWUSDT": {
+    "state": "NO_TREND",
+    "last_update": 1790147356.813046,
+    "previous": "BUY_MODE"
+  },
+  "YGGUSDT": {
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147354.0739331,
+    "previous": "BUY_MODE"
+  },
+  "BTRUSDT": {
+    "state": "WAITING_PULLBACK",
+    "last_update": 1790147216.591268,
     "previous": "NO_TREND"
   }
 }

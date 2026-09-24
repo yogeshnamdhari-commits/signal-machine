@@ -100,11 +100,8 @@ class EMAv5Scanner:
         }
         # ── Pipeline accounting counters (for integrity assertions) ──
         self._pipeline_accounting = {
-            "buy_mode_created": 0,         # BUY_MODE transitions created this session
-            "sell_mode_created": 0,        # SELL_MODE transitions created this session
-            "buy_mode_restored": 0,         # BUY_MODE restored from persisted state
-            "sell_mode_restored": 0,        # SELL_MODE restored from persisted state
-            "waiting_pullback_restored": 0, # WAITING_PULLBACK restored from persisted state
+            "buy_mode_created": 0,
+            "sell_mode_created": 0,
             "pullback_entered": 0,
             "regime_lost_pre": 0,        # BUY_MODE → NO_TREND before pullback
             "expired_pre": 0,            # BUY_MODE timeout before pullback (policy-driven)
@@ -121,14 +118,17 @@ class EMAv5Scanner:
             "buy_mode_live": 0,          # Currently in BUY_MODE (not yet terminal)
             "sell_mode_live": 0,         # Currently in SELL_MODE (not yet terminal)
             "waiting_pullback_live": 0,  # Currently in WAITING_PULLBACK (not yet terminal)
+            # ── Restored state counters (for accounting identity adjustment) ──
+            # Symbols already in these states before engine restart — not created this session
+            "buy_mode_restored": 0,
+            "sell_mode_restored": 0,
+            "waiting_pullback_restored": 0,
         }
-        # Persisted-state lifecycle entries must participate in accounting from
-        # the first integrity evaluation of a restarted process.
-        _restored_state_counts = self.state_manager.get_state_counts()
-        self._pipeline_accounting["buy_mode_restored"] = _restored_state_counts.get(BUY_MODE, 0)
-        self._pipeline_accounting["sell_mode_restored"] = _restored_state_counts.get(SELL_MODE, 0)
-        self._pipeline_accounting["waiting_pullback_restored"] = _restored_state_counts.get(WAITING_PULLBACK, 0)
-
+        # ── Initialize restored state counters from persisted state ──
+        _restored_counts = self.state_manager.get_state_counts()
+        self._pipeline_accounting["buy_mode_restored"] = _restored_counts.get(BUY_MODE, 0)
+        self._pipeline_accounting["sell_mode_restored"] = _restored_counts.get(SELL_MODE, 0)
+        self._pipeline_accounting["waiting_pullback_restored"] = _restored_counts.get(WAITING_PULLBACK, 0)
         # ── Stage PASS counters (complement to rejection counters) ──
         self._stage_passed = {
             "fast_filter": 0, "ema_cache": 0, "regime": 0,
@@ -797,16 +797,10 @@ class EMAv5Scanner:
             _prev_state = self.state_manager.get_state(symbol)
             if regime == BUY_MODE and _prev_state != BUY_MODE:
                 self._pipeline_accounting["buy_mode_created"] += 1
-                logger.info(
-                    "📊 REGIME_CREATE sym={} {} → {} (buy_mode_created={})",
-                    symbol, _prev_state, regime, self._pipeline_accounting["buy_mode_created"],
-                )
-            elif regime == SELL_MODE and _prev_state != SELL_MODE:
+                logger.info("📊 REGIME_CREATE sym={} {} → {} (buy_mode_created={})", symbol, _prev_state, regime, self._pipeline_accounting["buy_mode_created"])
+            elif regime == SELL_MODE:
                 self._pipeline_accounting["sell_mode_created"] += 1
-                logger.info(
-                    "📊 REGIME_CREATE sym={} {} → {} (sell_mode_created={})",
-                    symbol, _prev_state, regime, self._pipeline_accounting["sell_mode_created"],
-                )
+                logger.info("📊 REGIME_CREATE sym={} {} → {} (sell_mode_created={})", symbol, _prev_state, regime, self._pipeline_accounting["sell_mode_created"])
             self.pipeline_monitor.lifecycle.stage_pass(symbol, "regime", regime_eval.get("reason", ""))
             self.pipeline_monitor.daily_recon.record_event("regime_pass")
 

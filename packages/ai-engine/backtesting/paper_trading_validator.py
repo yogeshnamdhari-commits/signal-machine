@@ -1060,7 +1060,7 @@ class PaperTradingEngine:
                 # Do not derive liquidation evidence from ordinary trades.
                 if data.get("feed") != "forceOrder" or data.get("data_quality") != "REAL":
                     return
-                await self.liquidation.process_liquidation_event(sym, data)
+                self.liquidation.process_liquidation_event(sym, data)
 
         except Exception as exc:
             self.health_monitor.record_api_error(f"data_handler:{sym}: {exc}")

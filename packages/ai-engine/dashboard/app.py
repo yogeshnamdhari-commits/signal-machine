@@ -53,9 +53,27 @@ def fmt(value, suffix=""):
         return f"{number/1e3:.2f}K{suffix}"
     return f"{number:.4f}{suffix}"
 
-
 def evidence(factor):
     return f"{factor.state.value} | {factor.quality.value}"
+
+
+def _format_liq_risk(display: Dict, liq_feed_state: str) -> str:
+    """Format liquidation risk with feed state awareness.
+    
+    - OBSERVED: Show risk level (LOW/MEDIUM/HIGH)
+    - NO_OBSERVED_LIQUIDATION: Show "NO_DATA" (feed is live but no events for this symbol)
+    - UNAVAILABLE: Show "UNAVAILABLE" (feed is down/stale)
+    """
+    if liq_feed_state == "OBSERVED":
+        risk = display.get("liq_risk")
+        if risk is not None:
+            return str(risk).upper()
+        return "LOW"
+    elif liq_feed_state == "NO_OBSERVED_LIQUIDATION":
+        return "NO_DATA"
+    else:
+        return "UNAVAILABLE"
+
 
 market_data = bridge_reader.read_market_data()
 signals = bridge_reader.read_signals()
@@ -94,6 +112,10 @@ for source_row in market_data:
     display = build_signal_display(signal_lookup.get(symbol, {}), row)
     observations = live_observation_values(row)
     fvg = display["fvg"]
+    
+    # Liquidation feed state for this symbol
+    liq_feed_state = row.get("liq_feed_state", "UNAVAILABLE")
+    
     rows.append({
         "Symbol": symbol,
         "Price": fmt(display_value(row, "price"), "$"),
@@ -115,9 +137,16 @@ for source_row in market_data:
         "Vol Bias": evidence(display["volume"]),
         "Imbalance": fmt(observations["imbalance"]),
         "Imb Bias": evidence(display["imbalance"]),
-        "Liq Zone ↓": fmt(display_value(row, "long_liq_vol"), "$"),
-        "Liq Zone ↑": fmt(display_value(row, "short_liq_vol"), "$"),
-        "Liq Risk": str(display["liq_risk"] or "UNAVAILABLE").upper(),
+        # Liquidation Zone Price Levels (observed from forceOrder clusters)
+        "Liq Zone ↓": fmt(display_value(row, "liq_long_zone_price"), "$"),
+        "Liq Zone ↑": fmt(display_value(row, "liq_short_zone_price"), "$"),
+        # Liquidation Volumes & Events
+        "Liq Long Vol": fmt(display_value(row, "long_liq_vol"), "$"),
+        "Liq Short Vol": fmt(display_value(row, "short_liq_vol"), "$"),
+        "Liq Events": display_value(row, "liq_total_events"),
+        # Liquidation Risk & Feed State
+        "Liq Risk": _format_liq_risk(display, liq_feed_state),
+        "Liq Feed": liq_feed_state,
         "Sweep": evidence(display["sweep"]),
         "Sweep Price": fmt(display["sweep_price"], "$"),
         "FVG": f"{fvg['state']} | {fvg['quality']}",
@@ -153,8 +182,13 @@ semantics = [
     ("Vol Bias", "Directional volume interpretation; it is not a substitute for order-flow evidence."),
     ("Imbalance", "Raw L2 order-book imbalance; requires real depth evidence."),
     ("Imb Bias", "BUY > +0.05; SELL < -0.05; otherwise NEUTRAL; derived from the observed L2 imbalance."),
-    ("Liq Zone ↓ / ↑", "Long/short liquidation-volume context; location/risk evidence, not standalone votes."),
-    ("Liq Risk", "Risk classification only; UNAVAILABLE when no liquidation-cluster evidence exists."),
+    ("Liq Zone ↓", "Nearest observed long-liquidation cluster price (from Binance forceOrder). UNAVAILABLE if no clusters."),
+    ("Liq Zone ↑", "Nearest observed short-liquidation cluster price (from Binance forceOrder). UNAVAILABLE if no clusters."),
+    ("Liq Long Vol", "Observed long liquidation volume (USD) from forceOrder events."),
+    ("Liq Short Vol", "Observed short liquidation volume (USD) from forceOrder events."),
+    ("Liq Events", "Total observed liquidation event count for this symbol."),
+    ("Liq Risk", "Risk level: LOW/MEDIUM/HIGH when OBSERVED; NO_DATA when feed is live but no events; UNAVAILABLE when feed is down."),
+    ("Liq Feed", "Per-symbol feed state: OBSERVED / NO_OBSERVED_LIQUIDATION / UNAVAILABLE."),
     ("Sweep", "BUY/SELL only when a qualifying sweep event exists; otherwise NOT_APPLICABLE."),
     ("Sweep Price", "Event location only; never an independent BUY/SELL generator."),
     ("FVG", "BUY/SELL contextual evidence from actual detected FVG boundaries; NOT_APPLICABLE when no FVG exists."),

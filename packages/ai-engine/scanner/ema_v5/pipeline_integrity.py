@@ -275,9 +275,6 @@ class PipelineIntegrity:
         cross_down = _c("cross_down")
         buy_mode_created = _c("buy_mode_created")
         sell_mode_created = _c("sell_mode_created")
-        buy_mode_restored = _c("buy_mode_restored")
-        sell_mode_restored = _c("sell_mode_restored")
-        waiting_pullback_restored = _c("waiting_pullback_restored")
         pullback_entered = _c("pullback_entered")
         regime_lost_pre = _c("regime_lost_pre")
         expired_pre = _c("expired_pre")
@@ -293,6 +290,10 @@ class PipelineIntegrity:
         buy_mode_live = _c("buy_mode_live")
         sell_mode_live = _c("sell_mode_live")
         waiting_pullback_live = _c("waiting_pullback_live")
+        # ── Restored state counters (symbols already in state at engine start) ──
+        buy_mode_restored = _c("buy_mode_restored")
+        sell_mode_restored = _c("sell_mode_restored")
+        waiting_pullback_restored = _c("waiting_pullback_restored")
 
         # ══════════════════════════════════════════════════════════════════
         # IDENTITY 1: EMA Cross Up ≥ BUY_MODE Created
@@ -322,44 +323,40 @@ class PipelineIntegrity:
         )
         report.results.append(id2)
 
-        # ══════════════════════════════════════════════════════════════════
-        # IDENTITY 3: BUY_MODE Created = Pullback + RegimeLost + Expired + Live
+# ══════════════════════════════════════════════════════════════════
+        # IDENTITY 3: BUY_MODE Created + Restored = Pullback + RegimeLost + Expired + Live
         #
         # Every BUY_MODE candidate must have an explicit destination:
         #   - Entered pullback (WAITING_PULLBACK)
         #   - Lost regime before pullback (→ NO_TREND)
         #   - Expired before pullback (policy-driven, currently 0)
         #   - Still live in BUY_MODE (in-flight, not yet terminal)
+        # Restored symbols are accounted for in buy_mode_live but not in buy_mode_created.
         # ══════════════════════════════════════════════════════════════════
-        buy_mode_accounted = (
-            pullback_entered + regime_lost_pre + expired_pre + buy_mode_live
-        )
-        buy_mode_sources = buy_mode_created + buy_mode_restored
+        buy_mode_accounted = pullback_entered + regime_lost_pre + expired_pre + buy_mode_live
         id3 = self._check_eq(
             "BUY_MODE accounting",
-            "buy_mode_created+restored", buy_mode_sources,
+            "buy_mode_created+restored", buy_mode_created + buy_mode_restored,
             "pullback+regime_lost+expired+live", buy_mode_accounted,
             severity=self.IDENTITY_SEVERITY["buy_mode_accounting"],
             identity_key="buy_mode_accounting",
         )
         report.results.append(id3)
 
-        # ══════════════════════════════════════════════════════════════════
-        # IDENTITY 4: Pullback Entered = Candle + RegimeLost + Timeout + Live
+# ══════════════════════════════════════════════════════════════════
+        # IDENTITY 4: Pullback Entered + Restored = Candle + RegimeLost + Timeout + Live
         #
         # Every pullback candidate must have an explicit destination:
         #   - Evaluated by candle engine
         #   - Lost regime during pullback wait (→ NO_TREND)
         #   - Timed out waiting for candle confirmation (policy-driven)
         #   - Still live in WAITING_PULLBACK (in-flight, not yet terminal)
+        # Restored pullback symbols are in waiting_pullback_live but not in pullback_entered.
         # ══════════════════════════════════════════════════════════════════
-        pullback_accounted = (
-            candle_evaluated + regime_lost_in_pull + timeout_in_pull + waiting_pullback_live
-        )
-        pullback_sources = pullback_entered + waiting_pullback_restored
+        pullback_accounted = candle_evaluated + regime_lost_in_pull + timeout_in_pull + waiting_pullback_live
         id4 = self._check_eq(
             "Pullback accounting",
-            "pullback_entered+restored", pullback_sources,
+            "pullback_entered+restored", pullback_entered + waiting_pullback_restored,
             "candle+regime_lost+timeout+live", pullback_accounted,
             severity=self.IDENTITY_SEVERITY["pullback_accounting"],
             identity_key="pullback_accounting",
@@ -426,7 +423,7 @@ class PipelineIntegrity:
         )
         report.results.append(id7)
 
-        # ══════════════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════════════
         # COMPUTE SCORE (raw + weighted)
         # ══════════════════════════════════════════════════════════════════
         report.total = len(report.results)

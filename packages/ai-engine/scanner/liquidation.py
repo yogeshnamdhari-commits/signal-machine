@@ -129,7 +129,7 @@ class LiquidationEngine:
     async def initialize(self) -> None:
         logger.info("Liquidation analytics engine ready (clusters + heat zones + sweep + risk)")
 
-    async def process_liquidation_event(self, symbol: str, event: Dict) -> None:
+    def process_liquidation_event(self, symbol: str, event: Dict) -> None:
         """Process an authentic Binance forceOrder liquidation event.
 
         This method accepts only the dedicated Binance forceOrder feed. Ordinary
