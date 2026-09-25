@@ -320,7 +320,7 @@ class BinanceWebSocket:
                     await self._on_mark_price(item)
             else:
                 await self._on_mark_price(data)
-        elif "@openInterest" in stream:
+        elif "@openInterest" in stream or "openInterest@" in stream:
             if isinstance(data, list):
                 for item in data:
                     await self._on_open_interest(item)
