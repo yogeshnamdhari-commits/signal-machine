@@ -777,10 +777,25 @@ class DeltaTerminalEngine:
                         sym, data.get("funding_rate", 0), data.get("timestamp", 0) / 1000
                     )
 
+            elif event == "open_interest":
+                # Real-time OI from WS !openInterest@arr stream
+                if data.get("feed") == "openInterest" and data.get("data_quality") == "REAL":
+                    oi = data.get("open_interest", 0)
+                    if oi > 0:
+                        price = self._mark_prices.get(sym, 0)
+                        if price > 0:
+                            self.data_quality.validate_oi(sym, oi, price)
+                            await self.oi.process_oi(
+                                sym,
+                                oi,
+                                price,
+                                data.get("timestamp", 0) / 1000,
+                            )
+
             elif event == "liquidation":
                 # Dedicated Binance forceOrder feed — authentic liquidation evidence.
                 if data.get("feed") == "forceOrder" and data.get("data_quality") == "REAL":
-                    await self.liquidation.process_liquidation_event(sym, data)
+                    self.liquidation.process_liquidation_event(sym, data)
 
         except Exception as exc:
             logger.error("Handler error {}: {}", sym, exc)
@@ -820,6 +835,13 @@ class DeltaTerminalEngine:
                 except Exception as e:
                     logger.debug("Premium index fetch error: {}", e)
 
+                # Merge WS markPrice stream cache for real-time mark/index/funding (updated every ~1s)
+                ws_premium = getattr(self.ws, '_ws_premium_cache', {})
+                if ws_premium:
+                    for sym, pi in ws_premium.items():
+                        if pi.get("mark_price", 0) > 0:
+                            premium_map[sym] = pi
+
                 # Feed real-time funding rates into engine + cache mark prices for OI valuation
                 for sym in self.active_symbols:
                     if sym in premium_map:
@@ -840,8 +862,29 @@ class DeltaTerminalEngine:
                 symbols = list(self.active_symbols)
                 sem = asyncio.Semaphore(_POLL_CONCURRENCY)
 
-                # ── OI DATA: production REST only; no proxy estimates ──
+                # ── OI DATA: Use WS !openInterest@arr cache first, then REST fallback ──
                 _oi_ok_count = 0
+
+                # First, process all symbols from WS OI cache (real-time, no REST needed)
+                ws_oi_cache = getattr(self.ws, 'get_all_cached_oi', lambda: {})()
+                for sym in symbols:
+                    if sym in ws_oi_cache:
+                        cached = ws_oi_cache[sym]
+                        oi = cached.get("oi", 0)
+                        if oi > 0:
+                            price = self._mark_prices.get(sym, 0)
+                            if price > 0:
+                                self.data_quality.validate_oi(sym, oi, price)
+                                await self.oi.process_oi(
+                                    sym,
+                                    oi,
+                                    price,
+                                    cached.get("ts", time.time()),
+                                )
+                                _oi_ok_count += 1
+
+                # Then, REST fallback only for symbols missing from WS cache
+                _missing_symbols = [s for s in symbols if s not in ws_oi_cache]
 
                 async def _poll_one(sym: str) -> bool:
                     nonlocal _oi_ok_count
@@ -864,16 +907,17 @@ class DeltaTerminalEngine:
                             logger.debug("OI REST poll error {}: {}", sym, e)
                         return False
 
-                await asyncio.gather(*[_poll_one(s) for s in symbols])
+                if _missing_symbols:
+                    await asyncio.gather(*[_poll_one(s) for s in _missing_symbols])
                 if _oi_ok_count:
                     self.data_freshness.record_data_update(
                         "open_interest",
-                        f"Binance REST /fapi/v1/openInterest ({_oi_ok_count}/{len(symbols)} symbols)",
+                        f"Binance WS !openInterest@arr + REST /fapi/v1/openInterest ({_oi_ok_count}/{len(symbols)} symbols)",
                     )
                 else:
                     self.data_freshness.record_data_update(
                         "open_interest",
-                        "UNAVAILABLE — Binance REST /fapi/v1/openInterest did not return production data",
+                        "UNAVAILABLE — Binance WS !openInterest@arr and REST /fapi/v1/openInterest did not return production data",
                     )
 
                 # ── Record data freshness for other polling sources ──
@@ -1136,6 +1180,14 @@ class DeltaTerminalEngine:
                         self._mark_prices[sym] = mp
                     self._premium_data[sym] = pi
                 logger.info("📥 Pre-fetched premium index: {} symbols", len(premium_map))
+            # Merge WS premium cache for real-time mark/index/funding
+            ws_premium = getattr(self.ws, '_ws_premium_cache', {})
+            if ws_premium:
+                for sym, pi in ws_premium.items():
+                    if pi.get("mark_price", 0) > 0:
+                        self._mark_prices[sym] = pi["mark_price"]
+                        self._premium_data[sym] = pi
+                logger.info("📥 WS premium cache merged: {} symbols", len(ws_premium))
             # Also use WS mark price cache directly (faster, no REST needed)
             ws_mp = getattr(self.ws, '_ws_mark_prices', {})
             if ws_mp:
@@ -6276,6 +6328,23 @@ class DeltaTerminalEngine:
         try:
             health = self.perf_tracker.health_monitor.get_health()
             forward = self.perf_tracker.forward_tracker.get_forward_stats()
+            ws_health = self.ws.get_stats()
+            last_liq_ms = ws_health.get("last_force_order_event_ms", 0) or 0
+            last_liq_age = (
+                max(time.time() - float(last_liq_ms) / 1000.0, 0.0)
+                if last_liq_ms > 0 else None
+            )
+            liq_errors = (
+                ws_health.get("subscription_error_count", {}) or {}
+            ).get("market", 0)
+            if ws_health.get("force_order_subscribed"):
+                liq_feed_status = "SUBSCRIBED"
+            elif liq_errors:
+                liq_feed_status = "ERROR"
+            elif ws_health.get("connected"):
+                liq_feed_status = "AWAITING_CONFIRMATION"
+            else:
+                liq_feed_status = "DISCONNECTED"
             bridge_writer.write_engine_health({
                 "signals_generated_today": health["signals_generated"],
                 "signals_rejected_today": health["signals_rejected"],
@@ -6291,6 +6360,17 @@ class DeltaTerminalEngine:
                 "dynamic_threshold": self.perf_tracker.dynamic_threshold.get_threshold(
                     self._last_regime if hasattr(self, '_last_regime') else "range", 0.5
                 ),
+                "liquidation_feed": {
+                    "status": liq_feed_status,
+                    "subscribed": bool(ws_health.get("force_order_subscribed", False)),
+                    "observed_event_count": int(ws_health.get("force_order_event_count", 0) or 0),
+                    "last_event_age_sec": round(last_liq_age, 1) if last_liq_age is not None else None,
+                    "subscription_ack_count": (
+                        ws_health.get("subscription_ack_count", {}) or {}
+                    ).get("market", 0),
+                    "subscription_error_count": liq_errors,
+                    "last_subscription_error": ws_health.get("last_subscription_error", {}).get("market"),
+                },
             })
         except Exception as e:
             logger.debug("Bridge sync error (health): {}", e)
@@ -6308,20 +6388,25 @@ class DeltaTerminalEngine:
                 if row is not None:
                     market_rows.append(row)
 
-            # ── Normalize liq_risk to percentile rank across all symbols ──
-            # This produces differentiated risk values even when absolute scores are similar
+            # ── Normalize liq_risk to percentile rank across observed numeric risks ──
+            # Missing liquidation evidence is intentionally represented as None and
+            # must remain UNAVAILABLE; sorting None with numeric values raises a
+            # TypeError and can suppress the entire market-data bridge write.
             if market_rows:
-                raw_risks = [(i, r.get("liq_risk", 0)) for i, r in enumerate(market_rows)]
+                raw_risks = []
+                for i, row in enumerate(market_rows):
+                    risk = row.get("liq_risk")
+                    if isinstance(risk, (int, float)):
+                        import math
+                        if math.isfinite(float(risk)):
+                            raw_risks.append((i, float(risk)))
+
                 sorted_risks = sorted(raw_risks, key=lambda x: x[1])
                 n = len(sorted_risks)
                 for rank, (idx, _) in enumerate(sorted_risks):
                     # Percentile rank: 0 (lowest) to 100 (highest)
-                    if n > 1:
-                        pct = rank / (n - 1) * 100
-                    else:
-                        pct = 50
+                    pct = rank / (n - 1) * 100 if n > 1 else 50
                     market_rows[idx]["liq_risk"] = round(pct, 1)
-                    # Update risk level based on normalized percentile
                     if pct >= 70:
                         market_rows[idx]["liq_risk_level"] = "high"
                     elif pct >= 30:
@@ -6398,6 +6483,10 @@ class DeltaTerminalEngine:
                         continue
 
                 sm = self.smart_money.get_analysis(sym)
+                # Exchange-flow analysis for the smart-money bridge row. This must be
+                # resolved in this scope; ef_data from the live-sheet builder is local to
+                # that separate function and must not be referenced here.
+                ef_data = self.exchange_flow.get_analysis(sym) or {}
                 # Merge patterns from both scoring engine + real detector
                 inst_scoring = self.institutional.get_patterns(sym)
                 inst_detect = self.institutional_detector.get_patterns(sym)

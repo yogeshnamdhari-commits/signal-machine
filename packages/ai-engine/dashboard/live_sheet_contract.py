@@ -45,7 +45,7 @@ def display_value(row: Dict[str, Any], key: str) -> Any:
         if int(row.get("flow_total_trades", 0) or 0) <= 0:
             return None
 
-    if key in {"long_liq_vol", "short_liq_vol"}:
+    if key in {"long_liq_vol", "short_liq_vol", "liq_long_zone_price", "liq_short_zone_price"}:
         if int(row.get("cluster_count", 0) or 0) <= 0 and int(row.get("long_liq_count", 0) or 0) <= 0 and int(row.get("short_liq_count", 0) or 0) <= 0:
             return None
 

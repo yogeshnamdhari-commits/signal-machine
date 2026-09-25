@@ -269,6 +269,15 @@ class BridgeReader:
         filtered = {k: v for k, v in status_data.items() if k in known}
         return EngineStatus(**filtered)
 
+    def read_engine_health(self) -> Dict:
+        """Read engine health metrics, including market-feed diagnostics."""
+        data = _safe_read(BRIDGE_DIR / "engine_health.json")
+        if not data:
+            return {}
+        if time.time() - data.get("timestamp", 0) > 120:
+            return {}
+        return data.get("engine_health", {})
+
     def read_funnel(self) -> Dict:
         """Read signal funnel analytics."""
         data = _safe_read(FUNNEL_FILE)
@@ -384,6 +393,7 @@ class BridgeReader:
             "metrics": self.read_metrics(),
             "alerts": self.read_alerts(),
             "status": self.read_status(),
+            "engine_health": self.read_engine_health(),
             "market_data": self.read_market_data(),
             "positions": self.read_positions(),
             "equity_history": self.read_equity_history(),

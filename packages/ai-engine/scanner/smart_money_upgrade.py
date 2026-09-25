@@ -257,8 +257,8 @@ class SmartMoneyScoreEngine:
 
         # ── OI Score (0-100) ──
         if oi_data:
-            change_pct = oi_data.get("change_pct", 0)
-            oi_trend = oi_data.get("oi_trend", 0)
+            change_pct = oi_data.get("change_pct", 0) or 0
+            oi_trend = oi_data.get("oi_trend", 0) or 0
             # Rising OI + price direction alignment
             score.oi_score = max(0, min(100, 50 + change_pct * 200 + oi_trend * 15))
         else:
