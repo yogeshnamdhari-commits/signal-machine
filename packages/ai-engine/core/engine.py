@@ -6371,6 +6371,7 @@ class DeltaTerminalEngine:
                     "subscription_error_count": liq_errors,
                     "last_subscription_error": ws_health.get("last_subscription_error", {}).get("market"),
                 },
+                "websocket": ws_health,
             })
         except Exception as e:
             logger.debug("Bridge sync error (health): {}", e)
@@ -6590,16 +6591,16 @@ class DeltaTerminalEngine:
                 # ── Derive Smart Money scores from real market data ──
                 # When WebSocket trade pipeline isn't feeding SmartMoneyEngine,
                 # compute scores from orderflow, exchange flow, CVD, OI data.
-                _of_buy = _md.get("aggressive_buy_vol", 0)
-                _of_sell = _md.get("aggressive_sell_vol", 0)
+                _of_buy = _md.get("aggressive_buy_vol", 0) or 0
+                _of_sell = _md.get("aggressive_sell_vol", 0) or 0
                 _of_total = _of_buy + _of_sell
-                _of_ratio = _md.get("buy_sell_ratio", 0.5)
-                _ef_net = _md.get("exchange_flow", 0) or _md.get("net_delta", 0)
-                _cvd_bias = _md.get("cvd_bias", "neutral")
-                _oi_pos = _md.get("oi_positioning", "neutral")
+                _of_ratio = _md.get("buy_sell_ratio", 0.5) or 0.5
+                _ef_net = _md.get("exchange_flow", 0) or _md.get("net_delta", 0) or 0
+                _cvd_bias = _md.get("cvd_bias", "neutral") or "neutral"
+                _oi_pos = _md.get("oi_positioning", "neutral") or "neutral"
                 _oi_chg = _md.get("oi_change_pct", 0) or 0
                 _flow_str = _md.get("flow_strength", 50) or 50
-                _flow_sig = _md.get("flow_signal", "neutral")
+                _flow_sig = _md.get("flow_signal", "neutral") or "neutral"
 
                 # Accumulation score: buy dominance from orderflow + CVD + OI
                 _sm_accum = 0.0
@@ -6873,6 +6874,7 @@ class DeltaTerminalEngine:
                 _ct_all = self.ema_v5._chain_tracker
                 _htf_all = self.ema_v5._htf_tracker
                 _cache = self.ema_v5.cache
+                states = self.ema_v5.state_manager.get_all_states()
                 for _sig in ema_v5_data.get("signals", []):
                     _sym = _sig.get("symbol", "")
                     _side = _sig.get("side", "")

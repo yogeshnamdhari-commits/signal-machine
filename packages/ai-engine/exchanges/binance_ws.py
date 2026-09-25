@@ -149,11 +149,14 @@ class BinanceWebSocket:
             raise ValueError(f"Unsupported websocket route: {route}")
 
         base = config.binance.ws_url.rstrip("/")
-        # Binance combined stream endpoint is /stream for both public and market streams
-        url = f"{base}/stream"
+        # Binance futures uses separate endpoints for public and market streams
+        if route == "public":
+            url = f"{base}/public/stream"
+        else:
+            url = f"{base}/market/stream"
         logger.info("WS {} connecting → {}", route.upper(), url)
 
-        async with websockets.connect(url, ping_interval=20, ping_timeout=30, close_timeout=15, max_size=2**20) as ws:
+        async with websockets.connect(url, ping_interval=30, ping_timeout=60, close_timeout=30, max_size=2**20) as ws:
             async with self._lock:
                 if route == "public":
                     self._public_ws = ws
@@ -168,9 +171,6 @@ class BinanceWebSocket:
             self._last_pong = time.time()
             await self._subscribe_route(ws, route)
 
-            # Start ping monitor for this connection
-            ping_monitor = asyncio.create_task(self._ping_monitor(ws, route), name=f"ws_ping_{route}")
-
             async for raw in ws:
                 if not self._running:
                     break
@@ -183,12 +183,6 @@ class BinanceWebSocket:
                     import traceback
                     logger.error("WS {} message error: {}\n{}", route, exc, traceback.format_exc())
 
-            ping_monitor.cancel()
-            try:
-                await ping_monitor
-            except asyncio.CancelledError:
-                pass
-
             async with self._lock:
                 if route == "public":
                     self._public_ws = None
@@ -196,27 +190,6 @@ class BinanceWebSocket:
                     self._market_ws = None
                 self._connected = bool(self._public_ws or self._market_ws)
             logger.warning("WS {} disconnected", route.upper())
-
-    async def _ping_monitor(self, ws: websockets.WebSocketClientProtocol, route: str) -> None:
-        """Monitor connection health with explicit ping/pong."""
-        while self._running:
-            try:
-                await asyncio.sleep(15)
-                if not self._running:
-                    break
-                # Send explicit ping to verify connection
-                pong_waiter = await ws.ping()
-                await asyncio.wait_for(pong_waiter, timeout=10)
-                self._last_pong = time.time()
-            except asyncio.TimeoutError:
-                logger.warning("WS {} ping timeout — closing connection", route.upper())
-                await ws.close()
-                break
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:
-                logger.debug("WS {} ping monitor error: {}", route.upper(), exc)
-                break
 
     async def _subscribe_route(self, ws: websockets.WebSocketClientProtocol, route: str) -> None:
         from database import db
@@ -241,13 +214,15 @@ class BinanceWebSocket:
                 global_streams.extend(list(config.scanner.global_streams))
             names.extend(global_streams)
 
-        for i in range(0, len(names), 200):
-            batch = names[i : i + 200]
+        for i in range(0, len(names), 50):
+            batch = names[i : i + 50]
             await ws.send(json.dumps({
                 "method": "SUBSCRIBE",
                 "params": batch,
                 "id": i + 1,
             }))
+            # Small delay to avoid rate limiting
+            await asyncio.sleep(0.1)
 
         # Confirm the server's actual subscription set. This is especially
         # important for the global forceOrder feed because an accepted socket
@@ -320,7 +295,7 @@ class BinanceWebSocket:
                     await self._on_mark_price(item)
             else:
                 await self._on_mark_price(data)
-        elif "@openInterest" in stream:
+        elif "@openInterest" in stream or "!openInterest@arr" in stream:
             if isinstance(data, list):
                 for item in data:
                     await self._on_open_interest(item)
@@ -333,7 +308,6 @@ class BinanceWebSocket:
                 await self._on_force_order({"o": data})
         elif "!ticker@arr" in stream or "ticker@arr" in stream:
             if isinstance(data, list):
-                print(f"DEBUG: _on_ticker_arr = {self._on_ticker_arr}, type = {type(self._on_ticker_arr)}", flush=True)
                 await self._on_ticker_arr(data)
 
     async def _on_trade(self, d: Dict) -> None:
@@ -460,7 +434,6 @@ class BinanceWebSocket:
 
     async def _on_ticker_arr(self, tickers: list) -> None:
         """Cache real 24h ticker observations; never fabricate trade events."""
-        print(f"DEBUG: _on_ticker_arr called with {len(tickers) if tickers else 0} tickers", flush=True)
         if not self._callback:
             return
         for t in tickers:
