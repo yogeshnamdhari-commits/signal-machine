@@ -678,6 +678,9 @@ class DeltaTerminalEngine:
                 self.trade_blocker.record_data_tick("binance")
             if event == "trade":
                 self.data_freshness.record_data_update("exchange_flow", "Binance Futures Taker Trade Stream")
+                self.data_freshness.record_data_update("trades", "Binance Futures WebSocket Trade Stream")
+            if event == "kline":
+                self.data_freshness.record_data_update("klines", "Binance OHLCV (1m/5m/15m/1h/4h)")
             if event == "funding":
                 self.data_freshness.record_tick("binance")
                 self.trade_blocker.record_data_tick("binance")
@@ -685,6 +688,8 @@ class DeltaTerminalEngine:
             if event == "liquidation":
                 self.data_freshness.record_data_update("liquidation", "Binance Futures Liquidation Stream")
                 self.trade_blocker.record_data_tick("binance")
+            if event == "open_interest":
+                self.data_freshness.record_data_update("open_interest", "Binance WS !openInterest@arr stream")
 
             if event == "trade":
                 sd["trades"].append(data)
@@ -858,6 +863,13 @@ class DeltaTerminalEngine:
                             self._mark_prices[sym] = mp
                         # Cache full premium data (mark, index, funding countdown)
                         self._premium_data[sym] = pi
+
+                # Record funding data freshness — premium data is refreshed every poll cycle (~60s)
+                # via REST get_premium_index_all() merged with WS markPrice cache
+                self.data_freshness.record_data_update(
+                    "funding",
+                    f"Binance + Bybit + OKX (volume-weighted avg, {len(self._premium_data)} symbols)",
+                )
 
                 symbols = list(self.active_symbols)
                 sem = asyncio.Semaphore(_POLL_CONCURRENCY)
