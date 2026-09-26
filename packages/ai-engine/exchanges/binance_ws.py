@@ -318,7 +318,7 @@ class BinanceWebSocket:
             "is_buyer_maker": d["m"],
             "trade_time": d["T"],
             "source": "binance",
-            "feed": "aggTrade",
+            "feed": d.get("e", "aggTrade"),
             "data_quality": "REAL",
             "synthetic": False,
         }

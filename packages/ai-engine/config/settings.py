@@ -80,7 +80,7 @@ class ScannerConfig:
     signal_cooldown_sec: int = 600
     # Four real per-symbol feeds: trade tape, L1, OI and L2 depth.
     # 250 * 4 + 3 global streams = 1003, below Binance's 1024-stream limit.
-    ws_streams: Tuple[str, ...] = ("aggTrade", "bookTicker", "depth@100ms", "kline_5m")
+    ws_streams: Tuple[str, ...] = ("trade", "bookTicker", "depth@100ms", "kline_5m")
     kline_intervals: Tuple[str, ...] = ("5m",)
     global_streams: Tuple[str, ...] = ("!markPrice@arr", "!openInterest@arr", "!forceOrder@arr")
     iceberg_threshold: float = 0.7
