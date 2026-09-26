@@ -5783,6 +5783,32 @@ class DeltaTerminalEngine:
             "liq_sweep_intensity": round(liq_data.get("sweep_intensity"), 3) if liq_data and liq_data.get("sweep_intensity") is not None else None,
             "liq_risk": round(liq_data.get("liq_risk"), 1) if liq_data and liq_data.get("liq_risk") is not None else None,
             "liq_risk_level": liq_data.get("liq_risk_level") if liq_data else None,
+            # Liquidation dashboard contract fields
+            "liq_long_zone_price": (
+                max(
+                    (c for c in (liq_data.get("clusters") or []) if c.get("long_vol", 0) > 0),
+                    key=lambda c: c.get("long_vol", 0),
+                    default={}
+                ).get("price")
+                if liq_data else None
+            ),
+            "liq_short_zone_price": (
+                max(
+                    (c for c in (liq_data.get("clusters") or []) if c.get("short_vol", 0) > 0),
+                    key=lambda c: c.get("short_vol", 0),
+                    default={}
+                ).get("price")
+                if liq_data else None
+            ),
+            "liq_total_events": (
+                (liq_data.get("long_liq_count", 0) or 0) + (liq_data.get("short_liq_count", 0) or 0)
+                if liq_data else None
+            ),
+            "liq_feed_state": (
+                "OBSERVED" if liq_data and (liq_data.get("cluster_count", 0) or 0) > 0 else
+                "NO_OBSERVED_LIQUIDATION" if liq_data else
+                "UNAVAILABLE"
+            ),
             # End liquidation enhanced
             # ── FVG Detector — real Fair Value Gap data ──
             "fvg_alignment": fvg_det_data.get("fvg_alignment") if fvg_det_data else None,
