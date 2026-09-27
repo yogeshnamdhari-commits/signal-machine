@@ -117,6 +117,27 @@ jobs:
         shell: bash
         run: test "$(git rev-parse HEAD)" = "${{ steps.resolve.outputs.target_sha }}"
 
+      - name: Preflight production market-data access
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://fapi.binance.com/fapi/v1/exchangeInfo"
+          body="$(mktemp)"
+          trap 'rm -f "$body"' EXIT
+          status="$(curl --silent --show-error --max-time 20 --output "$body" --write-out '%{http_code}' "$url")"
+          if [[ "$status" != "200" ]]; then
+            echo "FAIL-CLOSED: Binance production exchangeInfo returned HTTP $status; authentic forward evidence cannot start on this runner." >&2
+            exit 1
+          fi
+          python3 - "$body" <<'PY'
+          import json, sys
+          payload=json.load(open(sys.argv[1], encoding='utf-8'))
+          symbols=[s for s in payload.get('symbols', []) if s.get('status') == 'TRADING' and s.get('quoteAsset') == 'USDT']
+          if not symbols:
+              raise SystemExit('FAIL-CLOSED: Binance production exchangeInfo returned zero active USDT symbols.')
+          print(f'Binance production market-data preflight PASS: {len(symbols)} active USDT symbols')
+          PY
+
       - name: Install dependencies
         working-directory: packages/ai-engine
         run: python3 -m pip install -r requirements.txt

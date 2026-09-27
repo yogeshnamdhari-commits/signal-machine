@@ -48,6 +48,17 @@ class BinanceWebSocket:
         self._ws_symbols_cache: List[str] = []
         self._ws_mark_prices: Dict[str, float] = {}
         self._ws_premium_cache: Dict[str, Dict] = {}
+        # Read-only runtime diagnostics for control-stream health. These never
+        # synthesize market observations and never affect execution decisions.
+        self._subscription_ack_count: Dict[str, int] = {"public": 0, "market": 0}
+        self._subscription_error_count: Dict[str, int] = {"public": 0, "market": 0}
+        self._last_subscription_error: Dict[str, Dict[str, Any]] = {}
+        self._force_order_subscribed = False
+        self._force_order_event_count = 0
+        self._last_force_order_event_ms = 0
+        self._open_interest_subscribed = False
+        self._open_interest_event_count = 0
+        self._last_open_interest_event_ms = 0
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -73,6 +84,16 @@ class BinanceWebSocket:
             "reconnect_count": self._reconnect_count,
             "uptime_seconds": round(uptime, 1),
             "uptime_pct": round(uptime / max(time.time() - (self._connected_at - uptime), 1) * 100, 1) if self._connected_at > 0 else 0,
+            "force_order_subscribed": self._force_order_subscribed,
+            "force_order_event_count": self._force_order_event_count,
+            "last_force_order_event_ms": self._last_force_order_event_ms,
+            "open_interest_subscribed": self._open_interest_subscribed,
+            "open_interest_event_count": self._open_interest_event_count,
+            "last_open_interest_event_ms": self._last_open_interest_event_ms,
+            "open_interest_cache_size": len(self._oi_cache),
+            "subscription_ack_count": dict(self._subscription_ack_count),
+            "subscription_error_count": dict(self._subscription_error_count),
+            "last_subscription_error": dict(self._last_subscription_error),
         }
 
     async def stop(self) -> None:
@@ -97,6 +118,7 @@ class BinanceWebSocket:
         self._public_ws = None
         self._market_ws = None
         self._session = None
+        self._ping_monitor_task: Optional[asyncio.Task] = None
         logger.info("WebSocket client stopped")
 
     async def _connect_both_loop(self) -> None:
@@ -127,10 +149,14 @@ class BinanceWebSocket:
             raise ValueError(f"Unsupported websocket route: {route}")
 
         base = config.binance.ws_url.rstrip("/")
-        url = f"{base}/{route}/stream"
+        # Binance futures uses separate endpoints for public and market streams
+        if route == "public":
+            url = f"{base}/public/stream"
+        else:
+            url = f"{base}/market/stream"
         logger.info("WS {} connecting → {}", route.upper(), url)
 
-        async with websockets.connect(url, ping_interval=30, ping_timeout=20, close_timeout=10) as ws:
+        async with websockets.connect(url, ping_interval=30, ping_timeout=60, close_timeout=30, max_size=2**20) as ws:
             async with self._lock:
                 if route == "public":
                     self._public_ws = ws
@@ -150,11 +176,12 @@ class BinanceWebSocket:
                     break
                 try:
                     msg = json.loads(raw)
-                    await self._dispatch(msg)
+                    await self._dispatch(msg, route)
                 except json.JSONDecodeError:
                     logger.warning("WS {} non-JSON message ignored", route)
                 except Exception as exc:
-                    logger.error("WS {} message error: {}", route, exc)
+                    import traceback
+                    logger.error("WS {} message error: {}\n{}", route, exc, traceback.format_exc())
 
             async with self._lock:
                 if route == "public":
@@ -173,7 +200,7 @@ class BinanceWebSocket:
         if route == "public":
             stream_types = [s for s in configured if s in {"bookTicker", "depth@100ms", "depth"}]
         else:
-            stream_types = [s for s in configured if s in {"aggTrade", "trade", "kline_5m", "kline"}]
+            stream_types = [s for s in configured if s in {"aggTrade", "trade", "kline_5m", "kline", "openInterest"}]
 
         names: List[str] = []
         for s in symbols[: config.scanner.max_symbols]:
@@ -187,12 +214,23 @@ class BinanceWebSocket:
                 global_streams.extend(list(config.scanner.global_streams))
             names.extend(global_streams)
 
-        for i in range(0, len(names), 200):
-            batch = names[i : i + 200]
+        for i in range(0, len(names), 50):
+            batch = names[i : i + 50]
             await ws.send(json.dumps({
                 "method": "SUBSCRIBE",
                 "params": batch,
                 "id": i + 1,
+            }))
+            # Small delay to avoid rate limiting
+            await asyncio.sleep(0.1)
+
+        # Confirm the server's actual subscription set. This is especially
+        # important for the global forceOrder feed because an accepted socket
+        # connection alone does not prove the stream was subscribed.
+        if route == "market":
+            await ws.send(json.dumps({
+                "method": "LIST_SUBSCRIPTIONS",
+                "id": 990001,
             }))
 
         subscribed_symbols = len(symbols[: config.scanner.max_symbols])
@@ -201,7 +239,43 @@ class BinanceWebSocket:
             route.upper(), len(names), subscribed_symbols, len(stream_types),
         )
 
-    async def _dispatch(self, msg: Dict) -> None:
+    async def _dispatch(self, msg: Dict, route: str = "unknown") -> None:
+        # Control-plane responses do not contain a stream payload. Preserve
+        # them explicitly so subscription failures cannot become silent.
+        if "code" in msg and "msg" in msg:
+            if route in self._subscription_error_count:
+                self._subscription_error_count[route] += 1
+                self._last_subscription_error[route] = {
+                    "code": msg.get("code"),
+                    "msg": msg.get("msg"),
+                    "id": msg.get("id"),
+                    "timestamp": time.time(),
+                }
+            logger.error(
+                "WS {} control error id={} code={} msg={}",
+                route.upper(), msg.get("id"), msg.get("code"), msg.get("msg"),
+            )
+            return
+
+        if "id" in msg and "result" in msg:
+            result = msg.get("result")
+            if route in self._subscription_ack_count and result is None:
+                self._subscription_ack_count[route] += 1
+                return
+            if route == "market" and isinstance(result, list):
+                self._force_order_subscribed = "!forceOrder@arr" in result
+                # Binance stream format: !openInterest@arr (contains "openInterest@" not "@openInterest")
+                self._open_interest_subscribed = any(
+                    "openInterest@" in s for s in result
+                )
+                global_in_result = [s for s in result if s.startswith("!")]
+                logger.info(
+                    "WS MARKET subscriptions confirmed: count={} forceOrder={} openInterest={} global_streams={}",
+                    len(result), self._force_order_subscribed, self._open_interest_subscribed, global_in_result,
+                )
+                return
+            return
+
         stream = msg.get("stream", "")
         data = msg.get("data")
         if not data or not self._callback:
@@ -221,8 +295,12 @@ class BinanceWebSocket:
                     await self._on_mark_price(item)
             else:
                 await self._on_mark_price(data)
-        elif "@openInterest" in stream:
-            await self._on_open_interest(data)
+        elif "@openInterest" in stream or "!openInterest@arr" in stream:
+            if isinstance(data, list):
+                for item in data:
+                    await self._on_open_interest(item)
+            else:
+                await self._on_open_interest(data)
         elif "@forceOrder" in stream or "forceOrder" in stream:
             if isinstance(data, dict) and "o" in data:
                 await self._on_force_order(data)
@@ -240,7 +318,7 @@ class BinanceWebSocket:
             "is_buyer_maker": d["m"],
             "trade_time": d["T"],
             "source": "binance",
-            "feed": "aggTrade",
+            "feed": d.get("e", "aggTrade"),
             "data_quality": "REAL",
             "synthetic": False,
         }
@@ -346,6 +424,11 @@ class BinanceWebSocket:
             "feed": "forceOrder",
             "data_quality": "REAL",
         }
+        self._force_order_event_count += 1
+        self._last_force_order_event_ms = int(liq["timestamp"])
+        # An observed authentic event is conclusive evidence that the feed is
+        # active even if LIST_SUBSCRIPTIONS has not yet been acknowledged.
+        self._force_order_subscribed = True
         if self._callback:
             await self._callback("liquidation", liq)
 
@@ -517,6 +600,9 @@ class BinanceWebSocket:
         if oi <= 0:
             return
 
+        self._open_interest_event_count += 1
+        self._last_open_interest_event_ms = int(time.time() * 1000)
+
         now = time.time()
         cached = self._oi_cache.get(sym)
         if cached:
@@ -564,6 +650,11 @@ class BinanceWebSocket:
                 "data_quality": "REAL",
                 "timestamp": int(cached.get("ts", time.time()) * 1000),
             }
+        # REST fallback is disabled when the OI WebSocket stream is subscribed
+        # and producing events.  Falling back silently would mask a missing or
+        # stalled WS OI feed and falsely present REST-sourced data as real-time.
+        if self._open_interest_subscribed and self._open_interest_event_count > 0:
+            return None
         data = await self._get("/fapi/v1/openInterest", {"symbol": symbol}, use_data_url=True)
         if not data:
             return None

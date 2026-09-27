@@ -10,7 +10,7 @@ from typing import Any, Dict
 from loguru import logger
 
 
-def _safe_ticker_handler(self: Any, tickers: list) -> None:
+async def _safe_ticker_handler(self: Any, tickers: list) -> None:
     """Cache 24h ticker data without fabricating trade/order-flow events."""
     import time
 
