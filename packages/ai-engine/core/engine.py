@@ -5802,12 +5802,12 @@ class DeltaTerminalEngine:
             ),
             "liq_total_events": (
                 (liq_data.get("long_liq_count", 0) or 0) + (liq_data.get("short_liq_count", 0) or 0)
-                if liq_data else None
-            ),
+                if liq_data else 0
+),
             "liq_feed_state": (
-                "OBSERVED" if liq_data and (liq_data.get("cluster_count", 0) or 0) > 0 else
-                "NO_OBSERVED_LIQUIDATION" if liq_data else
-                "UNAVAILABLE"
+                "UNAVAILABLE" if not (self.ws._connected and self.ws._force_order_subscribed)
+                else "OBSERVED" if liq_data and ((liq_data.get("long_liq_count", 0) or 0) + (liq_data.get("short_liq_count", 0) or 0)) > 0
+                else "NO_OBSERVED_LIQUIDATION"
             ),
             # End liquidation enhanced
             # ── FVG Detector — real Fair Value Gap data ──
